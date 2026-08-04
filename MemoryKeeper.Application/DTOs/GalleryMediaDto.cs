@@ -17,4 +17,10 @@ public sealed class GalleryMediaDto
     public MediaType MediaType { get; init; }
 
     public bool IsFavorite { get; init; }
+
+    /// <summary>Remote thumbnail URL (TC-Backend). Optional.</summary>
+    public string? ThumbnailUrl { get; init; }
+
+    /// <summary>Remote preview URL (TC-Backend). Optional.</summary>
+    public string? PreviewUrl { get; init; }
 }

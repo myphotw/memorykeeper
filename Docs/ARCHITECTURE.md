@@ -34,17 +34,20 @@ MemoryKeeper.sln
 
 주요 서비스 예:
 
-- Import / Storage / Place / Tag / PhotoDetail / Pending
-- MemorySearch / VisitRecordQuery / HomeDashboard / TravelRecords
-- SetupWizard, HomeLocation
+- Import (`MediaImportService` → Backend Upload) / Storage / Place / Tag / Pending
+- PhotoDetail (로컬 write) / TravelRecords / SetupWizard / HomeLocation
+- UploadMonitorService
+
+Gallery read / Search / Map / Timeline / Statistics: `IGalleryApiRepository` + App `GalleryBackendBridge`
 
 ### MemoryKeeper.Infrastructure
 
-- EF Core `MemoryKeeperDbContext`, Migrations, Repositories
+- EF Core `MemoryKeeperDbContext`, Migrations, Repositories (로컬 Place/Tag/write 유지)
+- API: `GalleryApiRepository`, `UploadApiRepository`, `UploadJobApiRepository`, `BaseApiClient`
 - File: Scanner, Hasher, Storage, `LocalFileAccessService`
 - Metadata extractor, Google `ILocationResolver`
 - `PrototypeMaintenanceService` (Backup/Restore/Reset)
-- DI: `AddInfrastructureServices()`, `AddMemoryKeeperDatabase(path)`
+- DI: `AddInfrastructureServices()`, `AddMemoryKeeperDatabase(path)`, `AddTcBackendApiClient`
 
 ### MemoryKeeper.App
 
@@ -106,9 +109,12 @@ Infrastructure (EF, File IO, HTTP)
 | 포트 | 현재 구현 | 향후 |
 |------|-----------|------|
 | `IFileAccessService` | `LocalFileAccessService` | Server/NAS API 구현으로 DI 교체 |
-| `IMemorySearchAnalyzer` | `RuleBasedMemorySearchAnalyzer` | AI Analyzer |
+| `IGalleryApiRepository` | `GalleryApiRepository` | Backend 확장 |
+| `IUploadApiRepository` / `IUploadJobApiRepository` | Upload / Job API | Backend 확장 |
 | `ILocationResolver` | `GoogleLocationResolver` | 다른 Geocoder |
 | `IStorageProvider` | `LocalStorageProvider` | 추가 Provider |
+
+제품 버전: **2.0.0** (`VERSION`, `CHANGELOG.md`)
 
 ---
 

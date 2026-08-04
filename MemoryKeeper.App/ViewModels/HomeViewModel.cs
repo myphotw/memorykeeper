@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using MemoryKeeper.App.Models;
 using MemoryKeeper.App.Services;
 using MemoryKeeper.Application.DTOs;
+using MemoryKeeper.Application.Interfaces;
 using MemoryKeeper.Application.Services;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI.Dispatching;
@@ -15,7 +16,7 @@ public partial class HomeViewModel : ObservableObject
 {
     private static readonly TimeSpan HeroInterval = TimeSpan.FromSeconds(4);
 
-    private readonly HomeDashboardService _dashboardService;
+    private readonly IGalleryApiRepository _galleryApiRepository;
     private readonly IThumbnailService _thumbnailService;
     private readonly IPlaceFocusState _placeFocusState;
     private readonly IPhotoNavigationState _photoNavigationState;
@@ -128,14 +129,14 @@ public partial class HomeViewModel : ObservableObject
     public event EventHandler? OpenSettingsRequested;
 
     public HomeViewModel(
-        HomeDashboardService dashboardService,
+        IGalleryApiRepository galleryApiRepository,
         IThumbnailService thumbnailService,
         IPlaceFocusState placeFocusState,
         IPhotoNavigationState photoNavigationState,
         ITravelRecordsNavigationState travelRecordsNavigationState,
         ILogger<HomeViewModel> logger)
     {
-        _dashboardService = dashboardService;
+        _galleryApiRepository = galleryApiRepository;
         _thumbnailService = thumbnailService;
         _placeFocusState = placeFocusState;
         _photoNavigationState = photoNavigationState;
@@ -166,9 +167,20 @@ public partial class HomeViewModel : ObservableObject
         // cannot leave the home ProgressRing spinning forever.
         await RunBusyAsync(async () =>
         {
-            var dashboard = await _dashboardService.GetDashboardAsync(token);
-            ApplyDashboard(dashboard);
-            StatusMessage = "오늘, 다시 보고 싶은 추억을 발견해 보세요.";
+            ClearLocalDashboardSections();
+            try
+            {
+                Statistics = await GalleryBackendBridge.GetStatisticsAsync(_galleryApiRepository, token);
+                StatusMessage = "Backend 통계를 불러왔습니다.";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Backend statistics failed.");
+                Statistics = new DashboardStatisticsDto();
+                StatusMessage = $"통계를 불러오지 못했습니다. {ex.Message}";
+            }
+
+            UpdateStatisticsSummary();
         });
 
         if (token.IsCancellationRequested)
@@ -377,6 +389,38 @@ public partial class HomeViewModel : ObservableObject
     {
         StopHeroTimer();
         CancelThumbnailLoading();
+    }
+
+    private void ClearLocalDashboardSections()
+    {
+        HeroMemories = [];
+        HeroIndicators = [];
+        TodayMemories = [];
+        RecentVisits = [];
+        Favorites = [];
+        RecentImports = [];
+        RecentQueries = [];
+        PendingSummary = new PendingSummaryDto();
+        PendingSummaryText = string.Empty;
+        PendingLatestImportedText = string.Empty;
+        PendingThumbnailImage = null;
+        StatisticsSummaryText = "시간을 따라 여행을 다시 만나 보세요.";
+        HasHero = false;
+        HasHeroCarousel = false;
+        HasTodayMemories = false;
+        HasRecentVisits = false;
+        HasFavorites = false;
+        HasRecentImports = false;
+        HasPending = false;
+        HasRecentQueries = false;
+        _heroIndex = 0;
+        SetHeroIndex(0);
+    }
+
+    private void UpdateStatisticsSummary()
+    {
+        StatisticsSummaryText =
+            $"사진 {Statistics.PhotoCount} · 장소 {Statistics.PlaceCount} · 즐겨찾기 {Statistics.FavoriteCount}";
     }
 
     private void ApplyDashboard(HomeDashboardDto dashboard)

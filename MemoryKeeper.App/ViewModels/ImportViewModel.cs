@@ -4,6 +4,7 @@ using MemoryKeeper.App.Diagnostics;
 using MemoryKeeper.App.Services;
 using MemoryKeeper.Application.Diagnostics;
 using MemoryKeeper.Application.DTOs;
+using MemoryKeeper.Application.DTOs.Upload;
 using MemoryKeeper.Application.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -11,6 +12,10 @@ using Microsoft.UI.Xaml;
 
 namespace MemoryKeeper.App.ViewModels;
 
+/// <summary>
+/// Import UI + progress (M8). There is no separate ImportProgressViewModel;
+/// backend WAITING/PROCESSING/COMPLETED/FAILED progress lives here.
+/// </summary>
 public partial class ImportViewModel : ObservableObject
 {
     private readonly IServiceScopeFactory _scopeFactory;
@@ -54,6 +59,25 @@ public partial class ImportViewModel : ObservableObject
     [ObservableProperty]
     private string currentStage = string.Empty;
 
+    [ObservableProperty]
+    private string backendStatus = string.Empty;
+
+    [ObservableProperty]
+    private int backendProgress;
+
+    [ObservableProperty]
+    private string currentPlugin = string.Empty;
+
+    [ObservableProperty]
+    private string? lastJobId;
+
+    [ObservableProperty]
+    private string? failureMessage;
+
+    /// <summary>Retry prepared after FAILED. Retry UI is not wired yet (M8).</summary>
+    [ObservableProperty]
+    private bool isRetryReady;
+
     public string TotalCountText => $"전체 {TotalCount}";
 
     public string ProcessedCountText => $"처리 {ProcessedCount}";
@@ -65,6 +89,13 @@ public partial class ImportViewModel : ObservableObject
     public string FailedCountText => $"실패 {FailedCount}";
 
     public string ProgressCountText => TotalCount <= 0 ? string.Empty : $"{ProcessedCount} / {TotalCount}";
+
+    public string BackendProgressText =>
+        string.IsNullOrWhiteSpace(BackendStatus)
+            ? string.Empty
+            : string.IsNullOrWhiteSpace(CurrentPlugin)
+                ? $"{BackendStatus} · {BackendProgress}%"
+                : $"{BackendStatus} · {BackendProgress}% · {CurrentPlugin}";
 
     public event EventHandler? ImportCompletedNavigateHome;
 
@@ -140,7 +171,7 @@ public partial class ImportViewModel : ObservableObject
             _importCancellation = new CancellationTokenSource();
             var progress = new Progress<ImportProgressDto>(ApplyProgress);
 
-            StatusMessage = "사진등록을 실행 중입니다...";
+            StatusMessage = "Backend Upload 실행 중...";
             var result = await mediaImportService.ImportAsync(
                 new MediaImportRequest
                 {
@@ -150,20 +181,58 @@ public partial class ImportViewModel : ObservableObject
                 progress,
                 _importCancellation.Token);
 
+            if (result.FailedCount > 0)
+            {
+                var failed = result.Items.LastOrDefault(item =>
+                    !string.IsNullOrWhiteSpace(item.ErrorMessage));
+                FailureMessage = failed?.ErrorMessage
+                    ?? $"사진등록 실패 {result.FailedCount}건.";
+                LastJobId = failed?.ContentHash;
+                IsRetryReady = true;
+                CurrentStage = UploadJobStatusDto.Failed;
+                BackendStatus = UploadJobStatusDto.Failed;
+                StatusMessage = FailureMessage;
+                _logger.LogWarning(
+                    "[Photo Register] Import FAILED. Failed={Failed}, JobId={JobId}, RetryReady={RetryReady}",
+                    result.FailedCount,
+                    LastJobId,
+                    IsRetryReady);
+                await UserFeedback.ShowInfoAsync(
+                    HostXamlRoot,
+                    "사진 등록 실패",
+                    FailureMessage);
+                return;
+            }
+
+            IsRetryReady = false;
+            FailureMessage = null;
+            CurrentStage = UploadJobStatusDto.Completed;
+            BackendStatus = UploadJobStatusDto.Completed;
             StatusMessage =
-                $"사진등록 완료. 전체 {result.ScannedCount}, 등록 {result.ImportedCount}, 중복 {result.DuplicateCount}, 실패 {result.FailedCount}";
-            CurrentStage = "완료";
+                $"사진등록 완료. 전체 {result.ScannedCount}, 등록 {result.ImportedCount}, 실패 {result.FailedCount}";
 
             _logger.LogInformation(
-                "[Photo Register] Gallery Refresh, Home Refresh, VisitMap Refresh are available after navigating to those screens.");
+                "[Photo Register] COMPLETED — Gallery Reload via catalog invalidation.");
 
             await UserFeedback.ShowInfoAsync(
                 HostXamlRoot,
                 "사진 등록 완료",
-                "사진 등록이 완료되었습니다.");
+                "사진 등록이 완료되었습니다. 갤러리가 갱신됩니다.");
             ImportCompletedNavigateHome?.Invoke(this, EventArgs.Empty);
         });
     }
+
+    /// <summary>
+    /// Retry entry point prepared for FAILED jobs. Not bound to UI yet (M8).
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanRetryImport))]
+    private Task RetryImportAsync()
+    {
+        StatusMessage = "Retry는 준비되었습니다. UI는 아직 연결되지 않았습니다.";
+        return Task.CompletedTask;
+    }
+
+    private bool CanRetryImport() => IsRetryReady && !IsBusy;
 
     [RelayCommand]
     private void CancelImport()
@@ -198,13 +267,31 @@ public partial class ImportViewModel : ObservableObject
         DuplicateCount = progress.DuplicateCount;
         FailedCount = progress.FailedCount;
         CurrentFileName = progress.CurrentFileName ?? string.Empty;
+        BackendStatus = progress.BackendStatus ?? string.Empty;
+        BackendProgress = progress.BackendProgress ?? 0;
+        CurrentPlugin = progress.CurrentPlugin ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(progress.JobId))
+        {
+            LastJobId = progress.JobId;
+        }
+
+        if (progress.IsFailed)
+        {
+            FailureMessage = progress.LastError;
+            IsRetryReady = true;
+        }
+
         CurrentStage = string.IsNullOrWhiteSpace(progress.CurrentStage)
-            ? (string.IsNullOrWhiteSpace(progress.CurrentFileName) ? "사진 분석 중..." : "처리 중...")
+            ? (string.IsNullOrWhiteSpace(BackendStatus) ? "처리 중..." : BackendStatus)
             : progress.CurrentStage;
         ProgressValue = progress.ProgressRatio;
-        StatusMessage = string.IsNullOrWhiteSpace(CurrentFileName)
-            ? CurrentStage
-            : $"{CurrentStage} · {CurrentFileName} ({ProgressCountText})";
+        StatusMessage = string.IsNullOrWhiteSpace(BackendProgressText)
+            ? (string.IsNullOrWhiteSpace(CurrentFileName)
+                ? CurrentStage
+                : $"{CurrentStage} · {CurrentFileName} ({ProgressCountText})")
+            : string.IsNullOrWhiteSpace(CurrentFileName)
+                ? BackendProgressText
+                : $"{BackendProgressText} · {CurrentFileName} ({ProgressCountText})";
         NotifyProgressTexts();
     }
 
@@ -218,6 +305,12 @@ public partial class ImportViewModel : ObservableObject
         CurrentFileName = string.Empty;
         CurrentStage = string.Empty;
         ProgressValue = 0;
+        BackendStatus = string.Empty;
+        BackendProgress = 0;
+        CurrentPlugin = string.Empty;
+        LastJobId = null;
+        FailureMessage = null;
+        IsRetryReady = false;
         NotifyProgressTexts();
     }
 
@@ -229,7 +322,13 @@ public partial class ImportViewModel : ObservableObject
         OnPropertyChanged(nameof(DuplicateCountText));
         OnPropertyChanged(nameof(FailedCountText));
         OnPropertyChanged(nameof(ProgressCountText));
+        OnPropertyChanged(nameof(BackendProgressText));
+        RetryImportCommand.NotifyCanExecuteChanged();
     }
+
+    partial void OnIsRetryReadyChanged(bool value) => RetryImportCommand.NotifyCanExecuteChanged();
+
+    partial void OnIsBusyChanged(bool value) => RetryImportCommand.NotifyCanExecuteChanged();
 
     private async Task RunBusyAsync(Func<Task> action, bool markBusy = true)
     {
@@ -255,6 +354,8 @@ public partial class ImportViewModel : ObservableObject
         {
             _logger.LogError(ex, "Photo register UI operation failed.");
             StatusMessage = "사진등록 중 오류가 발생했습니다.";
+            FailureMessage = ex.Message;
+            IsRetryReady = true;
             ErrorDialog.Show(
                 ErrorReportSource.Import,
                 "Memory Keeper — 사진등록 오류",

@@ -47,6 +47,9 @@ public interface IPhotoNavigationState
     bool TryGetNext(out Guid mediaId);
 
     void RemoveFromPlaylist(Guid mediaId);
+
+    /// <summary>Updates playlist without opening a page (e.g. after Gallery reload).</summary>
+    void SetPlaylist(IReadOnlyList<Guid> playlist);
 }
 
 public sealed class PhotoNavigationState : IPhotoNavigationState
@@ -150,6 +153,11 @@ public sealed class PhotoNavigationState : IPhotoNavigationState
     }
 
     public void RemoveFromPlaylist(Guid mediaId) => _playlist.RemoveAll(id => id == mediaId);
+
+    public void SetPlaylist(IReadOnlyList<Guid> playlist)
+    {
+        _playlist = playlist?.Where(id => id != Guid.Empty).Distinct().ToList() ?? [];
+    }
 
     private void ApplyPlaylist(Guid mediaId, IReadOnlyList<Guid> playlist)
     {

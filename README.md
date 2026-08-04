@@ -258,15 +258,14 @@ MemoryKeeper
 
 # 9. Project Status
 
-**Current Status (2026-08-04): Version 1.0.0**
+**Current Status (2026-08-05): Version 2.0.0**
 
-- MK-052까지 핵심 기능 완료 + V1 UI/UX 정리
-- Unit Tests: **118/118** 통과
-- Release/Debug x64 Build: 성공
-- 상세: `TRANSFER_INFO.md`, `Docs/CURRENT_STATUS.md`
+- TC-Backend V1.0 Gallery / Upload API 연동 (M2–M8)
+- M9 Release Cleanup: Deprecated SQLite UI 서비스·UseBackendUpload 제거
+- Import → Backend Upload only; Gallery/Search/Map/Timeline/Statistics → Backend API
+- 상세: `CHANGELOG.md`, `Docs/MemoryKeeper_V2_Migration.md`, `Docs/ARCHITECTURE.md`
 
 **Next Step:**
 
-- 실사진 E2E 수동 검증 (위치정보 · 제조사별 Import · V1 화면 스모크)
+- Import / Gallery / Search / Timeline / Statistics / Map E2E 수동 검증
 - Publish 산출물 재생성 (`Docs/NEXT_STEP_GUIDE.md`)
-- V1.x 선택 개선 (Undo, 일괄 작업 등)

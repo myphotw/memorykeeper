@@ -5,6 +5,10 @@ using Microsoft.EntityFrameworkCore;
 
 namespace MemoryKeeper.Infrastructure.Repositories;
 
+/// <summary>
+/// Local SQLite media repository (place/tag/pending/write paths).
+/// Gallery list/detail reads use <c>IGalleryApiRepository</c>.
+/// </summary>
 public sealed class MediaRepository : IMediaRepository
 {
     private readonly MemoryKeeperDbContext _dbContext;

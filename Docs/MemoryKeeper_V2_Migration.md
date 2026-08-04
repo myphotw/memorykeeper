@@ -2,12 +2,13 @@
 
 | 항목 | 내용 |
 |------|------|
-| 문서 버전 | 0.1 (설계 전용) |
+| 문서 버전 | 2.0.0 (M9 Release Cleanup 반영) |
 | 작성일 | 2026-08-04 |
-| 대상 | MemoryKeeper **Version 2** |
+| 최종 갱신 | 2026-08-05 |
+| 대상 | MemoryKeeper **Version 2.0.0** |
 | Backend | **TC-Backend Version 1.0.0 Freeze** (`D:\999. etc\tc-backend`) |
-| 이번 단계 | 분석 · 설계 · Repository 교체 **준비** (구현 없음) |
-| 비고 | 기존 UI / MVVM / 기능 **유지**. Repository 교체·API 연결·기능 삭제는 **후속 단계** |
+| 상태 | M1–M9 완료 — Gallery/Upload API 연동 + Deprecated 정리 |
+| 비고 | UI/MVVM 유지. PhotoDetail 로컬 write · MediaRepository는 컴파일/기능상 유지 |
 
 ---
 
@@ -569,3 +570,23 @@ Import (파일 선택만)
 | 날짜 | 내용 |
 |------|------|
 | 2026-08-04 | V2 전환 설계 초안 (분석·대응표·구조만, 구현 없음) |
+| 2026-08-05 | M2–M8 구현 완료 후 **M9 Release Cleanup**: Deprecated SQLite UI 서비스·UseBackendUpload·SQLite Import 제거. Version **2.0.0**. 유지: Gallery/Upload/UploadJob API, UploadMonitor, GalleryBackendBridge, PhotoDetailService(write), MediaRepository |
+
+---
+
+## 14. M9 최종 정리 (2026-08-05)
+
+### 제거됨
+- `BackendUploadOptions` / `UseBackendUpload`
+- SQLite Import pipeline (`MediaImportService` Backend-only)
+- `MemorySearchService`, `VisitRecordQueryService`, `GalleryHierarchyService`, `HomeDashboardService`
+- `IMemorySearchAnalyzer`, `RuleBasedMemorySearchAnalyzer`
+
+### 유지 (컴파일·로컬 write 의존)
+- `PhotoDetailService` (favorite/place/memo/delete)
+- `MediaRepository` / 기타 SQLite repos (Place/Tag/Pending 등)
+- Watcher
+
+### V2 핵심 스택
+- `GalleryApiRepository`, `UploadApiRepository`, `UploadJobApiRepository`
+- `UploadMonitorService`, `GalleryBackendBridge`

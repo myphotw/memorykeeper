@@ -7,15 +7,15 @@ using MemoryKeeper.App.Services;
 using MemoryKeeper.Application;
 using MemoryKeeper.Application.DTOs;
 using MemoryKeeper.Application.Interfaces;
-using MemoryKeeper.Application.Services;
+using MemoryKeeper.Infrastructure.Services.Api;
 using Microsoft.Extensions.Logging;
 
 namespace MemoryKeeper.App.ViewModels;
 
 public partial class PlaceMapViewModel : ObservableObject
 {
-    private readonly MemorySearchService _memorySearchService;
-    private readonly PlaceService _placeService;
+    private readonly IGalleryApiRepository _galleryApiRepository;
+    private readonly BaseApiClient _apiClient;
     private readonly ISettingRepository _settingRepository;
     private readonly IPlaceFocusState _placeFocusState;
     private readonly IPhotoNavigationState _photoNavigationState;
@@ -51,15 +51,15 @@ public partial class PlaceMapViewModel : ObservableObject
     private bool isMapReady;
 
     public PlaceMapViewModel(
-        MemorySearchService memorySearchService,
-        PlaceService placeService,
+        IGalleryApiRepository galleryApiRepository,
+        BaseApiClient apiClient,
         ISettingRepository settingRepository,
         IPlaceFocusState placeFocusState,
         IPhotoNavigationState photoNavigationState,
         ILogger<PlaceMapViewModel> logger)
     {
-        _memorySearchService = memorySearchService;
-        _placeService = placeService;
+        _galleryApiRepository = galleryApiRepository;
+        _apiClient = apiClient;
         _settingRepository = settingRepository;
         _placeFocusState = placeFocusState;
         _photoNavigationState = photoNavigationState;
@@ -144,6 +144,19 @@ public partial class PlaceMapViewModel : ObservableObject
     [RelayCommand]
     private async Task LoadAsync()
     {
+        try
+        {
+            var years = await GalleryBackendBridge.GetTimelineYearsAsync(_galleryApiRepository);
+            if (years.Count > 0)
+            {
+                AvailableYears = new ObservableCollection<int>(years);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Map timeline years failed.");
+        }
+
         await SearchAsync();
     }
 
@@ -152,22 +165,35 @@ public partial class PlaceMapViewModel : ObservableObject
     {
         await RunBusyAsync(async () =>
         {
-            var searchResults = await _memorySearchService.SearchAsync(new MemorySearchRequest
+            List<PlaceMapItem> items;
+            try
             {
-                Year = SelectedYear
-            });
-
-            var placeCoordinates = (await _placeService.GetPlaceListAsync())
-                .ToDictionary(place => place.Id);
-
-            var items = searchResults.Items
-                .Where(result => placeCoordinates.ContainsKey(result.PlaceId))
-                .Select(result =>
-                {
-                    var place = placeCoordinates[result.PlaceId];
-                    return new PlaceMapItem(result, place.Latitude, place.Longitude);
-                })
-                .ToList();
+                var map = await _galleryApiRepository.GetMapAsync(year: SelectedYear);
+                items = GalleryBackendBridge.GroupMarkersToVisitPlaces(map.Items, _apiClient.ApiBaseUrl)
+                    .Select(place => new PlaceMapItem(
+                        new MemorySearchResult
+                        {
+                            PlaceId = place.PlaceId,
+                            PlaceName = place.PlaceName,
+                            Country = place.Country,
+                            City = place.City,
+                            PhotoCount = place.PhotoCount,
+                            VisitRecordCount = place.VisitRecordCount,
+                            FavoriteCount = place.FavoriteCount,
+                            RepresentativeMediaId = place.RepresentativeMediaId,
+                            FirstCapturedDate = place.FirstCapturedDate,
+                            LastCapturedDate = place.LastCapturedDate,
+                        },
+                        place.Latitude,
+                        place.Longitude))
+                    .ToList();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Backend map failed.");
+                StatusMessage = $"지도를 불러오지 못했습니다. {ex.Message}";
+                items = [];
+            }
 
             Places = new ObservableCollection<PlaceMapItem>(items);
 

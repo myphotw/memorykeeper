@@ -1,7 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using MemoryKeeper.Application;
 using MemoryKeeper.Application.DTOs;
-using MemoryKeeper.Application.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media.Imaging;
 
@@ -73,7 +73,7 @@ public partial class VisitRecordPlaceItem : ObservableObject
         || ((Place.LastCapturedDate ?? Place.FirstCapturedDate)?.ToLocalTime().Year == year);
 
     public VisitRecordPlaceItem ForYear(int year) =>
-        new(VisitRecordQueryService.ScopeToYear(Place, year), year);
+        new(VisitRecordPlaceScoping.ScopeToYear(Place, year), year);
 
     [ObservableProperty]
     private BitmapImage? thumbnailImage;

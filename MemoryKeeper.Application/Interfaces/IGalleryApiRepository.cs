@@ -31,6 +31,9 @@ public interface IGalleryApiRepository
         int page = 1,
         int pageSize = 20,
         string sort = "capture_datetime_desc",
+        string? province = null,
+        string? district = null,
+        string? place = null,
         CancellationToken cancellationToken = default);
 
     Task<GalleryDtos.MapResultDto> GetMapAsync(

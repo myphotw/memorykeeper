@@ -4,8 +4,10 @@ using CommunityToolkit.Mvvm.Input;
 using MemoryKeeper.App.Diagnostics;
 using MemoryKeeper.App.Models;
 using MemoryKeeper.App.Services;
+using MemoryKeeper.Application;
 using MemoryKeeper.Application.DTOs;
-using MemoryKeeper.Application.Services;
+using MemoryKeeper.Application.Interfaces;
+using MemoryKeeper.Infrastructure.Services.Api;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml.Media.Imaging;
@@ -14,8 +16,10 @@ namespace MemoryKeeper.App.ViewModels;
 
 public partial class GalleryViewModel : ObservableObject
 {
-    private readonly GalleryHierarchyService _hierarchyService;
-    private readonly MediaService _mediaService;
+    public const int DefaultPageSize = 50;
+
+    private readonly IGalleryApiRepository _galleryApiRepository;
+    private readonly BaseApiClient _apiClient;
     private readonly IThumbnailService _thumbnailService;
     private readonly IPhotoNavigationState _photoNavigationState;
     private readonly IGalleryFocusState _galleryFocusState;
@@ -23,6 +27,10 @@ public partial class GalleryViewModel : ObservableObject
     private readonly DispatcherQueue? _dispatcherQueue;
     private CancellationTokenSource? _thumbnailCts;
     private CancellationTokenSource? _searchCts;
+
+    private int _currentPage = 1;
+    private int _totalCount;
+    private GalleryTreeNode? _pagingNode;
 
     [ObservableProperty]
     private ObservableCollection<GalleryTreeNode> treeRoots = [];
@@ -59,6 +67,15 @@ public partial class GalleryViewModel : ObservableObject
 
     public bool IsPlaceBrowseMode => BrowseModeIndex == 1;
 
+    /// <summary>Infinite-scroll prep: more pages available from Backend.</summary>
+    public bool CanLoadMore => Items.Count < _totalCount;
+
+    public int CurrentPage => _currentPage;
+
+    public int PageSize => DefaultPageSize;
+
+    public int TotalCount => _totalCount;
+
     public event EventHandler? BackRequested;
 
     public event EventHandler<Guid>? ScrollToMediaRequested;
@@ -66,16 +83,16 @@ public partial class GalleryViewModel : ObservableObject
     public event EventHandler<double>? ScrollOffsetRequested;
 
     public GalleryViewModel(
-        GalleryHierarchyService hierarchyService,
-        MediaService mediaService,
+        IGalleryApiRepository galleryApiRepository,
+        BaseApiClient apiClient,
         IThumbnailService thumbnailService,
         IPhotoNavigationState photoNavigationState,
         IGalleryFocusState galleryFocusState,
         ILogger<GalleryViewModel> logger)
     {
         GalleryDiagnostics.WriteStep("GalleryViewModel Created");
-        _hierarchyService = hierarchyService;
-        _mediaService = mediaService;
+        _galleryApiRepository = galleryApiRepository;
+        _apiClient = apiClient;
         _thumbnailService = thumbnailService;
         _photoNavigationState = photoNavigationState;
         _galleryFocusState = galleryFocusState;
@@ -258,8 +275,9 @@ public partial class GalleryViewModel : ObservableObject
 
     private async Task RebuildYearTreeRootsAsync()
     {
-        var summary = await _mediaService.GetGallerySidebarSummaryAsync();
-        var years = await _hierarchyService.GetYearsAsync();
+        // Sidebar counts from Backend gallery list/search (not SQLite).
+        var allPage = await _galleryApiRepository.GetPhotosAsync(page: 1, pageSize: 1);
+        var favoritePage = await _galleryApiRepository.SearchAsync(favorite: true, page: 1, pageSize: 1);
 
         var roots = new List<GalleryTreeNode>
         {
@@ -267,48 +285,20 @@ public partial class GalleryViewModel : ObservableObject
             {
                 Kind = GalleryTreeNodeKind.All,
                 Title = "전체",
-                Count = summary.TotalCount,
+                Count = allPage.TotalCount,
                 Depth = 0,
                 CanExpand = false,
                 IsSelected = true
+            },
+            new() { Kind = GalleryTreeNodeKind.Separator, Title = "—", Depth = 0 },
+            new()
+            {
+                Kind = GalleryTreeNodeKind.Favorites,
+                Title = "즐겨찾기",
+                Count = favoritePage.TotalCount,
+                Depth = 0
             }
         };
-
-        foreach (var year in years)
-        {
-            roots.Add(new GalleryTreeNode
-            {
-                Kind = GalleryTreeNodeKind.Year,
-                Year = year.Year,
-                Title = year.Year.ToString(),
-                Count = year.Count,
-                Depth = 0,
-                CanExpand = true
-            });
-        }
-
-        roots.Add(new GalleryTreeNode { Kind = GalleryTreeNodeKind.Separator, Title = "—", Depth = 0 });
-        roots.Add(new GalleryTreeNode
-        {
-            Kind = GalleryTreeNodeKind.Favorites,
-            Title = "즐겨찾기",
-            Count = summary.FavoriteCount,
-            Depth = 0
-        });
-        roots.Add(new GalleryTreeNode
-        {
-            Kind = GalleryTreeNodeKind.Recent,
-            Title = "최근 등록",
-            Count = summary.RecentCount,
-            Depth = 0
-        });
-        roots.Add(new GalleryTreeNode
-        {
-            Kind = GalleryTreeNodeKind.Pending,
-            Title = "미완성 추억",
-            Count = summary.PendingCount,
-            Depth = 0
-        });
 
         TreeRoots = new ObservableCollection<GalleryTreeNode>(roots);
         RebuildVisibleTree();
@@ -316,21 +306,11 @@ public partial class GalleryViewModel : ObservableObject
 
     private async Task RebuildPlaceTreeRootsAsync()
     {
-        var places = await _hierarchyService.GetPlaceBrowseRootsAsync(
-            string.IsNullOrWhiteSpace(SearchText) ? null : SearchText.Trim());
-        var roots = places.Select(place => new GalleryTreeNode
-        {
-            Kind = GalleryTreeNodeKind.PlaceBrowse,
-            PlaceId = place.PlaceId,
-            PlaceType = place.PlaceType,
-            Title = place.Title,
-            Count = place.Count,
-            Depth = 0,
-            CanExpand = true
-        }).ToList();
-
-        TreeRoots = new ObservableCollection<GalleryTreeNode>(roots);
+        // Place browse remains available in UI; Backend V1.0 has no place-tree API.
+        // Keep empty roots rather than SQLite hierarchy for Gallery photo source consistency.
+        TreeRoots = new ObservableCollection<GalleryTreeNode>();
         RebuildVisibleTree();
+        await Task.CompletedTask;
     }
 
     private async Task EnsureChildrenAsync(GalleryTreeNode node)
@@ -340,100 +320,13 @@ public partial class GalleryViewModel : ObservableObject
             return;
         }
 
+        // V2: Gallery photo source is Backend API; SQLite hierarchy expansion removed.
         node.IsBusy = true;
         try
         {
             node.Children.Clear();
-            switch (node.Kind)
-            {
-                case GalleryTreeNodeKind.Year when node.Year is int year:
-                {
-                    var countries = await _hierarchyService.GetCountriesAsync(year);
-                    foreach (var country in countries)
-                    {
-                        node.Children.Add(new GalleryTreeNode
-                        {
-                            Kind = country.IsUnclassified
-                                ? GalleryTreeNodeKind.Unclassified
-                                : GalleryTreeNodeKind.Country,
-                            Year = year,
-                            Country = country.Title,
-                            Title = country.Title,
-                            Count = country.Count,
-                            Depth = node.Depth + 1,
-                            CanExpand = !country.IsUnclassified
-                        });
-                    }
-
-                    break;
-                }
-                case GalleryTreeNodeKind.Country when node.Year is int year && !string.IsNullOrWhiteSpace(node.Country):
-                {
-                    var cities = await _hierarchyService.GetCitiesAsync(year, node.Country);
-                    foreach (var city in cities)
-                    {
-                        node.Children.Add(new GalleryTreeNode
-                        {
-                            Kind = GalleryTreeNodeKind.City,
-                            Year = year,
-                            Country = node.Country,
-                            City = city.Title,
-                            Title = city.Title,
-                            Count = city.Count,
-                            Depth = node.Depth + 1,
-                            CanExpand = true
-                        });
-                    }
-
-                    break;
-                }
-                case GalleryTreeNodeKind.City
-                    when node.Year is int year
-                         && !string.IsNullOrWhiteSpace(node.Country)
-                         && !string.IsNullOrWhiteSpace(node.City):
-                {
-                    var places = await _hierarchyService.GetPlacesAsync(year, node.Country, node.City);
-                    foreach (var place in places)
-                    {
-                        node.Children.Add(new GalleryTreeNode
-                        {
-                            Kind = GalleryTreeNodeKind.Place,
-                            Year = year,
-                            Country = node.Country,
-                            City = node.City,
-                            PlaceId = place.PlaceId,
-                            PlaceType = place.PlaceType,
-                            Title = place.Title,
-                            Count = place.Count,
-                            Depth = node.Depth + 1,
-                            CanExpand = false
-                        });
-                    }
-
-                    break;
-                }
-                case GalleryTreeNodeKind.PlaceBrowse when node.PlaceId is Guid placeId:
-                {
-                    var years = await _hierarchyService.GetYearsForPlaceAsync(placeId);
-                    foreach (var year in years)
-                    {
-                        node.Children.Add(new GalleryTreeNode
-                        {
-                            Kind = GalleryTreeNodeKind.PlaceYear,
-                            PlaceId = placeId,
-                            Year = year.Year,
-                            Title = year.Title,
-                            Count = year.Count,
-                            Depth = node.Depth + 1,
-                            CanExpand = false
-                        });
-                    }
-
-                    break;
-                }
-            }
-
             node.ChildrenLoaded = true;
+            await Task.CompletedTask;
         }
         finally
         {
@@ -599,30 +492,111 @@ public partial class GalleryViewModel : ObservableObject
     private async Task QueryForNodeAsync(GalleryTreeNode node)
     {
         CancelThumbnailLoading();
-        var query = BuildQuery(node);
-        GalleryDiagnostics.WriteStep(
-            $"Gallery hierarchy query year={query.Year}, country={query.Country}, city={query.City}, place={query.PlaceId}, search={query.SearchText}");
+        _pagingNode = node;
+        _currentPage = 1;
+        GalleryDiagnostics.WriteStep($"Gallery API query node={node.Kind}, title={node.Title}");
 
-        IReadOnlyList<GalleryMediaDto> mediaItems;
         try
         {
-            mediaItems = await _hierarchyService.QueryAsync(query);
+            var page = await FetchPhotosPageAsync(node, page: 1);
+            _totalCount = page.TotalCount;
+            var galleryItems = page.Items
+                .Select(photo => new GalleryItem(GalleryBackendMapper.ToGalleryMedia(photo, _apiClient.ApiBaseUrl)))
+                .Where(item => item.MediaId != Guid.Empty)
+                .ToList();
+
+            Items = new ObservableCollection<GalleryItem>(galleryItems);
+            StatusMessage = galleryItems.Count == 0
+                ? "표시할 사진이 없습니다."
+                : $"{node.Title} · {galleryItems.Count}/{_totalCount}장";
+
+            _photoNavigationState.SetPlaylist(galleryItems.Select(i => i.MediaId).ToList());
+            _ = LoadThumbnailsAsync(galleryItems);
         }
         catch (Exception ex)
         {
-            GalleryDiagnostics.WriteException("GalleryHierarchyService.QueryAsync", ex);
+            GalleryDiagnostics.WriteException("IGalleryApiRepository.GetPhotosAsync", ex);
             Items = [];
+            _totalCount = 0;
             StatusMessage = "사진을 불러오는 중 오류가 발생했습니다.";
             throw;
         }
+    }
 
-        var galleryItems = mediaItems.Select(media => new GalleryItem(media)).ToList();
-        Items = new ObservableCollection<GalleryItem>(galleryItems);
-        StatusMessage = galleryItems.Count == 0
-            ? "표시할 사진이 없습니다."
-            : $"{node.Title} · {galleryItems.Count}장";
+    /// <summary>
+    /// Infinite-scroll preparation: loads the next Backend page and appends items.
+    /// Not wired to Gallery UI in this step.
+    /// </summary>
+    [RelayCommand]
+    private async Task LoadMoreAsync()
+    {
+        if (!CanLoadMore || _pagingNode is null || IsBusy)
+        {
+            return;
+        }
 
-        _ = LoadThumbnailsAsync(galleryItems);
+        await RunBusyAsync(async () =>
+        {
+            var nextPage = _currentPage + 1;
+            var page = await FetchPhotosPageAsync(_pagingNode, nextPage);
+            _currentPage = nextPage;
+            _totalCount = page.TotalCount;
+
+            var appended = new List<GalleryItem>();
+            foreach (var photo in page.Items)
+            {
+                var item = new GalleryItem(GalleryBackendMapper.ToGalleryMedia(photo, _apiClient.ApiBaseUrl));
+                if (item.MediaId == Guid.Empty)
+                {
+                    continue;
+                }
+
+                Items.Add(item);
+                appended.Add(item);
+            }
+
+            StatusMessage = $"{_pagingNode.Title} · {Items.Count}/{_totalCount}장";
+            _photoNavigationState.SetPlaylist(Items.Select(i => i.MediaId).ToList());
+            _ = LoadThumbnailsAsync(appended);
+        }, "LoadMoreAsync");
+    }
+
+    private Task<Application.DTOs.PagedResult<Application.DTOs.Gallery.PhotoDto>> FetchPhotosPageAsync(
+        GalleryTreeNode node,
+        int page)
+    {
+        var keyword = string.IsNullOrWhiteSpace(SearchText) ? null : SearchText.Trim();
+        return node.Kind switch
+        {
+            GalleryTreeNodeKind.Favorites => _galleryApiRepository.SearchAsync(
+                favorite: true,
+                keyword: keyword,
+                page: page,
+                pageSize: DefaultPageSize),
+            GalleryTreeNodeKind.Year when node.Year is int year => _galleryApiRepository.SearchAsync(
+                year: year,
+                keyword: keyword,
+                page: page,
+                pageSize: DefaultPageSize),
+            GalleryTreeNodeKind.Country => _galleryApiRepository.SearchAsync(
+                country: node.Country,
+                keyword: keyword,
+                page: page,
+                pageSize: DefaultPageSize),
+            GalleryTreeNodeKind.City => _galleryApiRepository.SearchAsync(
+                country: node.Country,
+                city: node.City,
+                keyword: keyword,
+                page: page,
+                pageSize: DefaultPageSize),
+            _ when !string.IsNullOrWhiteSpace(keyword) => _galleryApiRepository.SearchAsync(
+                keyword: keyword,
+                page: page,
+                pageSize: DefaultPageSize),
+            _ => _galleryApiRepository.GetPhotosAsync(
+                page: page,
+                pageSize: DefaultPageSize),
+        };
     }
 
     private GalleryHierarchyQuery BuildQuery(GalleryTreeNode node) =>
@@ -672,7 +646,7 @@ public partial class GalleryViewModel : ObservableObject
                 break;
             case GalleryTreeNodeKind.Unclassified:
                 parts.Add(node.Year?.ToString() ?? "");
-                parts.Add(GalleryHierarchyService.UnclassifiedTitle);
+                parts.Add(LibraryConstants.UnclassifiedTitle);
                 break;
             case GalleryTreeNodeKind.Country:
                 parts.Add(node.Year?.ToString() ?? "");
@@ -734,7 +708,22 @@ public partial class GalleryViewModel : ObservableObject
                 item.IsThumbnailLoading = true;
                 try
                 {
-                    if (string.IsNullOrWhiteSpace(item.AbsoluteLibraryPath))
+                    var remoteUrl = item.Media.ThumbnailUrl
+                        ?? item.Media.PreviewUrl
+                        ?? (IsRemotePath(item.AbsoluteLibraryPath) ? item.AbsoluteLibraryPath : null);
+
+                    if (!string.IsNullOrWhiteSpace(remoteUrl))
+                    {
+                        var uri = new Uri(remoteUrl);
+                        await EnqueueAsync(() =>
+                        {
+                            item.ThumbnailImage = new BitmapImage(uri);
+                            item.HasThumbnail = true;
+                        });
+                        continue;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(item.AbsoluteLibraryPath) || !File.Exists(item.AbsoluteLibraryPath))
                     {
                         item.HasThumbnail = false;
                         continue;
@@ -776,6 +765,11 @@ public partial class GalleryViewModel : ObservableObject
             // expected on filter change
         }
     }
+
+    private static bool IsRemotePath(string? path) =>
+        !string.IsNullOrWhiteSpace(path)
+        && (path.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("https://", StringComparison.OrdinalIgnoreCase));
 
     public Task EnsureThumbnailAsync(GalleryItem item) => LoadThumbnailsAsync([item]);
 

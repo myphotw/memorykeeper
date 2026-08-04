@@ -11,6 +11,7 @@ using MemoryKeeper.Application.DTOs;
 using MemoryKeeper.Application.Interfaces;
 using MemoryKeeper.Application.Services;
 using MemoryKeeper.Domain.Entities;
+using MemoryKeeper.Infrastructure.Services.Api;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media.Imaging;
@@ -23,6 +24,8 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
     private const double DefaultMapPickRadius = 100;
 
     private readonly PhotoDetailService _photoDetailService;
+    private readonly IGalleryApiRepository _galleryApiRepository;
+    private readonly BaseApiClient _apiClient;
     private readonly PlaceService _placeService;
     private readonly PlacePickerService _placePickerService;
     private readonly MediaPlaceAssignmentService _mediaPlaceAssignmentService;
@@ -155,6 +158,8 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
 
     public PhotoDetailViewModel(
         PhotoDetailService photoDetailService,
+        IGalleryApiRepository galleryApiRepository,
+        BaseApiClient apiClient,
         PlaceService placeService,
         PlacePickerService placePickerService,
         MediaPlaceAssignmentService mediaPlaceAssignmentService,
@@ -169,6 +174,8 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
         ILogger<PhotoDetailViewModel> logger)
     {
         _photoDetailService = photoDetailService;
+        _galleryApiRepository = galleryApiRepository;
+        _apiClient = apiClient;
         _placeService = placeService;
         _placePickerService = placePickerService;
         _mediaPlaceAssignmentService = mediaPlaceAssignmentService;
@@ -232,7 +239,19 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
         ZoomFactor = 1.0f;
         await RunBusyAsync(async () =>
         {
-            var detail = await _photoDetailService.GetPhotoDetailAsync(mediaId);
+            PhotoDetailDto detail;
+            try
+            {
+                var apiDetail = await _galleryApiRepository.GetPhotoAsync(mediaId);
+                detail = GalleryBackendMapper.ToPhotoDetail(apiDetail, _apiClient.ApiBaseUrl);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Gallery API detail failed. MediaId={MediaId}", mediaId);
+                StatusMessage = $"사진 상세를 불러오지 못했습니다. {ex.Message}";
+                throw;
+            }
+
             _photoNavigationState.FocusMediaId = mediaId;
             await ApplyDetailAsync(detail);
             RefreshPlaylistUi();
@@ -309,7 +328,7 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
         }
         else
         {
-            _placeFocusState.FocusPlaceId = VisitRecordQueryService.UnclassifiedPlaceId;
+            _placeFocusState.FocusPlaceId = LibraryConstants.UnclassifiedPlaceId;
             _placeFocusState.PendingSearchText = null;
         }
 
@@ -1122,12 +1141,26 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
             ? Places.FirstOrDefault(place => place.Id == id)
             : null;
 
-        var imagePath = File.Exists(detail.AbsoluteLibraryPath)
-            ? detail.AbsoluteLibraryPath
-            : detail.OriginalPath;
-        PhotoImage = File.Exists(imagePath)
-            ? new BitmapImage(new Uri(imagePath))
-            : null;
+        var imagePath = detail.AbsoluteLibraryPath;
+        if (!string.IsNullOrWhiteSpace(imagePath)
+            && (imagePath.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+                || imagePath.StartsWith("https://", StringComparison.OrdinalIgnoreCase)))
+        {
+            PhotoImage = new BitmapImage(new Uri(imagePath));
+        }
+        else
+        {
+            var localPath = File.Exists(detail.AbsoluteLibraryPath)
+                ? detail.AbsoluteLibraryPath
+                : detail.OriginalPath;
+            PhotoImage = File.Exists(localPath)
+                ? new BitmapImage(new Uri(localPath))
+                : (!string.IsNullOrWhiteSpace(detail.OriginalPath)
+                   && (detail.OriginalPath.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+                       || detail.OriginalPath.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                    ? new BitmapImage(new Uri(detail.OriginalPath))
+                    : null);
+        }
 
         RelatedPhotos = new ObservableCollection<RelatedPhotoItem>(
             detail.RelatedPhotos.Select(photo => new RelatedPhotoItem(photo)));

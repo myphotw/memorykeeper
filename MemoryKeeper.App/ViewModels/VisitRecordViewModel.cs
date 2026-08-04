@@ -8,6 +8,7 @@ using MemoryKeeper.Application;
 using MemoryKeeper.Application.DTOs;
 using MemoryKeeper.Application.Interfaces;
 using MemoryKeeper.Application.Services;
+using MemoryKeeper.Infrastructure.Services.Api;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml.Media.Imaging;
@@ -23,8 +24,8 @@ public enum VisitRecordSortMode
 
 public partial class VisitRecordViewModel : ObservableObject
 {
-    private readonly VisitRecordQueryService _visitRecordQueryService;
-    private readonly MemorySearchService _memorySearchService;
+    private readonly IGalleryApiRepository _galleryApiRepository;
+    private readonly BaseApiClient _apiClient;
     private readonly PhotoDetailService _photoDetailService;
     private readonly IThumbnailService _thumbnailService;
     private readonly ISettingRepository _settingRepository;
@@ -100,8 +101,8 @@ public partial class VisitRecordViewModel : ObservableObject
     public event EventHandler? BackRequested;
 
     public VisitRecordViewModel(
-        VisitRecordQueryService visitRecordQueryService,
-        MemorySearchService memorySearchService,
+        IGalleryApiRepository galleryApiRepository,
+        BaseApiClient apiClient,
         PhotoDetailService photoDetailService,
         IThumbnailService thumbnailService,
         ISettingRepository settingRepository,
@@ -110,8 +111,8 @@ public partial class VisitRecordViewModel : ObservableObject
         IPlaceEditorSeedState placeEditorSeedState,
         ILogger<VisitRecordViewModel> logger)
     {
-        _visitRecordQueryService = visitRecordQueryService;
-        _memorySearchService = memorySearchService;
+        _galleryApiRepository = galleryApiRepository;
+        _apiClient = apiClient;
         _photoDetailService = photoDetailService;
         _thumbnailService = thumbnailService;
         _settingRepository = settingRepository;
@@ -247,21 +248,27 @@ public partial class VisitRecordViewModel : ObservableObject
                 _placeFocusState.PendingSeason = null;
                 _placeFocusState.PendingCountry = null;
                 SearchText = string.Empty;
-                query = await _visitRecordQueryService.QueryForSeasonAsync(season);
+                query = await GalleryBackendBridge.QueryVisitRecordsAsync(
+                    _galleryApiRepository,
+                    _apiClient.ApiBaseUrl,
+                    keyword: season.ToString());
             }
             else if (!string.IsNullOrWhiteSpace(_placeFocusState.PendingCountry))
             {
                 var country = _placeFocusState.PendingCountry;
                 _placeFocusState.PendingCountry = null;
                 SearchText = string.Empty;
-                query = await _visitRecordQueryService.QueryForCountryAsync(country);
+                query = await GalleryBackendBridge.QueryVisitRecordsAsync(
+                    _galleryApiRepository,
+                    _apiClient.ApiBaseUrl,
+                    country: country);
             }
             else
             {
-                MemorySearchRequest? timelineRequest = string.IsNullOrWhiteSpace(SearchText)
-                    ? null
-                    : new MemorySearchRequest { SearchText = SearchText.Trim() };
-                query = await _visitRecordQueryService.QueryAsync(timelineRequest);
+                query = await GalleryBackendBridge.QueryVisitRecordsAsync(
+                    _galleryApiRepository,
+                    _apiClient.ApiBaseUrl,
+                    keyword: string.IsNullOrWhiteSpace(SearchText) ? null : SearchText.Trim());
             }
 
             ApplyQuery(query);
@@ -993,12 +1000,10 @@ public partial class VisitRecordViewModel : ObservableObject
                 return;
             }
 
-            var items = await _memorySearchService.SuggestAsync(text, token);
             await EnqueueAsync(() =>
             {
-                Suggestions = new ObservableCollection<SearchSuggestionItem>(
-                    items.Select(item => new SearchSuggestionItem(item)));
-                IsSuggestionOpen = Suggestions.Count > 0 && !IsBusy;
+                Suggestions = [];
+                IsSuggestionOpen = false;
                 IsRecentOpen = false;
             });
         }
@@ -1011,10 +1016,10 @@ public partial class VisitRecordViewModel : ObservableObject
         }
     }
 
-    private async Task RefreshRecentQueriesAsync()
+    private Task RefreshRecentQueriesAsync()
     {
-        var queries = await _memorySearchService.GetRecentQueriesAsync();
-        RecentQueries = new ObservableCollection<string>(queries);
+        RecentQueries = [];
+        return Task.CompletedTask;
     }
 
     private void OnMapReady(object? sender, EventArgs e)

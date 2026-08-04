@@ -11,7 +11,6 @@ public static class DependencyInjection
     {
         services.AddSingleton<ICatalogInvalidation, CatalogInvalidation>();
         services.AddTransient<MediaService>();
-        services.AddTransient<GalleryHierarchyService>();
         services.AddTransient<MediaImportService>();
         services.AddTransient<UploadMonitorService>();
         services.AddTransient<StorageService>();
@@ -19,15 +18,11 @@ public static class DependencyInjection
         services.AddTransient<PlaceService>();
         services.AddTransient<PlacePickerService>();
         services.AddTransient<VisitRecordService>();
-        services.AddTransient<IMemorySearchAnalyzer, RuleBasedMemorySearchAnalyzer>();
-        services.AddTransient<MemorySearchService>();
         services.AddTransient<MemoryGroupingService>();
         services.AddTransient<MediaPlaceAssignmentService>();
         services.AddTransient<PendingMemoryService>();
         services.AddTransient<PhotoDetailService>();
         services.AddTransient<TagService>();
-        services.AddTransient<VisitRecordQueryService>();
-        services.AddTransient<HomeDashboardService>();
         services.AddTransient<HomeLocationService>();
         services.AddTransient<TravelRecordsService>();
         services.AddTransient<SetupWizardService>();

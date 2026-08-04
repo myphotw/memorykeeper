@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using MemoryKeeper.App.Models;
 using MemoryKeeper.App.Services;
+using MemoryKeeper.Application;
 using MemoryKeeper.Application.DTOs;
 using MemoryKeeper.Application.Layout;
 using MemoryKeeper.Application.Services;
@@ -107,7 +108,7 @@ public partial class PhotoViewerViewModel : ObservableObject
         else
         {
             // Unclassified / no place name — still jump to visit map and try media match.
-            _placeFocusState.FocusPlaceId = VisitRecordQueryService.UnclassifiedPlaceId;
+            _placeFocusState.FocusPlaceId = LibraryConstants.UnclassifiedPlaceId;
             _placeFocusState.PendingSearchText = null;
         }
 

@@ -4,7 +4,8 @@ using CommunityToolkit.Mvvm.Input;
 using MemoryKeeper.App.Models;
 using MemoryKeeper.App.Services;
 using MemoryKeeper.Application.DTOs;
-using MemoryKeeper.Application.Services;
+using MemoryKeeper.Application.Interfaces;
+using MemoryKeeper.Infrastructure.Services.Api;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI.Dispatching;
 
@@ -12,7 +13,8 @@ namespace MemoryKeeper.App.ViewModels;
 
 public partial class TimelineViewModel : ObservableObject
 {
-    private readonly MemorySearchService _memorySearchService;
+    private readonly IGalleryApiRepository _galleryApiRepository;
+    private readonly BaseApiClient _apiClient;
     private readonly IPlaceFocusState _placeFocusState;
     private readonly IPhotoNavigationState _photoNavigationState;
     private readonly ILogger<TimelineViewModel> _logger;
@@ -71,12 +73,14 @@ public partial class TimelineViewModel : ObservableObject
     public event EventHandler? OpenGalleryRequested;
 
     public TimelineViewModel(
-        MemorySearchService memorySearchService,
+        IGalleryApiRepository galleryApiRepository,
+        BaseApiClient apiClient,
         IPlaceFocusState placeFocusState,
         IPhotoNavigationState photoNavigationState,
         ILogger<TimelineViewModel> logger)
     {
-        _memorySearchService = memorySearchService;
+        _galleryApiRepository = galleryApiRepository;
+        _apiClient = apiClient;
         _placeFocusState = placeFocusState;
         _photoNavigationState = photoNavigationState;
         _logger = logger;
@@ -102,6 +106,19 @@ public partial class TimelineViewModel : ObservableObject
     [RelayCommand]
     private async Task LoadAsync()
     {
+        try
+        {
+            var years = await GalleryBackendBridge.GetTimelineYearsAsync(_galleryApiRepository);
+            if (years.Count > 0)
+            {
+                AvailableYears = new ObservableCollection<int>(years);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Timeline years from Backend failed; using default years.");
+        }
+
         await RefreshRecentQueriesAsync();
         await SearchAsync();
     }
@@ -114,11 +131,31 @@ public partial class TimelineViewModel : ObservableObject
             IsSuggestionOpen = false;
             IsRecentOpen = false;
 
-            var request = string.IsNullOrWhiteSpace(SearchText)
-                ? new MemorySearchRequest { Year = SelectedYear }
-                : new MemorySearchRequest { SearchText = SearchText.Trim() };
+            MemorySearchQueryResult queryResult;
+            try
+            {
+                queryResult = await GalleryBackendBridge.SearchPlacesAsync(
+                    _galleryApiRepository,
+                    _apiClient.ApiBaseUrl,
+                    year: SelectedYear,
+                    keyword: string.IsNullOrWhiteSpace(SearchText) ? null : SearchText.Trim());
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Backend search failed.");
+                StatusMessage = $"검색에 실패했습니다. {ex.Message}";
+                queryResult = new MemorySearchQueryResult
+                {
+                    Items = [],
+                    Chips = [],
+                    ResolvedRequest = new MemorySearchRequest
+                    {
+                        Year = SelectedYear,
+                        SearchText = string.IsNullOrWhiteSpace(SearchText) ? null : SearchText.Trim(),
+                    },
+                };
+            }
 
-            var queryResult = await _memorySearchService.SearchAsync(request);
             ApplyQueryResult(queryResult);
             await RefreshRecentQueriesAsync();
         });
@@ -282,12 +319,10 @@ public partial class TimelineViewModel : ObservableObject
                 return;
             }
 
-            var items = await _memorySearchService.SuggestAsync(text, token);
             await EnqueueAsync(() =>
             {
-                Suggestions = new ObservableCollection<SearchSuggestionItem>(
-                    items.Select(item => new SearchSuggestionItem(item)));
-                IsSuggestionOpen = Suggestions.Count > 0 && !IsBusy;
+                Suggestions = [];
+                IsSuggestionOpen = false;
                 IsRecentOpen = false;
             });
         }
@@ -301,10 +336,10 @@ public partial class TimelineViewModel : ObservableObject
         }
     }
 
-    private async Task RefreshRecentQueriesAsync()
+    private Task RefreshRecentQueriesAsync()
     {
-        var queries = await _memorySearchService.GetRecentQueriesAsync();
-        RecentQueries = new ObservableCollection<string>(queries);
+        RecentQueries = [];
+        return Task.CompletedTask;
     }
 
     private static string ReplaceLastToken(string text, string replacement)

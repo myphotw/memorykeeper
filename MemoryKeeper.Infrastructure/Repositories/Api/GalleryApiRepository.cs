@@ -66,8 +66,14 @@ public sealed class GalleryApiRepository : IGalleryApiRepository
         int page = 1,
         int pageSize = 20,
         string sort = "capture_datetime_desc",
+        string? province = null,
+        string? district = null,
+        string? place = null,
         CancellationToken cancellationToken = default)
     {
+        // V1.0 Search API has no province/district/place fields — fold into keyword.
+        var mergedKeyword = MergeKeyword(keyword, province, district, place);
+
         var path = BuildPath($"{GalleryRoot}/search", new Dictionary<string, string?>
         {
             ["year"] = year?.ToString(CultureInfo.InvariantCulture),
@@ -79,7 +85,7 @@ public sealed class GalleryApiRepository : IGalleryApiRepository
             ["service_name"] = ResolveServiceName(serviceName),
             ["date_from"] = dateFrom?.UtcDateTime.ToString("o", CultureInfo.InvariantCulture),
             ["date_to"] = dateTo?.UtcDateTime.ToString("o", CultureInfo.InvariantCulture),
-            ["keyword"] = keyword,
+            ["keyword"] = mergedKeyword,
             ["page"] = page.ToString(CultureInfo.InvariantCulture),
             ["page_size"] = pageSize.ToString(CultureInfo.InvariantCulture),
             ["sort"] = sort,
@@ -136,6 +142,15 @@ public sealed class GalleryApiRepository : IGalleryApiRepository
 
     private string ResolveServiceName(string? serviceName) =>
         string.IsNullOrWhiteSpace(serviceName) ? _apiClient.ServiceName : serviceName;
+
+    private static string? MergeKeyword(string? keyword, string? province, string? district, string? place)
+    {
+        var parts = new[] { keyword, province, district, place }
+            .Where(part => !string.IsNullOrWhiteSpace(part))
+            .Select(part => part!.Trim())
+            .ToArray();
+        return parts.Length == 0 ? null : string.Join(" ", parts);
+    }
 
     private static string BuildPath(string root, IReadOnlyDictionary<string, string?> query)
     {

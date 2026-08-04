@@ -7,6 +7,10 @@ using Microsoft.Extensions.Logging;
 
 namespace MemoryKeeper.Application.Services;
 
+/// <summary>
+/// Photo detail load/update against local library + SQLite (writes / local mutations).
+/// Gallery detail reads use <see cref="Interfaces.IGalleryApiRepository.GetPhotoAsync"/>.
+/// </summary>
 public sealed class PhotoDetailService
 {
     private readonly IMediaRepository _mediaRepository;

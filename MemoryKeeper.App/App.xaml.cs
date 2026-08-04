@@ -213,8 +213,6 @@ public partial class App : Microsoft.UI.Xaml.Application
                 services.AddApplicationServices();
                 services.AddInfrastructureServices();
                 services.AddTcBackendApiClient(context.Configuration);
-                services.Configure<MemoryKeeper.Application.Options.BackendUploadOptions>(
-                    context.Configuration.GetSection(MemoryKeeper.Application.Options.BackendUploadOptions.SectionName));
                 services.AddSingleton<IGalleryApiRepository, GalleryApiRepository>();
                 services.AddSingleton<IUploadApiRepository, UploadApiRepository>();
                 services.AddSingleton<IUploadJobApiRepository, UploadJobApiRepository>();
