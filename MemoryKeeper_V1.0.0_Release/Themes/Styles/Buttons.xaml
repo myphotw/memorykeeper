@@ -1,0 +1,132 @@
+﻿<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+      Unified button language:
+      Primary = calm blue · Secondary = white · Danger = red
+      Same height (MkControlHeight). Soft hover only — no bounce.
+    -->
+
+    <ControlTemplate x:Key="MkButtonTemplate" TargetType="Button">
+        <Grid>
+            <Border
+                x:Name="Root"
+                Background="{TemplateBinding Background}"
+                BorderBrush="{TemplateBinding BorderBrush}"
+                BorderThickness="{TemplateBinding BorderThickness}"
+                CornerRadius="{TemplateBinding CornerRadius}"
+                Padding="{TemplateBinding Padding}">
+                <ContentPresenter
+                    HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                    VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                    Content="{TemplateBinding Content}"
+                    ContentTemplate="{TemplateBinding ContentTemplate}"
+                    Foreground="{TemplateBinding Foreground}" />
+            </Border>
+            <VisualStateManager.VisualStateGroups>
+                <VisualStateGroup x:Name="CommonStates">
+                    <VisualState x:Name="Normal" />
+                    <VisualState x:Name="PointerOver">
+                        <Storyboard>
+                            <DoubleAnimation
+                                Storyboard.TargetName="Root"
+                                Storyboard.TargetProperty="Opacity"
+                                To="0.92"
+                                Duration="0:0:0.18" />
+                        </Storyboard>
+                    </VisualState>
+                    <VisualState x:Name="Pressed">
+                        <Storyboard>
+                            <DoubleAnimation
+                                Storyboard.TargetName="Root"
+                                Storyboard.TargetProperty="Opacity"
+                                To="0.82"
+                                Duration="0:0:0.12" />
+                        </Storyboard>
+                    </VisualState>
+                    <VisualState x:Name="Disabled">
+                        <Storyboard>
+                            <DoubleAnimation
+                                Storyboard.TargetName="Root"
+                                Storyboard.TargetProperty="Opacity"
+                                To="0.45"
+                                Duration="0:0:0.12" />
+                        </Storyboard>
+                    </VisualState>
+                </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+        </Grid>
+    </ControlTemplate>
+
+    <Style x:Key="MkButtonStyle" TargetType="Button">
+        <Setter Property="FontFamily" Value="{StaticResource MkFontFamily}" />
+        <Setter Property="FontSize" Value="{StaticResource MkFontSizeBody}" />
+        <Setter Property="MinHeight" Value="{StaticResource MkControlHeight}" />
+        <Setter Property="Padding" Value="16,8" />
+        <Setter Property="CornerRadius" Value="{StaticResource MkButtonCornerRadius}" />
+        <Setter Property="Background" Value="{ThemeResource MkBrushSurface}" />
+        <Setter Property="Foreground" Value="{ThemeResource MkBrushTextPrimary}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource MkBrushBorder}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Template" Value="{StaticResource MkButtonTemplate}" />
+    </Style>
+
+    <Style x:Key="MkPrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource MkButtonStyle}">
+        <Setter Property="Background" Value="{ThemeResource MkBrushPrimary}" />
+        <Setter Property="Foreground" Value="{ThemeResource MkBrushTextOnPrimary}" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="BorderBrush" Value="{ThemeResource MkBrushPrimary}" />
+    </Style>
+
+    <Style x:Key="MkSecondaryButtonStyle" TargetType="Button" BasedOn="{StaticResource MkButtonStyle}">
+        <Setter Property="Background" Value="{ThemeResource MkBrushSurface}" />
+        <Setter Property="Foreground" Value="{ThemeResource MkBrushTextPrimary}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource MkBrushBorder}" />
+        <Setter Property="BorderThickness" Value="1" />
+    </Style>
+
+    <Style x:Key="MkDangerButtonStyle" TargetType="Button" BasedOn="{StaticResource MkButtonStyle}">
+        <Setter Property="Background" Value="{ThemeResource MkBrushDanger}" />
+        <Setter Property="Foreground" Value="{ThemeResource MkBrushTextOnPrimary}" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="BorderBrush" Value="{ThemeResource MkBrushDanger}" />
+    </Style>
+
+    <Style x:Key="MkTextButtonStyle" TargetType="Button">
+        <Setter Property="FontFamily" Value="{StaticResource MkFontFamily}" />
+        <Setter Property="FontSize" Value="{StaticResource MkFontSizeBody}" />
+        <Setter Property="MinHeight" Value="{StaticResource MkControlHeight}" />
+        <Setter Property="Padding" Value="8,4" />
+        <Setter Property="CornerRadius" Value="{StaticResource MkButtonCornerRadius}" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{ThemeResource MkBrushPrimary}" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Template" Value="{StaticResource MkButtonTemplate}" />
+    </Style>
+
+    <Style x:Key="MkGoldAccentTextStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource MkFontFamily}" />
+        <Setter Property="FontSize" Value="{StaticResource MkFontSizeCaption}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{ThemeResource MkBrushAccentGold}" />
+    </Style>
+
+    <Style x:Key="MkActivityRowStyle" TargetType="Button">
+        <Setter Property="FontFamily" Value="{StaticResource MkFontFamily}" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="HorizontalContentAlignment" Value="Left" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="4,10" />
+        <Setter Property="MinHeight" Value="{StaticResource MkControlHeight}" />
+        <Setter Property="Foreground" Value="{ThemeResource MkBrushTextPrimary}" />
+        <Setter Property="Template" Value="{StaticResource MkButtonTemplate}" />
+    </Style>
+
+    <!-- Alias: AccentButtonStyle → Primary (migrate screens off WinUI default accent) -->
+    <Style x:Key="AccentButtonStyle" TargetType="Button" BasedOn="{StaticResource MkPrimaryButtonStyle}" />
+</ResourceDictionary>
+

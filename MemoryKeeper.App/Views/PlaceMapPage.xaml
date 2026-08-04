@@ -1,0 +1,105 @@
+<Page
+    x:Class="MemoryKeeper.App.Views.PlaceMapPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:models="using:MemoryKeeper.App.Models"
+    xmlns:converters="using:MemoryKeeper.App.Converters"
+    mc:Ignorable="d"
+    Loaded="PlaceMapPage_OnLoaded"
+    Unloaded="PlaceMapPage_OnUnloaded">
+
+    <Page.Resources>
+        <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+    </Page.Resources>
+
+    <Grid ColumnDefinitions="340,*" ColumnSpacing="16" RowDefinitions="Auto,*" RowSpacing="12">
+        <TextBlock
+            Grid.ColumnSpan="2"
+            Text="Place Map"
+            FontSize="28"
+            FontWeight="SemiBold" />
+
+        <Grid Grid.Row="1" RowDefinitions="Auto,Auto,*" RowSpacing="8">
+            <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
+                <ComboBox
+                    Header="년도"
+                    ItemsSource="{x:Bind ViewModel.AvailableYears, Mode=OneWay}"
+                    SelectedItem="{x:Bind ViewModel.SelectedYear, Mode=TwoWay}"
+                    HorizontalAlignment="Stretch" />
+                <Button
+                    Grid.Column="1"
+                    Content="전체"
+                    VerticalAlignment="Bottom"
+                    Command="{x:Bind ViewModel.ClearYearFilterCommand}" />
+                <Button
+                    Grid.Column="2"
+                    Content="검색"
+                    Style="{StaticResource AccentButtonStyle}"
+                    VerticalAlignment="Bottom"
+                    Command="{x:Bind ViewModel.SearchCommand}" />
+                <Button
+                    Grid.Column="3"
+                    Content="사진"
+                    VerticalAlignment="Bottom"
+                    Command="{x:Bind ViewModel.OpenPhotoDetailCommand}" />
+            </Grid>
+
+            <TextBlock
+                Grid.Row="1"
+                Text="{x:Bind ViewModel.StatusMessage, Mode=OneWay}"
+                Opacity="0.8"
+                TextWrapping="Wrap" />
+
+            <ListView
+                Grid.Row="2"
+                ItemsSource="{x:Bind ViewModel.Places, Mode=OneWay}"
+                SelectedItem="{x:Bind ViewModel.SelectedPlace, Mode=TwoWay}">
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="models:PlaceMapItem">
+                        <StackPanel Spacing="2" Padding="0,8">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Text="{x:Bind PlaceName}" FontWeight="SemiBold" />
+                                <TextBlock
+                                    Text="★"
+                                    Foreground="#E6A700"
+                                    Visibility="{x:Bind HasFavorite, Converter={StaticResource BoolToVisibilityConverter}}" />
+                            </StackPanel>
+                            <TextBlock Text="{x:Bind RegionSummary}" Opacity="0.75" FontSize="12" />
+                            <TextBlock Opacity="0.85" FontSize="12">
+                                <Run Text="방문 " />
+                                <Run Text="{x:Bind VisitRecordCount}" />
+                                <Run Text=" · 사진 " />
+                                <Run Text="{x:Bind PhotoCount}" />
+                                <Run Text=" · 최근 " />
+                                <Run Text="{x:Bind LastVisitText}" />
+                            </TextBlock>
+                        </StackPanel>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+        </Grid>
+
+        <Grid Grid.Row="1" Grid.Column="1" RowDefinitions="Auto,*" RowSpacing="8">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Content="Zoom -" Command="{x:Bind ViewModel.ZoomOutCommand}" />
+                <Button Content="Zoom +" Command="{x:Bind ViewModel.ZoomInCommand}" />
+                <Button Content="전체 보기" Command="{x:Bind ViewModel.FitAllCommand}" />
+                <TextBlock
+                    Text="{x:Bind ViewModel.ZoomLevel, Mode=OneWay}"
+                    VerticalAlignment="Center"
+                    Opacity="0.75"
+                    Margin="8,0,0,0" />
+            </StackPanel>
+
+            <Border
+                Grid.Row="1"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="8">
+                <WebView2 x:Name="MapWebView" />
+            </Border>
+        </Grid>
+    </Grid>
+</Page>

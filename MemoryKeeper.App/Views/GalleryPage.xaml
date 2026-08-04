@@ -1,0 +1,310 @@
+<Page
+    x:Class="MemoryKeeper.App.Views.GalleryPage"
+    x:Name="RootPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:converters="using:MemoryKeeper.App.Converters"
+    mc:Ignorable="d">
+
+    <Page.Resources>
+        <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+
+        <Style x:Key="GalleryFilterButtonStyle" TargetType="Button" BasedOn="{StaticResource MkTextButtonStyle}">
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="MinHeight" Value="32" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Opacity" Value="0.78" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+        </Style>
+
+        <Style x:Key="GalleryTreeNodeStyle" TargetType="Button" BasedOn="{StaticResource MkTextButtonStyle}">
+            <Setter Property="Padding" Value="8,5" />
+            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Opacity" Value="0.85" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+
+        <Style x:Key="GalleryPhotoCardStyle" TargetType="Border">
+            <Setter Property="Width" Value="188" />
+            <Setter Property="Height" Value="224" />
+            <Setter Property="Margin" Value="10" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="CornerRadius" Value="{StaticResource MkImageCornerRadius}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="BorderBrush" Value="{ThemeResource MkBrushPrimary}" />
+        </Style>
+    </Page.Resources>
+
+    <Grid
+        Background="{ThemeResource MkBrushBackground}"
+        ColumnDefinitions="0.22*,0.78*"
+        ColumnSpacing="{StaticResource MkComponentSpacing}"
+        MinWidth="640"
+        MinHeight="360"
+        Padding="{StaticResource MkPagePaddingThickness}">
+
+        <!-- Quiet filter column (not the visual hero) -->
+        <Grid
+            RowDefinitions="Auto,Auto,Auto,*"
+            RowSpacing="12"
+            Opacity="0.88"
+            Padding="4,8,8,8">
+                <TextBlock
+                    Text="찾아보기"
+                    Style="{StaticResource MkCaptionTextStyle}"
+                    Opacity="0.65"
+                    Margin="0,0,0,4" />
+
+                <TextBox
+                    Grid.Row="1"
+                    Style="{StaticResource MkSearchBoxStyle}"
+                    PlaceholderText="장소 · 국가 · 지역 · 파일명"
+                    Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="6">
+                    <Button
+                        Content="연도"
+                        Command="{Binding SelectYearBrowseCommand}"
+                        Style="{StaticResource MkPrimaryButtonStyle}"
+                        Padding="12,6"
+                        MinHeight="32"
+                        FontSize="13"
+                        Visibility="{Binding IsYearBrowseMode, Converter={StaticResource BoolToVisibilityConverter}}" />
+                    <Button
+                        Content="연도"
+                        Command="{Binding SelectYearBrowseCommand}"
+                        Style="{StaticResource GalleryFilterButtonStyle}"
+                        Visibility="{Binding IsYearBrowseMode, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}" />
+                    <Button
+                        Content="장소"
+                        Command="{Binding SelectPlaceBrowseCommand}"
+                        Style="{StaticResource MkPrimaryButtonStyle}"
+                        Padding="12,6"
+                        MinHeight="32"
+                        FontSize="13"
+                        Visibility="{Binding IsPlaceBrowseMode, Converter={StaticResource BoolToVisibilityConverter}}" />
+                    <Button
+                        Content="장소"
+                        Command="{Binding SelectPlaceBrowseCommand}"
+                        Style="{StaticResource GalleryFilterButtonStyle}"
+                        Visibility="{Binding IsPlaceBrowseMode, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}" />
+                </StackPanel>
+
+                <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{Binding VisibleTreeNodes, Mode=OneWay}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Spacing="2" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid>
+                                    <Border
+                                        Height="1"
+                                        Margin="4,8"
+                                        Background="{ThemeResource MkBrushDivider}"
+                                        Opacity="0.5"
+                                        Visibility="{Binding IsSeparator, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                    <Grid
+                                        Margin="{Binding IndentMargin, Mode=OneWay}"
+                                        ColumnDefinitions="Auto,*"
+                                        ColumnSpacing="2"
+                                        Visibility="{Binding IsSeparator, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}">
+                                        <Button
+                                            Content="{Binding ExpandGlyph, Mode=OneWay}"
+                                            Padding="4,2"
+                                            MinWidth="24"
+                                            Style="{StaticResource GalleryTreeNodeStyle}"
+                                            Click="Expand_OnClick"
+                                            Tag="{Binding}"
+                                            Visibility="{Binding CanExpand, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                        <Button
+                                            Grid.Column="1"
+                                            Style="{StaticResource GalleryTreeNodeStyle}"
+                                            Content="{Binding DisplayLabel, Mode=OneWay}"
+                                            Click="Node_OnClick"
+                                            Tag="{Binding}"
+                                            Foreground="{ThemeResource MkBrushPrimary}"
+                                            FontWeight="SemiBold"
+                                            Opacity="1"
+                                            Visibility="{Binding IsSelected, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                        <Button
+                                            Grid.Column="1"
+                                            Style="{StaticResource GalleryTreeNodeStyle}"
+                                            Content="{Binding DisplayLabel, Mode=OneWay}"
+                                            Click="Node_OnClick"
+                                            Tag="{Binding}"
+                                            Visibility="{Binding IsSelected, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}" />
+                                    </Grid>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+        </Grid>
+
+        <!-- Photo-first main column -->
+        <Grid
+            Grid.Column="1"
+            RowDefinitions="Auto,Auto,*,Auto"
+            RowSpacing="{StaticResource MkSectionSpacing}"
+            MinWidth="240">
+
+            <!-- Section header -->
+            <StackPanel Spacing="8">
+                    <TextBlock
+                        Text="사진첩"
+                        Style="{StaticResource MkPageTitleStyle}"
+                        Margin="0"
+                        VerticalAlignment="Center" />
+                <TextBlock
+                    Text="{Binding BreadcrumbText, Mode=OneWay}"
+                    Style="{StaticResource MkSectionTitleStyle}"
+                    FontSize="18"
+                    Margin="0" />
+                <TextBlock
+                    Text="{Binding StatusMessage, Mode=OneWay}"
+                    Style="{StaticResource MkCaptionTextStyle}"
+                    Opacity="0.75" />
+            </StackPanel>
+
+            <!-- Representative thumbnail — compact banner so the grid stays the hero -->
+            <Border
+                x:Name="HeroThumbHost"
+                Grid.Row="1"
+                Height="148"
+                Style="{StaticResource MkThumbnailBorderStyle}"
+                Visibility="Collapsed">
+                <Grid>
+                    <Border Background="{ThemeResource MkBrushSurfaceMuted}" />
+                    <Image
+                        x:Name="HeroThumbImage"
+                        Style="{StaticResource MkImageStyle}"
+                        Stretch="UniformToFill"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center" />
+                </Grid>
+            </Border>
+
+            <!-- Photo grid -->
+            <Grid Grid.Row="2">
+                <GridView
+                    x:Name="PhotoGrid"
+                    ItemsSource="{Binding Items, Mode=OneWay}"
+                    IsItemClickEnabled="True"
+                    ItemClick="Gallery_OnItemClick"
+                    SelectionMode="None"
+                    Visibility="Visible">
+                    <GridView.ItemContainerStyle>
+                        <Style TargetType="GridViewItem">
+                            <Setter Property="Margin" Value="4" />
+                            <Setter Property="Padding" Value="0" />
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                        </Style>
+                    </GridView.ItemContainerStyle>
+                    <GridView.ItemTemplate>
+                        <DataTemplate>
+                            <Border
+                                Style="{StaticResource GalleryPhotoCardStyle}"
+                                Tag="{Binding}"
+                                PointerEntered="PhotoCard_OnPointerEntered"
+                                PointerExited="PhotoCard_OnPointerExited"
+                                Loaded="PhotoCard_OnLoaded">
+                                <Grid>
+                                    <Border Style="{StaticResource MkThumbnailBorderStyle}">
+                                        <Grid>
+                                            <ProgressRing
+                                                Width="24"
+                                                Height="24"
+                                                IsActive="{Binding IsThumbnailLoading, Mode=OneWay}"
+                                                Visibility="{Binding IsThumbnailLoading, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                            <Image Style="{StaticResource MkImageStyle}" Source="{Binding ThumbnailImage, Mode=OneWay}" />
+                                            <TextBlock
+                                                Text="★"
+                                                FontSize="14"
+                                                Foreground="{ThemeResource MkBrushAccentGold}"
+                                                HorizontalAlignment="Right"
+                                                VerticalAlignment="Top"
+                                                Margin="0,8,8,0"
+                                                Visibility="{Binding IsFavorite, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                        </Grid>
+                                    </Border>
+                                    <!-- Soft primary wash when selected -->
+                                    <Border
+                                        CornerRadius="{StaticResource MkImageCornerRadius}"
+                                        Background="{ThemeResource MkBrushPrimary}"
+                                        IsHitTestVisible="False"
+                                        Opacity="0.14"
+                                        Visibility="{Binding IsSelected, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </GridView.ItemTemplate>
+                </GridView>
+
+                <Border
+                    x:Name="GalleryEmptyState"
+                    Style="{StaticResource MkEmptyStateCardStyle}"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    MaxWidth="400"
+                    Visibility="Collapsed">
+                    <StackPanel Spacing="12" HorizontalAlignment="Center">
+                        <TextBlock
+                            Text="아직 사진이 없습니다."
+                            Style="{StaticResource MkEmptyStateTitleStyle}" />
+                        <TextBlock
+                            Text="사진을 가져오면 추억이 사진첩에 쌓입니다."
+                            Style="{StaticResource MkEmptyStateMessageStyle}" />
+                        <Button
+                            Content="사진 가져오기"
+                            Style="{StaticResource MkPrimaryButtonStyle}"
+                            MinWidth="180"
+                            HorizontalAlignment="Center"
+                            Click="ImportPhotos_OnClick" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- Selected photo detail (촬영일 · 장소 · 파일명) -->
+            <Border
+                x:Name="DetailCard"
+                Grid.Row="3"
+                Style="{StaticResource MkCardStyle}"
+                Visibility="Collapsed">
+                <Grid ColumnDefinitions="96,*" ColumnSpacing="{StaticResource MkComponentSpacing}">
+                    <Border Width="96" Height="96" Style="{StaticResource MkThumbnailBorderStyle}">
+                        <Image
+                            x:Name="DetailThumbImage"
+                            Style="{StaticResource MkImageStyle}" />
+                    </Border>
+                    <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center">
+                        <TextBlock
+                            x:Name="DetailFileName"
+                            Style="{StaticResource MkPlaceNameStyle}"
+                            TextTrimming="CharacterEllipsis"
+                            MaxLines="1" />
+                        <TextBlock Style="{StaticResource MkCaptionTextStyle}">
+                            <Run Text="촬영일  " />
+                            <Run x:Name="DetailCapturedAt" />
+                        </TextBlock>
+                        <TextBlock Style="{StaticResource MkCaptionTextStyle}">
+                            <Run Text="장소  " />
+                            <Run x:Name="DetailPlace" />
+                        </TextBlock>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</Page>

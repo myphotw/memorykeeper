@@ -1,0 +1,71 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>MemoryKeeper.App</RootNamespace>
+    <AssemblyName>MemoryKeeper</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+    <UseWinUI>true</UseWinUI>
+    <WinUISDKReferences>false</WinUISDKReferences>
+    <EnableMsixTooling>true</EnableMsixTooling>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <WindowsAppSDKBootstrapAutoInitializeOptions_OnNoMatch_ShowUI>false</WindowsAppSDKBootstrapAutoInitializeOptions_OnNoMatch_ShowUI>
+    <PublishTrimmed>false</PublishTrimmed>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    <!-- GenXbf Pass2 crashes locally; sanitize loose XAML after compile. -->
+    <DisableXbfGeneration>true</DisableXbfGeneration>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.6.250205002" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.1742" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MemoryKeeper.Application\MemoryKeeper.Application.csproj" />
+    <ProjectReference Include="..\MemoryKeeper.Infrastructure\MemoryKeeper.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Manifest Include="$(ApplicationManifest)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
+
+  <!-- DisableXbfGeneration can emit invalid closings like </StackPanel x:ConnectionId='n'>. -->
+  <Target Name="SanitizeLooseXaml" AfterTargets="Build">
+    <PropertyGroup>
+      <_SanitizeRoots>$(MSBuildProjectDirectory)\$(IntermediateOutputPath);$(MSBuildProjectDirectory)\$(OutDir)</_SanitizeRoots>
+    </PropertyGroup>
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\build\SanitizeLooseXaml.ps1&quot; -RootList &quot;$(_SanitizeRoots)&quot;" />
+  </Target>
+
+  <!-- Loose XAML is required at runtime when DisableXbfGeneration=true; publish omits them by default. -->
+  <Target Name="CopyLooseXamlToPublish" AfterTargets="Publish">
+    <ItemGroup>
+      <_LooseXamlForPublish Include="$(OutputPath)**\*.xaml"
+                            Exclude="$(OutputPath)Microsoft.UI.Xaml\**\*.xaml" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_LooseXamlForPublish)"
+          DestinationFiles="@(_LooseXamlForPublish->'$(PublishDir)%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+</Project>
+

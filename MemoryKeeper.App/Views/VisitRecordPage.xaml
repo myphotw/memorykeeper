@@ -1,0 +1,436 @@
+<Page
+    x:Class="MemoryKeeper.App.Views.VisitRecordPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:models="using:MemoryKeeper.App.Models"
+    xmlns:converters="using:MemoryKeeper.App.Converters"
+    mc:Ignorable="d"
+    Loaded="VisitRecordPage_OnLoaded"
+    Unloaded="VisitRecordPage_OnUnloaded">
+
+    <Page.Resources>
+        <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+
+        <Style x:Key="YearTitleButtonStyle" TargetType="Button" BasedOn="{StaticResource MkTextButtonStyle}">
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="Padding" Value="8,8" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+
+        <Style x:Key="PlaceRowCardStyle" TargetType="Border" BasedOn="{StaticResource MkCompactCardStyle}">
+            <Setter Property="Padding" Value="10" />
+            <Setter Property="Margin" Value="0,0,0,8" />
+        </Style>
+    </Page.Resources>
+
+    <Grid Background="{ThemeResource MkBrushBackground}">
+        <!-- Main layout (suggestions do not participate — overlay sibling below) -->
+        <Grid
+            RowDefinitions="Auto,*,Auto"
+            RowSpacing="{StaticResource MkSectionSpacing}"
+            Padding="{StaticResource MkPagePaddingThickness}">
+
+            <!-- Title + fixed-width search (no expanding result row) -->
+            <StackPanel Spacing="12">
+                <TextBlock
+                    Text="방문지도"
+                    Style="{StaticResource MkPageTitleStyle}"
+                    Margin="0" />
+                <TextBlock
+                    Text="{Binding StatusMessage, Mode=OneWay}"
+                    Style="{StaticResource MkCaptionTextStyle}"
+                    Opacity="0.8" />
+
+                <Grid
+                    x:Name="SearchRow"
+                    Width="520"
+                    HorizontalAlignment="Left"
+                    ColumnDefinitions="*,Auto,Auto"
+                    ColumnSpacing="8">
+                    <TextBox
+                        x:Name="SearchBox"
+                        Style="{StaticResource MkSearchBoxStyle}"
+                        PlaceholderText="오사카 맛집, 작년 벚꽃, 즐겨찾기 음식..."
+                        Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                        KeyDown="SearchBox_OnKeyDown"
+                        GotFocus="SearchBox_OnGotFocus"
+                        LostFocus="SearchBox_OnLostFocus" />
+                    <Button
+                        Grid.Column="1"
+                        Content="⌕"
+                        Width="48"
+                        MinHeight="40"
+                        Style="{StaticResource MkPrimaryButtonStyle}"
+                        Command="{Binding SearchCommand}" />
+                    <Button
+                        Grid.Column="2"
+                        Content="최근"
+                        Width="64"
+                        MinHeight="40"
+                        Style="{StaticResource MkSecondaryButtonStyle}"
+                        Command="{Binding ShowRecentCommand}" />
+                </Grid>
+
+                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" MaxHeight="36">
+                    <ItemsControl ItemsSource="{Binding SearchChips, Mode=OneWay}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" Spacing="6" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Padding="10,4" CornerRadius="12" Background="{ThemeResource MkBrushPrimary}">
+                                    <TextBlock
+                                        Text="{Binding DisplayLabel}"
+                                        Foreground="{ThemeResource MkBrushTextOnPrimary}"
+                                        FontSize="12" />
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </StackPanel>
+
+        <!-- Body: Year list | Map (map is the focus) -->
+        <Grid
+            x:Name="BodyGrid"
+            Grid.Row="1"
+            ColumnDefinitions="0.28*,0.72*"
+            ColumnSpacing="16"
+            MinWidth="0">
+
+            <Grid x:Name="TimelinePane" RowDefinitions="Auto,*" RowSpacing="12">
+                <Grid x:Name="TimelineToolbarHost">
+                    <StackPanel x:Name="ToolbarLarge" Orientation="Horizontal" Spacing="6" Visibility="Collapsed">
+                        <Button Content="전체 펼치기" Command="{Binding ExpandAllCommand}" Style="{StaticResource MkSecondaryButtonStyle}" MinWidth="88" Padding="10,6" />
+                        <Button Content="전체 접기" Command="{Binding CollapseAllCommand}" Style="{StaticResource MkSecondaryButtonStyle}" MinWidth="80" Padding="10,6" />
+                        <Button Content="최근순" Command="{Binding SortByRecentCommand}" Style="{StaticResource MkSecondaryButtonStyle}" MinWidth="64" Padding="10,6" />
+                        <Button Content="이름순" Command="{Binding SortByNameCommand}" Style="{StaticResource MkSecondaryButtonStyle}" MinWidth="64" Padding="10,6" />
+                        <Button Content="방문횟수순" Command="{Binding SortByVisitCountCommand}" Style="{StaticResource MkSecondaryButtonStyle}" MinWidth="88" Padding="10,6" />
+                    </StackPanel>
+                    <StackPanel x:Name="ToolbarMedium" Spacing="6" Visibility="Collapsed">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Button Content="전체 펼치기" Command="{Binding ExpandAllCommand}" Style="{StaticResource MkSecondaryButtonStyle}" MinWidth="88" Padding="10,6" />
+                            <Button Content="전체 접기" Command="{Binding CollapseAllCommand}" Style="{StaticResource MkSecondaryButtonStyle}" MinWidth="80" Padding="10,6" />
+                            <Button Content="최근순" Command="{Binding SortByRecentCommand}" Style="{StaticResource MkSecondaryButtonStyle}" MinWidth="64" Padding="10,6" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Button Content="이름순" Command="{Binding SortByNameCommand}" Style="{StaticResource MkSecondaryButtonStyle}" MinWidth="64" Padding="10,6" />
+                            <Button Content="방문횟수순" Command="{Binding SortByVisitCountCommand}" Style="{StaticResource MkSecondaryButtonStyle}" MinWidth="88" Padding="10,6" />
+                        </StackPanel>
+                    </StackPanel>
+                    <StackPanel x:Name="ToolbarSmall" Spacing="6" Visibility="Visible">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Button Content="전체 펼치기" Command="{Binding ExpandAllCommand}" Style="{StaticResource MkSecondaryButtonStyle}" MinWidth="88" Padding="10,6" />
+                            <Button Content="전체 접기" Command="{Binding CollapseAllCommand}" Style="{StaticResource MkSecondaryButtonStyle}" MinWidth="80" Padding="10,6" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Button Content="최근순" Command="{Binding SortByRecentCommand}" Style="{StaticResource MkSecondaryButtonStyle}" MinWidth="64" Padding="10,6" />
+                            <Button Content="이름순" Command="{Binding SortByNameCommand}" Style="{StaticResource MkSecondaryButtonStyle}" MinWidth="64" Padding="10,6" />
+                            <Button Content="방문횟수순" Command="{Binding SortByVisitCountCommand}" Style="{StaticResource MkSecondaryButtonStyle}" MinWidth="88" Padding="10,6" />
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+
+                <ListView
+                    x:Name="TimelineList"
+                    Grid.Row="1"
+                    ItemsSource="{Binding YearGroups, Mode=OneWay}"
+                    SelectionMode="None"
+                    Visibility="{Binding HasNoResults, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}">
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Spacing="6" Margin="0,0,0,12">
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <Button
+                                        Grid.Column="0"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        Padding="4,6"
+                                        VerticalAlignment="Center"
+                                        Click="YearGroupArrow_OnClick"
+                                        Tag="{Binding}"
+                                        Visibility="{Binding IsAll, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}">
+                                        <TextBlock
+                                            Text="{Binding ExpandGlyph, Mode=OneWay}"
+                                            FontWeight="SemiBold"
+                                            FontSize="14"
+                                            Foreground="{ThemeResource MkBrushTextSecondary}" />
+                                    </Button>
+                                    <Button
+                                        Grid.Column="1"
+                                        Style="{StaticResource YearTitleButtonStyle}"
+                                        Click="YearGroupTitle_OnClick"
+                                        PointerEntered="YearTitle_OnPointerEntered"
+                                        PointerExited="YearTitle_OnPointerExited"
+                                        Tag="{Binding}">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <TextBlock
+                                                Text="{Binding YearTitle}"
+                                                Style="{StaticResource MkSectionTitleStyle}"
+                                                FontSize="18"
+                                                Margin="0"
+                                                Foreground="{ThemeResource MkBrushPrimary}"
+                                                Visibility="{Binding IsSelected, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                            <TextBlock
+                                                Text="{Binding YearTitle}"
+                                                Style="{StaticResource MkSectionTitleStyle}"
+                                                FontSize="18"
+                                                Margin="0"
+                                                Visibility="{Binding IsSelected, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}" />
+                                            <TextBlock
+                                                Style="{StaticResource MkMetaTextStyle}"
+                                                VerticalAlignment="Center">
+                                                <Run Text="(" /><Run Text="{Binding CountSummary}" /><Run Text=")" />
+                                            </TextBlock>
+                                        </StackPanel>
+                                    </Button>
+                                </Grid>
+
+                                <ItemsControl
+                                    ItemsSource="{Binding Places}"
+                                    Visibility="{Binding IsExpanded, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border
+                                                Style="{StaticResource PlaceRowCardStyle}"
+                                                BorderThickness="{Binding SelectionBorderThickness, Mode=OneWay}"
+                                                BorderBrush="{ThemeResource MkBrushPrimary}"
+                                                PointerEntered="PlaceItem_OnPointerEntered"
+                                                PointerExited="PlaceItem_OnPointerExited"
+                                                Tapped="PlaceItem_OnTapped"
+                                                RightTapped="PlaceItem_OnRightTapped"
+                                                Tag="{Binding}">
+                                                <Border.ContextFlyout>
+                                                    <MenuFlyout>
+                                                        <MenuFlyoutItem Text="사진 보기" Click="ContextOpenPhoto_OnClick" Tag="{Binding}" />
+                                                        <MenuFlyoutItem Text="대표사진 변경" Click="ContextChangeRep_OnClick" Tag="{Binding}" />
+                                                        <MenuFlyoutItem Text="즐겨찾기" Click="ContextFavorite_OnClick" Tag="{Binding}" />
+                                                        <MenuFlyoutItem Text="태그 수정" Click="ContextEditTags_OnClick" Tag="{Binding}" />
+                                                        <MenuFlyoutItem Text="장소 수정" Click="ContextEditPlace_OnClick" Tag="{Binding}" />
+                                                        <MenuFlyoutSeparator />
+                                                        <MenuFlyoutItem Text="삭제" Click="ContextDelete_OnClick" Tag="{Binding}" />
+                                                    </MenuFlyout>
+                                                </Border.ContextFlyout>
+                                                <Grid ColumnDefinitions="56,*" ColumnSpacing="10">
+                                                    <Border Width="56" Height="56" Style="{StaticResource MkThumbnailBorderStyle}">
+                                                        <Image Style="{StaticResource MkImageStyle}" Source="{Binding ThumbnailImage, Mode=OneWay}" />
+                                                    </Border>
+                                                    <StackPanel Grid.Column="1" Spacing="2">
+                                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                                            <TextBlock Text="{Binding PlaceName}" Style="{StaticResource MkPlaceNameStyle}" FontSize="15" />
+                                                            <TextBlock
+                                                                Text="★"
+                                                                Foreground="{ThemeResource MkBrushAccentGold}"
+                                                                Visibility="{Binding HasFavorite, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                                        </StackPanel>
+                                                        <TextBlock
+                                                            Text="{Binding TagSummary}"
+                                                            Style="{StaticResource MkMetaTextStyle}"
+                                                            Visibility="{Binding HasTags, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                                        <TextBlock Style="{StaticResource MkMetaTextStyle}">
+                                                            <Run Text="사진 " /><Run Text="{Binding PhotoCount}" />
+                                                            <Run Text=" · 방문 " /><Run Text="{Binding VisitRecordCount}" /><Run Text="회" />
+                                                        </TextBlock>
+                                                        <TextBlock Text="{Binding DateRangeText}" Style="{StaticResource MkMetaTextStyle}" Opacity="0.75" />
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+
+                <Border
+                    Grid.Row="1"
+                    Style="{StaticResource MkEmptyStateCardStyle}"
+                    HorizontalAlignment="Stretch"
+                    MaxWidth="360"
+                    Visibility="{Binding HasNoResults, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="아직 방문 기록이 없습니다." Style="{StaticResource MkEmptyStateTitleStyle}" />
+                        <TextBlock
+                            Text="사진을 가져오고 장소를 연결하면 지도에 추억이 표시됩니다."
+                            Style="{StaticResource MkEmptyStateMessageStyle}" />
+                        <Button
+                            Content="사진 가져오기"
+                            Style="{StaticResource MkPrimaryButtonStyle}"
+                            HorizontalAlignment="Center"
+                            MinWidth="180"
+                            Click="ImportPhotos_OnClick" />
+                        <Button
+                            Content="조건 초기화"
+                            Command="{Binding ClearSearchCommand}"
+                            Style="{StaticResource MkSecondaryButtonStyle}"
+                            HorizontalAlignment="Center" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <Grid x:Name="MapPane" Grid.Column="1" RowDefinitions="Auto,*" RowSpacing="8">
+                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
+                        <Button Content="+" Width="40" Style="{StaticResource MkSecondaryButtonStyle}" Command="{Binding ZoomInCommand}" />
+                        <Button Content="-" Width="40" Style="{StaticResource MkSecondaryButtonStyle}" Command="{Binding ZoomOutCommand}" />
+                        <Button Content="전체 보기" Style="{StaticResource MkSecondaryButtonStyle}" Command="{Binding FitAllCommand}" MinWidth="72" Padding="8,4" />
+                        <Button Content="현재 선택" Style="{StaticResource MkSecondaryButtonStyle}" Command="{Binding FocusSelectedCommand}" MinWidth="72" Padding="8,4" />
+                        <Button Content="갤러리" Style="{StaticResource MkSecondaryButtonStyle}" Command="{Binding OpenGalleryCommand}" MinWidth="64" Padding="8,4" />
+                    </StackPanel>
+                </ScrollViewer>
+                <Border
+                    Grid.Row="1"
+                    CornerRadius="{StaticResource MkCardCornerRadius}"
+                    BorderThickness="0"
+                    Background="{ThemeResource MkBrushSurface}">
+                    <WebView2 x:Name="MapWebView" />
+                </Border>
+            </Grid>
+        </Grid>
+
+        <!-- Selected place memory card + recent photos -->
+        <Border
+            x:Name="SelectedPlaceCard"
+            Grid.Row="2"
+            Style="{StaticResource MkCardStyle}"
+            Visibility="Collapsed">
+            <Grid ColumnDefinitions="220,*" ColumnSpacing="{StaticResource MkCardSpacing}">
+                <!-- Large representative photo -->
+                <Border Height="180" Style="{StaticResource MkThumbnailBorderStyle}">
+                    <Grid>
+                        <Border Background="{ThemeResource MkBrushSurfaceMuted}">
+                            <TextBlock
+                                Text="사진 없음"
+                                Style="{StaticResource MkCaptionTextStyle}"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center" />
+                        </Border>
+                        <Image
+                            x:Name="SelectedPlaceThumbImage"
+                            Style="{StaticResource MkImageStyle}" />
+                    </Grid>
+                </Border>
+
+                <Grid Grid.Column="1" RowDefinitions="Auto,Auto,*" RowSpacing="12">
+                    <StackPanel Spacing="4">
+                        <TextBlock
+                            Text="{Binding SelectedPlace.PlaceName, Mode=OneWay}"
+                            Style="{StaticResource MkPlaceNameStyle}"
+                            FontSize="22" />
+                        <TextBlock
+                            Text="{Binding SelectedPlace.DateRangeText, Mode=OneWay}"
+                            Style="{StaticResource MkCaptionTextStyle}" />
+                        <TextBlock Style="{StaticResource MkMetaTextStyle}">
+                            <Run Text="사진 " />
+                            <Run Text="{Binding SelectedPlace.PhotoCount, Mode=OneWay}" />
+                            <Run Text="장" />
+                        </TextBlock>
+                    </StackPanel>
+
+                    <Button
+                        Grid.Row="1"
+                        Content="사진 보기"
+                        Style="{StaticResource MkPrimaryButtonStyle}"
+                        HorizontalAlignment="Left"
+                        MinWidth="120"
+                        Click="OpenSelectedPhotos_OnClick" />
+
+                    <!-- Recent 4 photos -->
+                    <ItemsControl
+                        x:Name="PreviewFourHost"
+                        Grid.Row="2"
+                        VerticalAlignment="Bottom">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" Spacing="10" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border
+                                    Width="72"
+                                    Height="72"
+                                    Style="{StaticResource MkThumbnailBorderStyle}"
+                                    Tapped="PreviewThumb_OnTapped"
+                                    Tag="{Binding}">
+                                    <Image Style="{StaticResource MkImageStyle}" Source="{Binding ThumbnailImage, Mode=OneWay}" />
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
+            </Grid>
+        </Border>
+
+        <ProgressRing
+            Width="48"
+            Height="48"
+            IsActive="{Binding IsBusy, Mode=OneWay}"
+            Visibility="{Binding IsBusy, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center" />
+        </Grid>
+
+        <!-- Search dropdown overlay: sibling of layout grid so map is never pushed -->
+        <Border
+            x:Name="SuggestionsPanel"
+            Width="520"
+            MaxHeight="200"
+            HorizontalAlignment="Left"
+            VerticalAlignment="Top"
+            Style="{StaticResource MkSuggestionPanelStyle}"
+            Margin="0"
+            Visibility="{Binding IsSuggestionOpen, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+            <StackPanel Spacing="4">
+                <TextBlock Text="검색 결과" Style="{StaticResource MkSuggestionHeaderStyle}" />
+                <ListView
+                    ItemsSource="{Binding Suggestions, Mode=OneWay}"
+                    IsItemClickEnabled="True"
+                    ItemClick="Suggestion_OnItemClick"
+                    MaxHeight="160"
+                    SelectionMode="None"
+                    ScrollViewer.VerticalScrollBarVisibility="Auto">
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding DisplayText}" Margin="8,4" Style="{StaticResource MkBodyTextStyle}" />
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </StackPanel>
+        </Border>
+        <Border
+            x:Name="RecentPanel"
+            Width="520"
+            MaxHeight="200"
+            HorizontalAlignment="Left"
+            VerticalAlignment="Top"
+            Style="{StaticResource MkSuggestionPanelStyle}"
+            Margin="0"
+            Visibility="{Binding IsRecentOpen, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+            <StackPanel Spacing="4">
+                <TextBlock Text="최근 검색" Style="{StaticResource MkSuggestionHeaderStyle}" />
+                <ListView
+                    ItemsSource="{Binding RecentQueries, Mode=OneWay}"
+                    IsItemClickEnabled="True"
+                    ItemClick="Recent_OnItemClick"
+                    MaxHeight="160"
+                    SelectionMode="None"
+                    ScrollViewer.VerticalScrollBarVisibility="Auto">
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" Margin="4" Style="{StaticResource MkBodyTextStyle}" />
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </StackPanel>
+        </Border>
+    </Grid>
+</Page>

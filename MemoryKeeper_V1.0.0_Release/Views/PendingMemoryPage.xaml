@@ -1,0 +1,265 @@
+﻿<Page
+    x:Class="MemoryKeeper.App.Views.PendingMemoryPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:models="using:MemoryKeeper.App.Models"
+    xmlns:converters="using:MemoryKeeper.App.Converters"
+    mc:Ignorable="d">
+
+    <Page.Resources>
+        <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+    </Page.Resources>
+
+    <Grid RowDefinitions="Auto,Auto,*" RowSpacing="12">
+        <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Content="뒤로" Command="{Binding GoBackCommand}" Padding="10,4" />
+            <TextBlock
+                Text="미완성 추억"
+                FontSize="28"
+                FontWeight="SemiBold"
+                VerticalAlignment="Center" />
+        </StackPanel>
+        <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+            <StackPanel Orientation="Horizontal" Spacing="8" MinWidth="520">
+                <TextBlock
+                    Text="{Binding StatusMessage, Mode=OneWay}"
+                    VerticalAlignment="Center"
+                    TextWrapping="NoWrap"
+                    TextTrimming="CharacterEllipsis"
+                    Opacity="0.85"
+                    MaxWidth="220"
+                    MinWidth="80" />
+
+                <Button
+                    Content="새로고침"
+                    Style="{StaticResource MkButtonStyle}"
+                    VerticalAlignment="Center"
+                    Command="{Binding LoadCommand}"
+                    MinWidth="88" />
+
+                <Button
+                    Content="장소등록"
+                    Style="{StaticResource AccentButtonStyle}"
+                    VerticalAlignment="Center"
+                    MinHeight="40"
+                    Command="{Binding OpenPlaceRegistrationCommand}"
+                    MinWidth="96" />
+
+                <ComboBox
+                    PlaceholderText="기존 장소"
+                    ItemsSource="{Binding Places, Mode=OneWay}"
+                    SelectedItem="{Binding SelectedPlace, Mode=TwoWay}"
+                    DisplayMemberPath="DisplayName"
+                    VerticalAlignment="Center"
+                    MinHeight="40"
+                    Width="180" />
+
+                <Button
+                    Content="일괄 등록"
+                    Style="{StaticResource AccentButtonStyle}"
+                    VerticalAlignment="Center"
+                    MinHeight="40"
+                    Command="{Binding AssignPlaceCommand}"
+                    MinWidth="96" />
+            </StackPanel>
+        </ScrollViewer>
+
+        <Grid
+            Grid.Row="2"
+            ColumnDefinitions="0.35*,0.65*"
+            ColumnSpacing="12"
+            MinWidth="480">
+            <!-- Left rail: GPS candidates first (A), then unfinished groups -->
+            <Grid RowDefinitions="Auto,Auto,Auto,*" RowSpacing="8">
+                <Border x:ConnectionId='5'
+                    Padding="10,8"
+                    CornerRadius="8"
+                    BorderThickness="1"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                                
+                    Visibility="{Binding HasGpsReclassificationCandidates, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="📍 GPS 있음 · 장소 미등록" FontWeight="SemiBold" />
+                        <TextBlock
+                            Text="{Binding GpsSectionSummaryText, Mode=OneWay}"
+                            Opacity="0.8"
+                            FontSize="12" />
+                        <TextBlock
+                            Text="선택됨"
+                            FontSize="11"
+                            Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                            Visibility="{Binding IsGpsSectionSelected, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                    </StackPanel>
+                </Border>
+
+                <ListView x:ConnectionId='6'
+                    Grid.Row="1"
+                    MaxHeight="220"
+                    ItemsSource="{Binding ReclassificationCandidates, Mode=OneWay}"
+                    SelectionMode="Single"
+                                                                       
+                    Visibility="{Binding HasGpsReclassificationCandidates, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" Padding="0,4">
+                                <Border Width="40" Height="40" CornerRadius="4">
+                                    <Image Stretch="UniformToFill" Source="{Binding ThumbnailImage, Mode=OneWay}" />
+                                </Border>
+                                <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding FileName}" FontWeight="SemiBold" FontSize="12" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding CapturedAtText}" Opacity="0.75" FontSize="11" />
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+
+                <TextBlock
+                    Grid.Row="2"
+                    Text="미완성 그룹"
+                    FontWeight="SemiBold"
+                    Margin="0,4,0,0" />
+
+                <ListView
+                    Grid.Row="3"
+                    ItemsSource="{Binding Groups, Mode=OneWay}"
+                    SelectedItem="{Binding SelectedGroup, Mode=TwoWay}">
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Spacing="2" Padding="0,8">
+                                <TextBlock Text="{Binding GroupName}" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding PeriodText}" Opacity="0.75" FontSize="12" />
+                                <TextBlock Text="{Binding SummaryText}" Opacity="0.85" FontSize="12" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </Grid>
+
+            <Grid Grid.Column="1" RowDefinitions="Auto,Auto,*,Auto" RowSpacing="8">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Content="전체 포함" Command="{Binding IncludeAllCommand}" />
+                    <Button Content="전체 제외" Command="{Binding ExcludeAllCommand}" />
+                    <TextBlock
+                        VerticalAlignment="Center"
+                        Opacity="0.8"
+                        Text="{Binding IncludedCount, Mode=OneWay}" />
+                    <TextBlock VerticalAlignment="Center" Opacity="0.8" Text="장 선택됨" />
+                </StackPanel>
+
+                <TextBlock
+                    Grid.Row="1"
+                    Text="{Binding ActiveMediaSectionTitle, Mode=OneWay}"
+                    FontWeight="SemiBold" />
+
+                <GridView
+                    Grid.Row="2"
+                    ItemsSource="{Binding ActiveMediaItems, Mode=OneWay}"
+                    SelectionMode="None">
+                    <GridView.ItemTemplate>
+                        <DataTemplate>
+                            <Border
+                                Width="160"
+                                Height="220"
+                                Margin="4"
+                                Padding="8"
+                                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1"
+                                CornerRadius="8">
+                                <Grid RowDefinitions="Auto,*,Auto,Auto" RowSpacing="6">
+                                    <CheckBox
+                                        Content="포함"
+                                        IsChecked="{Binding IsIncluded, Mode=TwoWay}" />
+                                    <Border x:ConnectionId='3'
+                                        Grid.Row="1"
+                                        Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}"
+                                        CornerRadius="4"
+                                                                      
+                                        Tag="{Binding}">
+                                        <Grid>
+                                            <ProgressRing
+                                                Width="24"
+                                                Height="24"
+                                                IsActive="{Binding IsThumbnailLoading, Mode=OneWay}"
+                                                Visibility="{Binding IsThumbnailLoading, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                            <Image
+                                                Stretch="UniformToFill"
+                                                Source="{Binding ThumbnailImage, Mode=OneWay}" />
+                                            <Border
+                                                HorizontalAlignment="Left"
+                                                VerticalAlignment="Top"
+                                                Margin="4"
+                                                Padding="6,2"
+                                                CornerRadius="4"
+                                                Background="#B33A2E">
+                                                <TextBlock Text="미등록" Foreground="White" FontSize="10" FontWeight="SemiBold" />
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+                                    <StackPanel Grid.Row="2" Spacing="2">
+                                        <TextBlock
+                                            Text="{Binding FileName}"
+                                            TextTrimming="CharacterEllipsis"
+                                            MaxLines="1"
+                                            FontSize="12"
+                                            FontWeight="SemiBold" />
+                                        <TextBlock
+                                            Text="{Binding CapturedAtText}"
+                                            Opacity="0.75"
+                                            FontSize="11" />
+                                        <TextBlock
+                                            Text="{Binding StatusSummaryText}"
+                                            FontSize="11"
+                                            Opacity="0.9" />
+                                    </StackPanel>
+                                    <Button x:ConnectionId='4'
+                                        Grid.Row="3"
+                                        Content="상세"
+                                        HorizontalAlignment="Stretch"
+                                                                          
+                                        Tag="{Binding}" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </GridView.ItemTemplate>
+                </GridView>
+
+                <Border
+                    Grid.Row="3"
+                    Padding="12,10"
+                    Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}"
+                    CornerRadius="8"
+                    Visibility="{Binding HasSelectionForActions, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                        <Button
+                            Content="장소등록"
+                            Style="{StaticResource AccentButtonStyle}"
+                            MinHeight="40"
+                            VerticalAlignment="Center"
+                            Command="{Binding OpenPlaceRegistrationCommand}" />
+                        <Button
+                            Content="메모"
+                            Style="{StaticResource MkButtonStyle}"
+                            VerticalAlignment="Center"
+                            Command="{Binding OpenMemoCommand}" />
+                        <Button
+                            Content="즐겨찾기"
+                            Style="{StaticResource MkButtonStyle}"
+                            VerticalAlignment="Center"
+                            Command="{Binding ToggleFavoriteCommand}" />
+                        <Button
+                            Content="태그등록"
+                            Style="{StaticResource MkButtonStyle}"
+                            VerticalAlignment="Center"
+                            Command="{Binding OpenSelectedPhotoDetailCommand}" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Grid>
+    </Grid>
+</Page>
+

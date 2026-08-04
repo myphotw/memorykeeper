@@ -1,0 +1,228 @@
+<Page
+    x:Class="MemoryKeeper.App.Views.TimelinePage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:models="using:MemoryKeeper.App.Models"
+    xmlns:converters="using:MemoryKeeper.App.Converters"
+    mc:Ignorable="d">
+
+    <Page.Resources>
+        <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+    </Page.Resources>
+
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" RowSpacing="12">
+        <TextBlock
+            Text="Timeline"
+            FontSize="28"
+            FontWeight="SemiBold" />
+
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+            <TextBox
+                x:Name="SearchBox"
+                PlaceholderText="오사카 맛집, 작년 벚꽃, 즐겨찾기 음식..."
+                Text="{x:Bind ViewModel.SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                KeyDown="SearchBox_OnKeyDown"
+                GotFocus="SearchBox_OnGotFocus" />
+            <Button
+                Grid.Column="1"
+                Content="⌕"
+                ToolTipService.ToolTip="검색"
+                Width="48"
+                Style="{StaticResource AccentButtonStyle}"
+                Command="{x:Bind ViewModel.SearchCommand}" />
+            <Button
+                Grid.Column="2"
+                Content="최근"
+                Width="64"
+                Command="{x:Bind ViewModel.ShowRecentCommand}" />
+        </Grid>
+
+        <Grid Grid.Row="2">
+            <Border
+                x:Name="SuggestionsPanel"
+                Style="{StaticResource MkSuggestionPanelStyle}"
+                Visibility="{x:Bind ViewModel.IsSuggestionOpen, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="검색 결과" Style="{StaticResource MkSuggestionHeaderStyle}" />
+                    <ListView
+                        ItemsSource="{x:Bind ViewModel.Suggestions, Mode=OneWay}"
+                        IsItemClickEnabled="True"
+                        ItemClick="Suggestion_OnItemClick"
+                        MaxHeight="180"
+                        SelectionMode="None">
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="models:SearchSuggestionItem">
+                                <TextBlock Text="{x:Bind DisplayText}" Margin="8,6" />
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </StackPanel>
+            </Border>
+
+            <Border
+                x:Name="RecentPanel"
+                Style="{StaticResource MkSuggestionPanelStyle}"
+                Visibility="{x:Bind ViewModel.IsRecentOpen, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="최근 검색" Style="{StaticResource MkSuggestionHeaderStyle}" />
+                    <ListView
+                        ItemsSource="{x:Bind ViewModel.RecentQueries, Mode=OneWay}"
+                        IsItemClickEnabled="True"
+                        ItemClick="Recent_OnItemClick"
+                        MaxHeight="180"
+                        SelectionMode="None">
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding}" Margin="4,4" />
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <Grid Grid.Row="3" RowDefinitions="Auto,Auto,Auto" RowSpacing="8">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                <ItemsControl ItemsSource="{x:Bind ViewModel.SearchChips, Mode=OneWay}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" Spacing="6" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="models:SearchChipItem">
+                            <Border
+                                Padding="10,4"
+                                CornerRadius="12"
+                                Background="{ThemeResource AccentFillColorDefaultBrush}">
+                                <TextBlock
+                                    Text="{x:Bind DisplayLabel}"
+                                    Foreground="White"
+                                    FontSize="12" />
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
+            <Grid Grid.Row="1" ColumnDefinitions="160,Auto,Auto,Auto,*" ColumnSpacing="8">
+                <ComboBox
+                    Header="년도 (선택)"
+                    ItemsSource="{x:Bind ViewModel.AvailableYears, Mode=OneWay}"
+                    SelectedItem="{x:Bind ViewModel.SelectedYear, Mode=TwoWay}"
+                    HorizontalAlignment="Stretch" />
+                <Button
+                    Grid.Column="1"
+                    Content="전체 년도"
+                    VerticalAlignment="Bottom"
+                    Command="{x:Bind ViewModel.ClearYearFilterCommand}" />
+                <Button
+                    Grid.Column="2"
+                    Content="지도에서 보기"
+                    VerticalAlignment="Bottom"
+                    Command="{x:Bind ViewModel.OpenMapCommand}" />
+                <Button
+                    Grid.Column="3"
+                    Content="갤러리에서 보기"
+                    VerticalAlignment="Bottom"
+                    Command="{x:Bind ViewModel.OpenGalleryCommand}" />
+                <TextBlock
+                    Grid.Column="4"
+                    Text="{x:Bind ViewModel.StatusMessage, Mode=OneWay}"
+                    VerticalAlignment="Bottom"
+                    Margin="8,0,0,8"
+                    TextWrapping="Wrap"
+                    Opacity="0.8" />
+            </Grid>
+
+            <StackPanel
+                Grid.Row="2"
+                Spacing="8"
+                Visibility="{x:Bind ViewModel.HasNoResults, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                <TextBlock Text="검색 결과가 없습니다." FontSize="16" Opacity="0.85" />
+                <Button
+                    Content="조건 초기화"
+                    HorizontalAlignment="Left"
+                    Command="{x:Bind ViewModel.ClearSearchCommand}" />
+            </StackPanel>
+        </Grid>
+
+        <ListView
+            Grid.Row="4"
+            ItemsSource="{x:Bind ViewModel.YearGroups, Mode=OneWay}"
+            SelectionMode="None"
+            Visibility="{x:Bind ViewModel.HasNoResults, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}">
+            <ListView.ItemTemplate>
+                <DataTemplate x:DataType="models:TimelineYearGroup">
+                    <StackPanel Spacing="8" Margin="0,0,0,16">
+                        <TextBlock
+                            Text="{x:Bind YearTitle}"
+                            FontSize="20"
+                            FontWeight="SemiBold" />
+
+                        <ItemsControl ItemsSource="{x:Bind Places}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="models:TimelinePlaceItem">
+                                    <Border
+                                        Padding="12"
+                                        Margin="0,0,0,8"
+                                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="8">
+                                        <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto,Auto" RowSpacing="4">
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <TextBlock
+                                                    Text="{x:Bind PlaceName}"
+                                                    FontSize="16"
+                                                    FontWeight="SemiBold" />
+                                                <TextBlock
+                                                    Text="★"
+                                                    FontSize="14"
+                                                    Foreground="#E6A700"
+                                                    Visibility="{x:Bind HasFavorite, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                            </StackPanel>
+
+                                            <Button
+                                                Grid.Column="1"
+                                                Content="선택"
+                                                Click="PlaceSelectButton_OnClick"
+                                                Tag="{x:Bind}" />
+                                            <Button
+                                                Grid.Column="2"
+                                                Content="사진"
+                                                Click="PlaceOpenPhotoButton_OnClick"
+                                                Tag="{x:Bind}" />
+
+                                            <TextBlock
+                                                Grid.Row="1"
+                                                Grid.ColumnSpan="3"
+                                                Text="{x:Bind RegionSummary}"
+                                                Opacity="0.75" />
+
+                                            <TextBlock
+                                                Grid.Row="2"
+                                                Grid.ColumnSpan="3"
+                                                Opacity="0.85">
+                                                <Run Text="방문 " />
+                                                <Run Text="{x:Bind VisitRecordCount}" />
+                                                <Run Text=" · 사진 " />
+                                                <Run Text="{x:Bind PhotoCount}" />
+                                                <Run Text=" · 첫 방문 " />
+                                                <Run Text="{x:Bind FirstVisitText}" />
+                                                <Run Text=" · 최근 방문 " />
+                                                <Run Text="{x:Bind LastVisitText}" />
+                                            </TextBlock>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+    </Grid>
+</Page>

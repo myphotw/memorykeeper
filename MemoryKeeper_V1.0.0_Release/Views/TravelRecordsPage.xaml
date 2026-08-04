@@ -1,0 +1,432 @@
+﻿<Page x:ConnectionId='1'
+    x:Class="MemoryKeeper.App.Views.TravelRecordsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:converters="using:MemoryKeeper.App.Converters"
+    mc:Ignorable="d"
+                                       
+                                                 >
+
+    <Page.Resources>
+        <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+
+        <Style x:Key="InsightCardStyle" TargetType="Border" BasedOn="{StaticResource MkCardStyle}">
+            <Setter Property="Padding" Value="20" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="MinHeight" Value="128" />
+        </Style>
+
+        <Style x:Key="InsightLabelStyle" TargetType="TextBlock" BasedOn="{StaticResource MkCaptionTextStyle}">
+            <Setter Property="Opacity" Value="0.72" />
+            <Setter Property="Margin" Value="0,0,0,8" />
+        </Style>
+
+        <Style x:Key="InsightTitleStyle" TargetType="TextBlock" BasedOn="{StaticResource MkPlaceNameStyle}">
+            <Setter Property="FontSize" Value="18" />
+            <Setter Property="TextWrapping" Value="WrapWholeWords" />
+            <Setter Property="MaxLines" Value="2" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+
+        <Style x:Key="TripRowStyle" TargetType="Border">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="12,10" />
+            <Setter Property="MinWidth" Value="168" />
+            <Setter Property="MaxWidth" Value="220" />
+            <Setter Property="Margin" Value="0,0,8,8" />
+            <Setter Property="CornerRadius" Value="10" />
+        </Style>
+    </Page.Resources>
+
+    <Grid Background="{ThemeResource MkBrushBackground}">
+        <ScrollViewer
+            VerticalScrollBarVisibility="Auto"
+            HorizontalScrollBarVisibility="Disabled"
+            Padding="0,0,8,0">
+            <StackPanel x:ConnectionId='2'
+                x:Name="ContentHost"
+                HorizontalAlignment="Stretch"
+                MaxWidth="{StaticResource MkContentMaxWidth}"
+                Padding="{StaticResource MkPagePaddingThickness}"
+                Spacing="0">
+
+                <!-- Header -->
+                <Grid Margin="0,0,0,8" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                    <StackPanel Spacing="6">
+                        <TextBlock
+                            Text="나의 여행"
+                            Style="{StaticResource MkPageTitleStyle}"
+                            Margin="0" />
+                        <TextBlock
+                            Text="지금까지 다녀온 여행을 한눈에 돌아보세요."
+                            Style="{StaticResource MkCaptionTextStyle}"
+                            Opacity="0.85" />
+                    </StackPanel>
+                    <TextBlock
+                        Grid.Column="1"
+                        Text="{Binding StatusMessage, Mode=OneWay}"
+                        Style="{StaticResource MkCaptionTextStyle}"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Top"
+                        MaxWidth="240"
+                        Opacity="0.75"
+                        TextWrapping="Wrap" />
+                </Grid>
+
+                <!-- Home location (existing) -->
+                <Border
+                    Style="{StaticResource MkCardStyle}"
+                    Margin="0,0,0,24"
+                    Visibility="{Binding NeedsHomeLocation, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="Home Location" Style="{StaticResource MkSectionTitleStyle}" Margin="0" />
+                        <TextBlock
+                            Text="가장 멀리 여행한 장소를 계산하려면 Home 좌표가 필요합니다."
+                            Style="{StaticResource MkCaptionTextStyle}" />
+                        <TextBox
+                            Style="{StaticResource MkTextBoxStyle}"
+                            Header="주소"
+                            Text="{Binding HomeAddressInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        <Button
+                            Content="주소로 저장"
+                            Style="{StaticResource MkPrimaryButtonStyle}"
+                            Command="{Binding SaveHomeByAddressCommand}"
+                            HorizontalAlignment="Left" />
+                        <Grid x:ConnectionId='22'
+                            x:Name="HomeCoordGrid"
+                            ColumnDefinitions="*,*"
+                            ColumnSpacing="8"
+                            MaxWidth="{StaticResource MkInputMaxWidth}"
+                            HorizontalAlignment="Left">
+                            <TextBox
+                                Header="위도"
+                                Text="{Binding HomeLatitudeInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                MinHeight="40" />
+                            <TextBox
+                                Grid.Column="1"
+                                Header="경도"
+                                Text="{Binding HomeLongitudeInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                MinHeight="40" />
+                        </Grid>
+                        <Button
+                            Content="좌표로 저장"
+                            Style="{StaticResource MkSecondaryButtonStyle}"
+                            Command="{Binding SaveHomeByCoordinatesCommand}"
+                            HorizontalAlignment="Left" />
+                    </StackPanel>
+                </Border>
+
+                <TextBlock
+                    Text="{Binding HomeLocationSummary, Mode=OneWay}"
+                    Style="{StaticResource MkMetaTextStyle}"
+                    Margin="0,0,0,20"
+                    Visibility="{Binding NeedsHomeLocation, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}" />
+
+                <!-- Featured memory: text only (no hero photo) -->
+                <Border x:ConnectionId='3'
+                    Margin="0,0,0,24"
+                    Padding="16,12"
+                    CornerRadius="12"
+                    Background="{ThemeResource MkBrushSurface}"
+                    BorderBrush="{ThemeResource MkBrushAccentGoldMuted}"
+                    BorderThickness="1"
+                    Visibility="{Binding HasFeaturedMemory, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                                                    
+                                                                 
+                                                               >
+                    <StackPanel Spacing="4">
+                        <TextBlock
+                            Text="{Binding FeaturedMemoryCaption, Mode=OneWay}"
+                            Style="{StaticResource MkCaptionTextStyle}"
+                            Opacity="0.8" />
+                        <TextBlock
+                            Text="{Binding FeaturedMemory.TripName, Mode=OneWay}"
+                            Style="{StaticResource MkPlaceNameStyle}" />
+                        <TextBlock
+                            Text="{Binding FeaturedMemory.PeriodText, Mode=OneWay}"
+                            Style="{StaticResource MkMetaTextStyle}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Memory Insight -->
+                <TextBlock
+                    Text="Memory Insight"
+                    Style="{StaticResource MkSectionTitleStyle}"
+                    Margin="0,0,0,14"
+                    FontSize="20" />
+
+                <Grid x:ConnectionId='4'
+                    Margin="0,0,0,32"
+                    ColumnDefinitions="*,*,*,*"
+                    ColumnSpacing="16"
+                    RowDefinitions="Auto"
+                    x:Name="InsightGrid">
+                    <!-- ① 최근 여행 -->
+                    <Border x:ConnectionId='16'
+                        Style="{StaticResource InsightCardStyle}"
+                                                       
+                                                                     
+                                                                   >
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="최근 여행" Style="{StaticResource InsightLabelStyle}" />
+                            <TextBlock x:ConnectionId='20'
+                                x:Name="InsightRecentPlace"
+                                Text="—"
+                                Style="{StaticResource InsightTitleStyle}" />
+                            <TextBlock x:ConnectionId='21'
+                                x:Name="InsightRecentDate"
+                                Text=""
+                                Style="{StaticResource MkMetaTextStyle}" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ② 가장 오래 안 간 곳 -->
+                    <Border x:ConnectionId='17'
+                        Grid.Column="1"
+                        Style="{StaticResource InsightCardStyle}"
+                        Visibility="{Binding HasLongUnvisited, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                                                       
+                                                                     
+                                                                   >
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="가장 오래 안 간 곳" Style="{StaticResource InsightLabelStyle}" />
+                            <TextBlock
+                                Text="{Binding LongUnvisitedPlace.PlaceName, Mode=OneWay}"
+                                Style="{StaticResource InsightTitleStyle}" />
+                            <TextBlock
+                                Text="{Binding LongUnvisitedPlace.LastVisitText, Mode=OneWay}"
+                                Style="{StaticResource MkMetaTextStyle}" />
+                            <TextBlock
+                                Text="{Binding LongUnvisitedPlace.RelativeText, Mode=OneWay}"
+                                Style="{StaticResource MkCaptionTextStyle}"
+                                Opacity="0.8" />
+                        </StackPanel>
+                    </Border>
+                    <Border
+                        Grid.Column="1"
+                        Style="{StaticResource InsightCardStyle}"
+                        Visibility="{Binding HasLongUnvisited, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="가장 오래 안 간 곳" Style="{StaticResource InsightLabelStyle}" />
+                            <TextBlock Text="아직 기록이 없어요" Style="{StaticResource InsightTitleStyle}" Opacity="0.55" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ③ 가장 멀리 간 여행 -->
+                    <Border x:ConnectionId='18'
+                        Grid.Column="2"
+                        Style="{StaticResource InsightCardStyle}"
+                        Visibility="{Binding HasFarthest, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                                                  
+                                                                     
+                                                                   >
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="가장 멀리 간 여행" Style="{StaticResource InsightLabelStyle}" />
+                            <TextBlock
+                                Text="{Binding FarthestPlace.PlaceName, Mode=OneWay}"
+                                Style="{StaticResource InsightTitleStyle}" />
+                            <TextBlock
+                                Text="{Binding FarthestPlace.DistanceText, Mode=OneWay}"
+                                Style="{StaticResource MkMetaTextStyle}" />
+                        </StackPanel>
+                    </Border>
+                    <Border
+                        Grid.Column="2"
+                        Style="{StaticResource InsightCardStyle}"
+                        Visibility="{Binding HasFarthest, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="가장 멀리 간 여행" Style="{StaticResource InsightLabelStyle}" />
+                            <TextBlock Text="Home을 설정하면 보여요" Style="{StaticResource InsightTitleStyle}" Opacity="0.55" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ④ 가장 많이 방문한 나라 -->
+                    <Border x:ConnectionId='19'
+                        Grid.Column="3"
+                        Style="{StaticResource InsightCardStyle}"
+                        Visibility="{Binding HasTopCountry, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                                                 
+                                                                     
+                                                                   >
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="가장 많이 방문한 나라" Style="{StaticResource InsightLabelStyle}" />
+                            <TextBlock
+                                Text="{Binding TopCountry.Country, Mode=OneWay}"
+                                Style="{StaticResource InsightTitleStyle}" />
+                            <TextBlock
+                                Text="{Binding TopCountry.VisitCountText, Mode=OneWay}"
+                                Style="{StaticResource MkMetaTextStyle}" />
+                        </StackPanel>
+                    </Border>
+                    <Border
+                        Grid.Column="3"
+                        Style="{StaticResource InsightCardStyle}"
+                        Visibility="{Binding HasTopCountry, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="가장 많이 방문한 나라" Style="{StaticResource InsightLabelStyle}" />
+                            <TextBlock Text="아직 기록이 없어요" Style="{StaticResource InsightTitleStyle}" Opacity="0.55" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <!-- Timeline -->
+                <TextBlock
+                    Text="여행 타임라인"
+                    Style="{StaticResource MkSectionTitleStyle}"
+                    Margin="0,0,0,6"
+                    FontSize="20" />
+                <TextBlock
+                    Text="연도별로 다녀온 여행을 시간순으로 살펴보세요."
+                    Style="{StaticResource MkCaptionTextStyle}"
+                    Margin="0,0,0,16"
+                    Opacity="0.8" />
+
+                <ItemsControl
+                    ItemsSource="{Binding YearChapters, Mode=OneWay}"
+                    Visibility="{Binding HasYearChapters, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Margin="0,0,0,28">
+                                <TextBlock
+                                    Text="{Binding YearTitle}"
+                                    Style="{StaticResource MkSectionTitleStyle}"
+                                    FontSize="26"
+                                    Margin="0,0,0,10"
+                                    CharacterSpacing="30" />
+                                <GridView x:ConnectionId='13'
+                                    ItemsSource="{Binding Trips}"
+                                    SelectionMode="None"
+                                    IsItemClickEnabled="True"
+                                                                   >
+                                    <GridView.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <ItemsWrapGrid Orientation="Horizontal" MaximumRowsOrColumns="6" />
+                                        </ItemsPanelTemplate>
+                                    </GridView.ItemsPanel>
+                                    <GridView.ItemContainerStyle>
+                                        <Style TargetType="GridViewItem">
+                                            <Setter Property="Margin" Value="0" />
+                                            <Setter Property="Padding" Value="0" />
+                                            <Setter Property="MinWidth" Value="0" />
+                                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                        </Style>
+                                    </GridView.ItemContainerStyle>
+                                    <GridView.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border x:ConnectionId='14'
+                                                Style="{StaticResource TripRowStyle}"
+                                                Tag="{Binding}"
+                                                                                         
+                                                                                       
+                                                                         >
+                                                <StackPanel Spacing="2">
+                                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                                        <TextBlock x:ConnectionId='15'
+                                                            FontSize="16"
+                                                                                           />
+                                                        <TextBlock
+                                                            Text="{Binding Country, Mode=OneWay}"
+                                                            Style="{StaticResource MkBodyTextStyle}"
+                                                            FontWeight="SemiBold" />
+                                                    </StackPanel>
+                                                    <TextBlock
+                                                        Text="{Binding TripName}"
+                                                        Style="{StaticResource MkPlaceNameStyle}"
+                                                        FontSize="16"
+                                                        TextTrimming="CharacterEllipsis"
+                                                        MaxLines="1" />
+                                                    <TextBlock
+                                                        Text="{Binding PeriodText}"
+                                                        Style="{StaticResource MkMetaTextStyle}" />
+                                                    <TextBlock
+                                                        Style="{StaticResource MkCaptionTextStyle}"
+                                                        Opacity="0.75">
+                                                        <Run Text="사진 " />
+                                                        <Run Text="{Binding PhotoCount}" />
+                                                        <Run Text="장" />
+                                                    </TextBlock>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </GridView.ItemTemplate>
+                                </GridView>
+                                <Border
+                                    Height="1"
+                                    Margin="0,8,0,0"
+                                    Background="{ThemeResource MkBrushDivider}"
+                                    Opacity="0.45" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- Empty -->
+                <Border
+                    Style="{StaticResource MkEmptyStateCardStyle}"
+                    Visibility="{Binding HasYearChapters, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}">
+                    <StackPanel Spacing="12" HorizontalAlignment="Center">
+                        <TextBlock
+                            Text="아직 여행 기록이 없습니다."
+                            Style="{StaticResource MkEmptyStateTitleStyle}" />
+                        <TextBlock
+                            Text="사진을 가져오고 장소를 연결하면 여행이 쌓입니다."
+                            Style="{StaticResource MkEmptyStateMessageStyle}" />
+                        <Button x:ConnectionId='11'
+                            Content="사진 가져오기"
+                            Style="{StaticResource MkPrimaryButtonStyle}"
+                            MinWidth="200"
+                            HorizontalAlignment="Center"
+                                                         />
+                    </StackPanel>
+                </Border>
+
+                <!-- Bottom stats (computed in code-behind from YearChapters) -->
+                <StackPanel x:ConnectionId='5'
+                    x:Name="StatsHost"
+                    Margin="0,8,0,12"
+                    Spacing="12"
+                    Visibility="Collapsed">
+                    <TextBlock
+                        Text="여행 한눈에"
+                        Style="{StaticResource MkSectionTitleStyle}"
+                        FontSize="18"
+                        Margin="0,0,0,4" />
+                    <Grid ColumnDefinitions="*,*,*,*,*" ColumnSpacing="12">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="총 여행" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
+                            <TextBlock x:ConnectionId='10' x:Name="StatTrips" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="4">
+                            <TextBlock Text="방문 국가" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
+                            <TextBlock x:ConnectionId='9' x:Name="StatCountries" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2" Spacing="4">
+                            <TextBlock Text="방문 도시·여행" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
+                            <TextBlock x:ConnectionId='8' x:Name="StatCities" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="3" Spacing="4">
+                            <TextBlock Text="방문 장소" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
+                            <TextBlock x:ConnectionId='7' x:Name="StatPlaces" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="4" Spacing="4">
+                            <TextBlock Text="총 사진" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
+                            <TextBlock x:ConnectionId='6' x:Name="StatPhotos" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+
+        <ProgressRing
+            Width="48"
+            Height="48"
+            IsActive="{Binding IsBusy, Mode=OneWay}"
+            Visibility="{Binding IsBusy, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center" />
+    </Grid>
+</Page>
+

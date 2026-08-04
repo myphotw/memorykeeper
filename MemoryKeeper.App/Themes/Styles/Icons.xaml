@@ -1,0 +1,30 @@
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+      Icon guidance (Material Outlined spirit on WinUI):
+      Prefer Segoe Fluent Icons / outlined glyphs.
+      Foreground: MkBrushIcon · never louder than photos.
+    -->
+    <Style x:Key="MkIconStyle" TargetType="FontIcon">
+        <Setter Property="FontFamily" Value="{StaticResource MkIconFontFamily}" />
+        <Setter Property="FontSize" Value="{StaticResource MkIconSize}" />
+        <Setter Property="Foreground" Value="{ThemeResource MkBrushIcon}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="HorizontalAlignment" Value="Center" />
+    </Style>
+
+    <Style x:Key="MkIconSmallStyle" TargetType="FontIcon" BasedOn="{StaticResource MkIconStyle}">
+        <Setter Property="FontSize" Value="{StaticResource MkIconSizeSmall}" />
+        <Setter Property="Foreground" Value="{ThemeResource MkBrushIconMuted}" />
+    </Style>
+
+    <Style x:Key="MkIconLargeStyle" TargetType="FontIcon" BasedOn="{StaticResource MkIconStyle}">
+        <Setter Property="FontSize" Value="{StaticResource MkIconSizeLarge}" />
+    </Style>
+
+    <Style x:Key="MkIconPrimaryStyle" TargetType="FontIcon" BasedOn="{StaticResource MkIconStyle}">
+        <Setter Property="Foreground" Value="{ThemeResource MkBrushPrimary}" />
+    </Style>
+</ResourceDictionary>
