@@ -52,3 +52,6 @@ MemoryKeeper.db
 *.appxbundle
 *.msix
 *.msixbundle
+
+# Release Backup
+MemoryKeeper_V1.0.0_Release/
