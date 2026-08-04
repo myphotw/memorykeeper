@@ -13,6 +13,7 @@ public static class DependencyInjection
         services.AddTransient<MediaService>();
         services.AddTransient<GalleryHierarchyService>();
         services.AddTransient<MediaImportService>();
+        services.AddTransient<UploadMonitorService>();
         services.AddTransient<StorageService>();
         services.AddTransient<PlaceAssignmentService>();
         services.AddTransient<PlaceService>();

@@ -17,4 +17,9 @@ public sealed class TcBackendOptions
     public string Version { get; set; } = "1.0.0";
 
     public string ServiceName { get; set; } = "MemoryKeeper";
+
+    /// <summary>
+    /// When true, Import uses Upload API instead of local SQLite pipeline.
+    /// </summary>
+    public bool UseBackendUpload { get; set; }
 }

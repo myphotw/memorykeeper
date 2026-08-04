@@ -1,10 +1,13 @@
 using MemoryKeeper.Application.Diagnostics;
 using MemoryKeeper.Application.DTOs;
+using MemoryKeeper.Application.DTOs.Upload;
 using MemoryKeeper.Application.Interfaces;
+using MemoryKeeper.Application.Options;
 using MemoryKeeper.Application.Time;
 using MemoryKeeper.Domain.Entities;
 using MemoryKeeper.Domain.Enums;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace MemoryKeeper.Application.Services;
 
@@ -21,6 +24,8 @@ public sealed class MediaImportService
     private readonly IStorageRepository _storageRepository;
     private readonly PlaceAssignmentService _placeAssignmentService;
     private readonly IMediaLibraryPathSyncService _pathSyncService;
+    private readonly IUploadApiRepository? _uploadApiRepository;
+    private readonly IOptionsMonitor<BackendUploadOptions>? _backendUploadOptions;
     private readonly ILogger<MediaImportService> _logger;
 
     public MediaImportService(
@@ -33,7 +38,9 @@ public sealed class MediaImportService
         IStorageRepository storageRepository,
         PlaceAssignmentService placeAssignmentService,
         IMediaLibraryPathSyncService pathSyncService,
-        ILogger<MediaImportService> logger)
+        ILogger<MediaImportService> logger,
+        IUploadApiRepository? uploadApiRepository = null,
+        IOptionsMonitor<BackendUploadOptions>? backendUploadOptions = null)
     {
         _fileScanner = fileScanner;
         _metadataExtractor = metadataExtractor;
@@ -45,7 +52,13 @@ public sealed class MediaImportService
         _placeAssignmentService = placeAssignmentService;
         _pathSyncService = pathSyncService;
         _logger = logger;
+        _uploadApiRepository = uploadApiRepository;
+        _backendUploadOptions = backendUploadOptions;
     }
+
+    private bool UseBackendUpload =>
+        _backendUploadOptions?.CurrentValue.UseBackendUpload == true
+        && _uploadApiRepository is not null;
 
     public Task<MediaImportResult> ImportAsync(
         MediaImportRequest request,
@@ -77,6 +90,143 @@ public sealed class MediaImportService
             throw new InvalidOperationException($"Storage '{storage.Name}' is not active.");
         }
 
+        if (UseBackendUpload)
+        {
+            return await ImportViaBackendUploadAsync(request, storage, progress, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return await ImportViaSqliteAsync(request, storage, progress, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<MediaImportResult> ImportViaBackendUploadAsync(
+        MediaImportRequest request,
+        Storage storage,
+        IProgress<ImportProgressDto>? progress,
+        CancellationToken cancellationToken)
+    {
+        var uploadApi = _uploadApiRepository
+            ?? throw new InvalidOperationException("IUploadApiRepository is not registered.");
+
+        _logger.LogInformation(
+            "{Prefix} Backend upload started. Folder={Folder}, StorageId={StorageId}",
+            PhotoRegisterLogPrefix,
+            request.SourceFolderPath,
+            request.StorageId);
+
+        var scannedFiles = await _fileScanner.ScanAsync(request.SourceFolderPath, cancellationToken);
+        var itemResults = new List<MediaImportItemResult>(scannedFiles.Count);
+        var importedCount = 0;
+        var failedCount = 0;
+
+        ReportProgress(
+            progress,
+            totalCount: scannedFiles.Count,
+            processedCount: 0,
+            importedCount,
+            duplicateCount: 0,
+            failedCount,
+            currentFileName: null,
+            currentStage: "Backend 업로드 중...",
+            isCompleted: false);
+
+        foreach (var filePath in scannedFiles)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var fileName = Path.GetFileName(filePath);
+            MediaImportItemResult itemResult;
+            try
+            {
+                var mediaType = _fileScanner.ResolveMediaType(filePath);
+                var upload = await uploadApi.UploadAsync(filePath, cancellationToken).ConfigureAwait(false);
+                var status = UploadStatusDto.FromResponse(upload);
+
+                _logger.LogInformation(
+                    "{Prefix} Backend upload ok. File={File}, JobId={JobId}, Status={Status}",
+                    PhotoRegisterLogPrefix,
+                    fileName,
+                    status.JobId,
+                    status.Status);
+
+                itemResult = new MediaImportItemResult
+                {
+                    OriginalPath = filePath,
+                    FileName = fileName,
+                    MediaType = mediaType,
+                    Status = MediaStatus.Imported,
+                    MediaId = null,
+                    ContentHash = status.JobId,
+                    RelativePath = upload.IncomingPath,
+                    ErrorMessage = status.Message,
+                };
+                importedCount++;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "{Prefix} Backend upload failed. File={File}", PhotoRegisterLogPrefix, fileName);
+                itemResult = new MediaImportItemResult
+                {
+                    OriginalPath = filePath,
+                    FileName = fileName,
+                    MediaType = _fileScanner.ResolveMediaType(filePath),
+                    Status = MediaStatus.Failed,
+                    ErrorMessage = ex.Message,
+                };
+                failedCount++;
+            }
+
+            itemResults.Add(itemResult);
+            ReportProgress(
+                progress,
+                totalCount: scannedFiles.Count,
+                processedCount: itemResults.Count,
+                importedCount,
+                duplicateCount: 0,
+                failedCount,
+                currentFileName: itemResult.FileName,
+                currentStage: itemResult.Status == MediaStatus.Failed ? "업로드 오류" : "Backend 업로드",
+                isCompleted: false);
+        }
+
+        var result = new MediaImportResult
+        {
+            SourceFolderPath = request.SourceFolderPath,
+            StorageId = storage.Id,
+            ScannedCount = scannedFiles.Count,
+            ImportedCount = importedCount,
+            DuplicateCount = 0,
+            FailedCount = failedCount,
+            Items = itemResults,
+        };
+
+        ReportProgress(
+            progress,
+            totalCount: result.ScannedCount,
+            processedCount: result.ScannedCount,
+            importedCount: result.ImportedCount,
+            duplicateCount: 0,
+            failedCount: result.FailedCount,
+            currentFileName: null,
+            currentStage: "완료",
+            isCompleted: true);
+
+        _logger.LogInformation(
+            "{Prefix} Backend upload finished. Scanned={Scanned}, Uploaded={Uploaded}, Failed={Failed}",
+            PhotoRegisterLogPrefix,
+            result.ScannedCount,
+            result.ImportedCount,
+            result.FailedCount);
+
+        return result;
+    }
+
+    private async Task<MediaImportResult> ImportViaSqliteAsync(
+        MediaImportRequest request,
+        Storage storage,
+        IProgress<ImportProgressDto>? progress,
+        CancellationToken cancellationToken)
+    {
         _logger.LogInformation(
             "{Prefix} Started. Folder={Folder}, StorageId={StorageId}",
             PhotoRegisterLogPrefix,

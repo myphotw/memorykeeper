@@ -9,6 +9,7 @@ using MemoryKeeper.Application.Navigation;
 using MemoryKeeper.Application.Services;
 using MemoryKeeper.Infrastructure;
 using MemoryKeeper.Infrastructure.Database;
+using MemoryKeeper.Infrastructure.Repositories.Api;
 using MemoryKeeper.Infrastructure.Services.Api;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -212,6 +213,11 @@ public partial class App : Microsoft.UI.Xaml.Application
                 services.AddApplicationServices();
                 services.AddInfrastructureServices();
                 services.AddTcBackendApiClient(context.Configuration);
+                services.Configure<MemoryKeeper.Application.Options.BackendUploadOptions>(
+                    context.Configuration.GetSection(MemoryKeeper.Application.Options.BackendUploadOptions.SectionName));
+                services.AddSingleton<IGalleryApiRepository, GalleryApiRepository>();
+                services.AddSingleton<IUploadApiRepository, UploadApiRepository>();
+                services.AddSingleton<IUploadJobApiRepository, UploadJobApiRepository>();
                 services.AddMemoryKeeperDatabase(DatabaseDirectory);
 
                 services.AddSingleton<IFolderPickerService, FolderPickerService>();
