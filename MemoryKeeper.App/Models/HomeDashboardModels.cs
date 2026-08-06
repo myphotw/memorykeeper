@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using MemoryKeeper.Application.DTOs;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 
 namespace MemoryKeeper.App.Models;
@@ -85,11 +86,56 @@ public partial class HomeRecentVisitItem : ObservableObject
 
     public string PlaceName => Dto.PlaceName;
 
+    public string Country => string.IsNullOrWhiteSpace(Dto.Country) ? string.Empty : Dto.Country;
+
+    public string FlagEmoji => CountryFlag(Country);
+
+    public string TitleLine =>
+        string.IsNullOrWhiteSpace(Country)
+            ? PlaceName
+            : $"{PlaceName}, {Country} {FlagEmoji}".Trim();
+
+    public string RegionLine =>
+        string.IsNullOrWhiteSpace(Country)
+            ? VisitCountText
+            : $"{Country} · {VisitCountText}";
+
     public string VisitCountText => $"방문 {Dto.VisitRecordCount}회";
+
+    public string PhotoCountText => Dto.PhotoCount > 0 ? $"사진 {Dto.PhotoCount}장" : string.Empty;
 
     public string LastVisitText => Dto.LastVisitDate?.ToLocalTime().ToString("yyyy.MM.dd") ?? string.Empty;
 
+    public string MetaLine
+    {
+        get
+        {
+            var parts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(LastVisitText))
+            {
+                parts.Add(LastVisitText);
+            }
+
+            if (!string.IsNullOrWhiteSpace(PhotoCountText))
+            {
+                parts.Add(PhotoCountText);
+            }
+
+            return string.Join(" · ", parts);
+        }
+    }
+
     public string TagsText => Dto.TopTags.Count == 0 ? string.Empty : string.Join(" · ", Dto.TopTags);
+
+    private static string CountryFlag(string country) =>
+        country.Trim() switch
+        {
+            "대한민국" or "한국" or "Korea" or "South Korea" => "🇰🇷",
+            "일본" or "Japan" => "🇯🇵",
+            "중국" or "China" => "🇨🇳",
+            "미국" or "United States" or "USA" => "🇺🇸",
+            _ => string.Empty
+        };
 
     public string AbsoluteLibraryPath => Dto.AbsoluteLibraryPath ?? string.Empty;
 
@@ -117,11 +163,76 @@ public partial class HomePhotoItem : ObservableObject
 
     public string AbsoluteLibraryPath => Dto.AbsoluteLibraryPath;
 
+    public string CaptionLine
+    {
+        get
+        {
+            var date = Dto.CapturedAt?.ToLocalTime().ToString("yyyy.MM.dd");
+            var place = string.Join(
+                ", ",
+                new[] { Dto.PlaceName, Dto.Country }.Where(s => !string.IsNullOrWhiteSpace(s)));
+            if (!string.IsNullOrWhiteSpace(date) && !string.IsNullOrWhiteSpace(place))
+            {
+                return $"{date}  {place}";
+            }
+
+            return date ?? place ?? FileName;
+        }
+    }
+
     [ObservableProperty]
     private BitmapImage? thumbnailImage;
 
     [ObservableProperty]
     private bool isThumbnailLoading;
+}
+
+public sealed class HomeYearBarItem
+{
+    public HomeYearBarItem(string year, int count, double heightRatio, double barHeight)
+    {
+        Year = year;
+        Count = count;
+        HeightRatio = heightRatio;
+        BarHeight = barHeight;
+    }
+
+    public string Year { get; }
+
+    public int Count { get; }
+
+    public double HeightRatio { get; }
+
+    public double BarHeight { get; }
+
+    public string CountText => Count.ToString();
+}
+
+public sealed class HomeCountrySliceItem
+{
+    public HomeCountrySliceItem(string name, int count, double startAngle, double sweepAngle, Windows.UI.Color color)
+    {
+        Name = name;
+        Count = count;
+        StartAngle = startAngle;
+        SweepAngle = sweepAngle;
+        Color = color;
+        Brush = new SolidColorBrush(color);
+    }
+
+    public string Name { get; }
+
+    public int Count { get; }
+
+    public double StartAngle { get; }
+
+    public double SweepAngle { get; }
+
+    public Windows.UI.Color Color { get; }
+
+    public SolidColorBrush Brush { get; }
+
+    public string LegendText => $"{Name}  {Count}";
 }
 
 public partial class HomeHeroIndicator : ObservableObject

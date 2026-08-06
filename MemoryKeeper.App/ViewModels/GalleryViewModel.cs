@@ -10,7 +10,6 @@ using MemoryKeeper.Application.Interfaces;
 using MemoryKeeper.Infrastructure.Services.Api;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI.Dispatching;
-using Microsoft.UI.Xaml.Media.Imaging;
 
 namespace MemoryKeeper.App.ViewModels;
 
@@ -20,7 +19,6 @@ public partial class GalleryViewModel : ObservableObject
 
     private readonly IGalleryApiRepository _galleryApiRepository;
     private readonly BaseApiClient _apiClient;
-    private readonly IThumbnailService _thumbnailService;
     private readonly IPhotoNavigationState _photoNavigationState;
     private readonly IGalleryFocusState _galleryFocusState;
     private readonly ILogger<GalleryViewModel> _logger;
@@ -85,7 +83,6 @@ public partial class GalleryViewModel : ObservableObject
     public GalleryViewModel(
         IGalleryApiRepository galleryApiRepository,
         BaseApiClient apiClient,
-        IThumbnailService thumbnailService,
         IPhotoNavigationState photoNavigationState,
         IGalleryFocusState galleryFocusState,
         ILogger<GalleryViewModel> logger)
@@ -93,7 +90,6 @@ public partial class GalleryViewModel : ObservableObject
         GalleryDiagnostics.WriteStep("GalleryViewModel Created");
         _galleryApiRepository = galleryApiRepository;
         _apiClient = apiClient;
-        _thumbnailService = thumbnailService;
         _photoNavigationState = photoNavigationState;
         _galleryFocusState = galleryFocusState;
         _logger = logger;
@@ -500,6 +496,20 @@ public partial class GalleryViewModel : ObservableObject
         {
             var page = await FetchPhotosPageAsync(node, page: 1);
             _totalCount = page.TotalCount;
+            var first = page.Items.FirstOrDefault();
+            var firstMapped = first is null
+                ? null
+                : GalleryBackendMapper.ToGalleryMedia(first, _apiClient.ApiBaseUrl);
+
+            _logger.LogInformation(
+                "Gallery load. total_count={TotalCount}, items.Count={ItemsCount}, first.file_id={FileId}, thumbnail_url_raw={ThumbRaw}, thumbnail_url_abs={ThumbAbs}, apiBaseUrl={ApiBaseUrl}",
+                page.TotalCount,
+                page.Items.Count,
+                first?.FileId,
+                first?.ThumbnailUrl,
+                firstMapped?.ThumbnailUrl,
+                _apiClient.ApiBaseUrl);
+
             var galleryItems = page.Items
                 .Select(photo => new GalleryItem(GalleryBackendMapper.ToGalleryMedia(photo, _apiClient.ApiBaseUrl)))
                 .Where(item => item.MediaId != Guid.Empty)
@@ -509,6 +519,13 @@ public partial class GalleryViewModel : ObservableObject
             StatusMessage = galleryItems.Count == 0
                 ? "표시할 사진이 없습니다."
                 : $"{node.Title} · {galleryItems.Count}/{_totalCount}장";
+
+            _logger.LogInformation(
+                "Gallery ViewModel collection Count={Count} (filtered from API items={ApiCount})",
+                Items.Count,
+                page.Items.Count);
+            GalleryDiagnostics.WriteStep(
+                $"Gallery items mapped Count={Items.Count}, total_count={_totalCount}, firstFileId={first?.FileId}");
 
             _photoNavigationState.SetPlaylist(galleryItems.Select(i => i.MediaId).ToList());
             _ = LoadThumbnailsAsync(galleryItems);
@@ -700,7 +717,7 @@ public partial class GalleryViewModel : ObservableObject
             foreach (var item in galleryItems)
             {
                 token.ThrowIfCancellationRequested();
-                if (item.HasThumbnail)
+                if (item.HasThumbnail && item.ThumbnailImage is not null)
                 {
                     continue;
                 }
@@ -708,41 +725,32 @@ public partial class GalleryViewModel : ObservableObject
                 item.IsThumbnailLoading = true;
                 try
                 {
-                    var remoteUrl = item.Media.ThumbnailUrl
-                        ?? item.Media.PreviewUrl
-                        ?? (IsRemotePath(item.AbsoluteLibraryPath) ? item.AbsoluteLibraryPath : null);
-
-                    if (!string.IsNullOrWhiteSpace(remoteUrl))
+                    // Backend gallery: ThumbnailUrl only (absolute HTTP).
+                    var remoteUrl = item.Media.ThumbnailUrl;
+                    if (string.IsNullOrWhiteSpace(remoteUrl))
                     {
-                        var uri = new Uri(remoteUrl);
-                        await EnqueueAsync(() =>
-                        {
-                            item.ThumbnailImage = new BitmapImage(uri);
-                            item.HasThumbnail = true;
-                        });
-                        continue;
-                    }
-
-                    if (string.IsNullOrWhiteSpace(item.AbsoluteLibraryPath) || !File.Exists(item.AbsoluteLibraryPath))
-                    {
-                        item.HasThumbnail = false;
-                        continue;
-                    }
-
-                    var path = await _thumbnailService.GetOrCreateThumbnailAsync(
-                        item.MediaId,
-                        item.AbsoluteLibraryPath,
-                        token);
-                    if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
-                    {
+                        _logger.LogWarning(
+                            "Gallery thumbnail missing ThumbnailUrl. MediaId={MediaId}, BackendFileId={FileId}",
+                            item.MediaId,
+                            item.BackendFileId);
                         item.HasThumbnail = false;
                         continue;
                     }
 
                     await EnqueueAsync(() =>
                     {
-                        item.ThumbnailImage = new BitmapImage(new Uri(path));
-                        item.HasThumbnail = true;
+                        var bitmap = HttpImageLoader.TryCreate(
+                            remoteUrl,
+                            _logger,
+                            context: $"GalleryThumbnail:{item.BackendFileId}");
+                        item.ThumbnailImage = bitmap;
+                        item.HasThumbnail = bitmap is not null;
+                        if (bitmap is null)
+                        {
+                            _logger.LogWarning(
+                                "Gallery ThumbnailImageSource null. Url={Url}",
+                                remoteUrl);
+                        }
                     });
                 }
                 catch (OperationCanceledException)
@@ -751,7 +759,11 @@ public partial class GalleryViewModel : ObservableObject
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Gallery thumbnail failed. MediaId={MediaId}", item.MediaId);
+                    _logger.LogWarning(
+                        ex,
+                        "Gallery thumbnail failed. MediaId={MediaId}, Url={Url}",
+                        item.MediaId,
+                        item.Media.ThumbnailUrl);
                     item.HasThumbnail = false;
                 }
                 finally
@@ -765,11 +777,6 @@ public partial class GalleryViewModel : ObservableObject
             // expected on filter change
         }
     }
-
-    private static bool IsRemotePath(string? path) =>
-        !string.IsNullOrWhiteSpace(path)
-        && (path.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
-            || path.StartsWith("https://", StringComparison.OrdinalIgnoreCase));
 
     public Task EnsureThumbnailAsync(GalleryItem item) => LoadThumbnailsAsync([item]);
 

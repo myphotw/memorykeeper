@@ -1141,25 +1141,19 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
             ? Places.FirstOrDefault(place => place.Id == id)
             : null;
 
-        var imagePath = detail.AbsoluteLibraryPath;
-        if (!string.IsNullOrWhiteSpace(imagePath)
-            && (imagePath.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
-                || imagePath.StartsWith("https://", StringComparison.OrdinalIgnoreCase)))
+        var imagePath = PhotoViewerViewModel.ResolveDisplayUrl(detail);
+        PhotoImage = HttpImageLoader.TryCreate(
+            imagePath,
+            _logger,
+            context: $"PhotoDetail:{detail.MediaId:N}");
+        if (PhotoImage is null)
         {
-            PhotoImage = new BitmapImage(new Uri(imagePath));
-        }
-        else
-        {
-            var localPath = File.Exists(detail.AbsoluteLibraryPath)
-                ? detail.AbsoluteLibraryPath
-                : detail.OriginalPath;
-            PhotoImage = File.Exists(localPath)
-                ? new BitmapImage(new Uri(localPath))
-                : (!string.IsNullOrWhiteSpace(detail.OriginalPath)
-                   && (detail.OriginalPath.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
-                       || detail.OriginalPath.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-                    ? new BitmapImage(new Uri(detail.OriginalPath))
-                    : null);
+            _logger.LogWarning(
+                "PhotoDetail ImageSource null. PreviewUrl={Preview}, ThumbnailUrl={Thumb}, Absolute={Abs}, Original={Original}",
+                detail.PreviewUrl,
+                detail.ThumbnailUrl,
+                detail.AbsoluteLibraryPath,
+                detail.OriginalPath);
         }
 
         RelatedPhotos = new ObservableCollection<RelatedPhotoItem>(
@@ -1220,10 +1214,19 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
         {
             try
             {
+                if (HttpImageLoader.IsHttpUrl(item.AbsoluteLibraryPath))
+                {
+                    item.ThumbnailImage = HttpImageLoader.TryCreate(
+                        item.AbsoluteLibraryPath,
+                        _logger,
+                        context: $"RelatedThumb:{item.MediaId:N}");
+                    continue;
+                }
+
                 var path = await _thumbnailService.GetOrCreateThumbnailAsync(
                     item.MediaId,
                     item.AbsoluteLibraryPath);
-                if (!string.IsNullOrWhiteSpace(path))
+                if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
                 {
                     item.ThumbnailImage = new BitmapImage(new Uri(path));
                 }

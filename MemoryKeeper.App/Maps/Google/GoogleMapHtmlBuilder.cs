@@ -25,7 +25,7 @@ public static class GoogleMapHtmlBuilder
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
+    html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #e8eaed; }
     #overlay {
       display: none;
       position: absolute;
@@ -60,6 +60,9 @@ public static class GoogleMapHtmlBuilder
     let mapClickEnabled = false;
     let clustererLoading = false;
     let clustererReady = false;
+    let lastCenter = { lat: 36.5, lng: 127.9 };
+    let lastZoom = 7;
+    let tilesLoaded = false;
 
     const MAP_STYLES = [
       { featureType: 'poi', stylers: [{ visibility: 'off' }] },
@@ -83,6 +86,27 @@ public static class GoogleMapHtmlBuilder
       const overlay = document.getElementById('overlay');
       overlay.style.display = 'flex';
       overlay.textContent = text;
+    }
+
+    function captureConsole() {
+      ['error', 'warn'].forEach(level => {
+        const original = console[level].bind(console);
+        console[level] = function () {
+          try {
+            const message = Array.prototype.slice.call(arguments).map(String).join(' ');
+            post({ type: 'console', level: level, message: message });
+            if (/InvalidKeyMapError|RefererNotAllowedMapError|BillingNotEnabledMapError|ApiNotActivatedMapError|ExpiredKeyMapError/i.test(message)) {
+              showOverlay('Google Maps 오류: ' + message);
+              post({ type: 'error', message: message });
+            }
+          } catch (e) {}
+          return original.apply(console, arguments);
+        };
+      });
+      window.addEventListener('error', function (event) {
+        const message = (event && event.message) ? String(event.message) : 'window.error';
+        post({ type: 'console', level: 'error', message: message });
+      });
     }
 
     function ensureClusterer(onReady) {
@@ -236,10 +260,11 @@ public static class GoogleMapHtmlBuilder
       }
       const marker = markerById[selectedId];
       const pos = marker.getPosition();
-      if (message.center !== false) {
-        map.panTo(pos);
-        const targetZoom = typeof message.zoom === 'number' ? message.zoom : Math.max(map.getZoom() || 6, 16);
-        map.setZoom(targetZoom);
+      if (message.center !== false && pos) {
+        const currentZoom = map.getZoom();
+        const requested = typeof message.zoom === 'number' ? message.zoom : 15;
+        const targetZoom = normalizeZoom(requested, normalizeZoom(currentZoom, 15));
+        centerOn(pos.lat(), pos.lng(), targetZoom);
       }
     }
 
@@ -307,11 +332,84 @@ public static class GoogleMapHtmlBuilder
 
       map.panTo(position);
       map.setZoom(zoom);
+      lastCenter = position;
+      lastZoom = zoom;
     }
 
     function updateEditableRadius(message) {
       if (!radiusCircle) return;
       radiusCircle.setRadius(Number(message.radiusMeters) || 0);
+    }
+
+    function forceRelayout() {
+      if (!map) return;
+      const mapDiv = map.getDiv();
+      const width = mapDiv ? mapDiv.offsetWidth : 0;
+      const height = mapDiv ? mapDiv.offsetHeight : 0;
+      // Never resize while the host is collapsing (photo panel open) — that clears tiles to blue.
+      if (width < 32 || height < 32) {
+        post({
+          type: 'layout',
+          width: width,
+          height: height,
+          skipped: true,
+          reason: 'host-too-small',
+          tilesLoaded: tilesLoaded
+        });
+        return;
+      }
+      try {
+        google.maps.event.trigger(map, 'resize');
+      } catch (e) {}
+      const center = map.getCenter();
+      const zoom = map.getZoom();
+      if (center) {
+        map.setCenter(center);
+        lastCenter = { lat: center.lat(), lng: center.lng() };
+      } else if (lastCenter) {
+        map.setCenter(lastCenter);
+      }
+      if (typeof zoom === 'number') {
+        map.setZoom(zoom);
+        lastZoom = zoom;
+      } else if (typeof lastZoom === 'number') {
+        map.setZoom(lastZoom);
+      }
+      post({
+        type: 'layout',
+        width: width,
+        height: height,
+        mapTypeId: map.getMapTypeId ? map.getMapTypeId() : null,
+        zoom: map.getZoom ? map.getZoom() : null,
+        tilesLoaded: tilesLoaded
+      });
+    }
+
+    function normalizeZoom(zoom, fallback) {
+      const value = typeof zoom === 'number' ? zoom : Number(zoom);
+      if (!Number.isFinite(value) || value < 1 || value > 21) {
+        return fallback;
+      }
+      return value;
+    }
+
+    function centerOn(lat, lng, zoom) {
+      if (!map) return;
+      const latitude = Number(lat);
+      const longitude = Number(lng);
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+      if (latitude === 0 && longitude === 0) return;
+      if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return;
+
+      const target = { lat: latitude, lng: longitude };
+      lastCenter = target;
+      map.panTo(target);
+      const nextZoom = normalizeZoom(zoom, null);
+      if (nextZoom !== null) {
+        lastZoom = nextZoom;
+        map.setZoom(nextZoom);
+      }
+      // Do NOT forceRelayout here — selection must not resize during photo-panel layout thrash.
     }
 
     function handleMessage(message) {
@@ -352,26 +450,29 @@ public static class GoogleMapHtmlBuilder
         clearEditablePin();
         return;
       }
+      if (message.type === 'resize') {
+        forceRelayout();
+        return;
+      }
       if (message.type === 'center') {
-        map.panTo({ lat: message.lat, lng: message.lng });
-        if (typeof message.zoom === 'number') {
-          map.setZoom(message.zoom);
-        }
+        centerOn(message.lat, message.lng, message.zoom);
         return;
       }
       if (message.type === 'setZoom') {
+        lastZoom = message.zoom;
         map.setZoom(message.zoom);
         return;
       }
       if (message.type === 'zoomBy') {
-        map.setZoom((map.getZoom() || 6) + (message.delta || 0));
+        lastZoom = (map.getZoom() || 6) + (message.delta || 0);
+        map.setZoom(lastZoom);
         return;
       }
       if (message.type === 'fitMarkers') {
         if (markers.length === 0) return;
         if (markers.length === 1) {
-          map.panTo(markers[0].getPosition());
-          map.setZoom(16);
+          const pos = markers[0].getPosition();
+          if (pos) centerOn(pos.lat(), pos.lng(), 16);
           return;
         }
         const bounds = new google.maps.LatLngBounds();
@@ -379,6 +480,9 @@ public static class GoogleMapHtmlBuilder
         const mapDiv = map.getDiv();
         const width = mapDiv && mapDiv.offsetWidth ? mapDiv.offsetWidth : 640;
         const height = mapDiv && mapDiv.offsetHeight ? mapDiv.offsetHeight : 480;
+        if (width < 32 || height < 32) {
+          return;
+        }
         // MK-053: ~12% padding on each side so edge markers never touch the frame border.
         map.fitBounds(bounds, {
           top: Math.round(height * 0.12),
@@ -386,36 +490,108 @@ public static class GoogleMapHtmlBuilder
           left: Math.round(width * 0.12),
           right: Math.round(width * 0.12)
         });
+        const c = map.getCenter();
+        if (c) {
+          lastCenter = { lat: c.lat(), lng: c.lng() };
+        }
+        lastZoom = map.getZoom() || lastZoom;
       }
     }
 
     function initMap() {
-      map = new google.maps.Map(document.getElementById('map'), {
-        center: { lat: 36.5, lng: 127.9 },
-        zoom: 8,
+      tilesLoaded = false;
+      // Must only run from Maps JS callback — never create Map before google.maps is ready.
+      if (!window.google || !google.maps || !google.maps.Map) {
+        showOverlay('Google Maps JS API가 아직 준비되지 않았습니다.');
+        post({ type: 'error', message: 'google.maps.Map is not available in callback.' });
+        return;
+      }
+
+      const mapDiv = document.getElementById('map');
+      const options = {
+        center: lastCenter,
+        zoom: lastZoom,
+        mapTypeId: google.maps.MapTypeId.ROADMAP,
         mapTypeControl: false,
         streetViewControl: false,
         fullscreenControl: false,
         clickableIcons: false,
-        styles: MAP_STYLES
-      });
+        styles: MAP_STYLES,
+        // WebView2 often fails vector/WebGL tiles (solid blue) while DOM markers still render.
+        // Prefer classic raster tiles when the API exposes RenderingType.
+        ...(google.maps.RenderingType
+          ? { renderingType: google.maps.RenderingType.RASTER }
+          : {})
+      };
+
+      map = new google.maps.Map(mapDiv, options);
 
       map.addListener('click', event => {
         if (!mapClickEnabled || !event.latLng) return;
         post({ type: 'mapClick', lat: event.latLng.lat(), lng: event.latLng.lng() });
       });
 
+      map.addListener('tilesloaded', function () {
+        tilesLoaded = true;
+        post({
+          type: 'tilesLoaded',
+          width: mapDiv.offsetWidth,
+          height: mapDiv.offsetHeight,
+          mapTypeId: map.getMapTypeId(),
+          zoom: map.getZoom()
+        });
+      });
+
       if (window.chrome && window.chrome.webview) {
         window.chrome.webview.addEventListener('message', event => handleMessage(event.data));
       }
 
-      post({ type: 'ready' });
+      window.addEventListener('resize', function () {
+        forceRelayout();
+      });
+
+      // Ready after Map construction (callback path guarantees API load).
+      post({
+        type: 'mapReady',
+        width: mapDiv.offsetWidth,
+        height: mapDiv.offsetHeight,
+        mapTypeId: map.getMapTypeId(),
+        zoom: map.getZoom(),
+        renderingType: google.maps.RenderingType ? 'RASTER' : 'DEFAULT'
+      });
+      // Backward-compatible alias for older hosts.
+      post({
+        type: 'ready',
+        width: mapDiv.offsetWidth,
+        height: mapDiv.offsetHeight,
+        mapTypeId: map.getMapTypeId(),
+        zoom: map.getZoom(),
+        renderingType: google.maps.RenderingType ? 'RASTER' : 'DEFAULT'
+      });
+
+      // Div may still be 0x0 on first paint inside WinUI WebView2 — resize after layout/idle.
+      google.maps.event.addListenerOnce(map, 'idle', function () {
+        forceRelayout();
+      });
+      setTimeout(forceRelayout, 50);
+      setTimeout(forceRelayout, 250);
+      setTimeout(function () {
+        forceRelayout();
+        if (!tilesLoaded) {
+          post({
+            type: 'console',
+            level: 'warn',
+            message: 'Map tiles not loaded after 4s. Check API key referrer (https://app.memorykeeper.local/*), Maps JavaScript API, billing, or WebGL.'
+          });
+        }
+      }, 4000);
     }
 
+    captureConsole();
     window.initMap = initMap;
     window.gm_authFailure = function () {
-      showOverlay('Google Maps API 인증에 실패했습니다. 설정 → Google API에서 Key와 Maps JavaScript API 활성화를 확인하세요.');
-      post({ type: 'error', message: 'Google Maps authentication failed.' });
+      showOverlay('Google Maps API 인증에 실패했습니다. 설정 → Google API에서 Key와 Maps JavaScript API 활성화를 확인하세요. Desktop WebView는 Referrer에 https://app.memorykeeper.local/* 허용이 필요할 수 있습니다.');
+      post({ type: 'error', message: 'Google Maps authentication failed (gm_authFailure).' });
     };
 
     if (!hasKey) {
@@ -423,7 +599,7 @@ public static class GoogleMapHtmlBuilder
       post({ type: 'error', message: 'Google Maps API key is not configured.' });
     } else {
       const script = document.createElement('script');
-      script.src = 'https://maps.googleapis.com/maps/api/js?key={{urlKey}}&callback=initMap&v=weekly';
+      script.src = 'https://maps.googleapis.com/maps/api/js?key={{urlKey}}&callback=initMap&v=weekly&loading=async';
       script.async = true;
       script.defer = true;
       script.onerror = function () {

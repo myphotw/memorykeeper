@@ -41,7 +41,7 @@ public sealed class TravelYearChapterDto
 {
     public int Year { get; init; }
 
-    public string YearTitle => $"{Year}";
+    public string YearTitle => Year <= 0 ? "날짜 미상" : $"{Year}";
 
     public IReadOnlyList<TravelTripCardDto> Trips { get; init; } = [];
 }

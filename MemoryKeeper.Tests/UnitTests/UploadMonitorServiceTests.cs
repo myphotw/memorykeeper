@@ -137,6 +137,14 @@ public sealed class UploadMonitorServiceTests
 
             return Task.FromResult(_queue.Dequeue());
         }
+
+        public Task<UploadJobListDto> ListJobsAsync(
+            string? status = null,
+            int page = 1,
+            int pageSize = 20,
+            string sort = "created_at_desc",
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new UploadJobListDto());
     }
 
     private sealed class StubHandler : HttpMessageHandler

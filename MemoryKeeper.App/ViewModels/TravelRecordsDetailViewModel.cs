@@ -126,6 +126,12 @@ public partial class TravelRecordsDetailViewModel : ObservableObject
 
         ClearPending();
         _placeFocusState.FocusPlaceId = item.PlaceId;
+        _placeFocusState.FocusPlaceName = item.PlaceName;
+        _placeFocusState.FocusMediaId = item.RepresentativeMediaId;
+        _logger.LogInformation(
+            "TravelRecords detail open place → VisitMap. PlaceId={PlaceId} PlaceName={PlaceName}",
+            item.PlaceId,
+            item.PlaceName);
         OpenVisitRecordRequested?.Invoke(this, EventArgs.Empty);
     }
 
@@ -140,6 +146,7 @@ public partial class TravelRecordsDetailViewModel : ObservableObject
         ClearPending();
         _placeFocusState.PendingCountry = item.Country;
         _placeFocusState.FocusPlaceId = null;
+        _placeFocusState.FocusPlaceName = null;
         OpenVisitRecordRequested?.Invoke(this, EventArgs.Empty);
     }
 
@@ -153,6 +160,12 @@ public partial class TravelRecordsDetailViewModel : ObservableObject
 
         ClearPending();
         _placeFocusState.FocusPlaceId = item.PlaceId;
+        _placeFocusState.FocusPlaceName = item.PlaceName;
+        _placeFocusState.FocusMediaId = item.RepresentativeMediaId;
+        _logger.LogInformation(
+            "TravelRecords detail open place → VisitMap. PlaceId={PlaceId} PlaceName={PlaceName}",
+            item.PlaceId,
+            item.PlaceName);
         OpenVisitRecordRequested?.Invoke(this, EventArgs.Empty);
     }
 
@@ -168,6 +181,7 @@ public partial class TravelRecordsDetailViewModel : ObservableObject
         if (Places.FirstOrDefault() is { } first)
         {
             _placeFocusState.FocusPlaceId = first.PlaceId;
+            _placeFocusState.FocusPlaceName = first.PlaceName;
         }
 
         OpenVisitRecordRequested?.Invoke(this, EventArgs.Empty);
@@ -210,24 +224,23 @@ public partial class TravelRecordsDetailViewModel : ObservableObject
         }
     }
 
-    private async Task LoadOneAsync(
+    private Task LoadOneAsync(
         Guid? mediaId,
         string path,
         Action<BitmapImage?> setImage,
         CancellationToken token)
     {
-        if (mediaId is null || string.IsNullOrWhiteSpace(path))
+        token.ThrowIfCancellationRequested();
+        if (string.IsNullOrWhiteSpace(path) || !HttpImageLoader.IsHttpUrl(path))
         {
-            return;
+            return Task.CompletedTask;
         }
 
-        var thumb = await _thumbnailService.GetOrCreateThumbnailAsync(mediaId.Value, path, token);
-        if (string.IsNullOrWhiteSpace(thumb))
-        {
-            return;
-        }
-
-        await EnqueueAsync(() => setImage(new BitmapImage(new Uri(thumb))));
+        return EnqueueAsync(() =>
+            setImage(HttpImageLoader.TryCreate(
+                path,
+                _logger,
+                context: $"TravelDetailThumb:{mediaId:N}")));
     }
 
     private void CancelThumbnails()

@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using MemoryKeeper.App.Diagnostics;
 using MemoryKeeper.App.Services;
 using MemoryKeeper.App.ViewModels;
 using MemoryKeeper.Application.Interfaces;
@@ -14,6 +15,7 @@ public sealed partial class MainWindow : Window
     private readonly IServiceProvider _serviceProvider;
     private readonly IPhotoNavigationState _photoNavigationState;
     private readonly IPlaceEditorSeedState _placeEditorSeedState;
+    private readonly IPlaceFocusState _placeFocusState;
     private readonly IResponsiveLayoutService _responsiveLayout;
     private readonly INavigationService _navigation;
     private readonly ICatalogInvalidation _catalogInvalidation;
@@ -40,6 +42,7 @@ public sealed partial class MainWindow : Window
     private bool _suppressSelectionNavigation;
     private bool _navigatingBack;
     private bool _navigatingForward;
+    private VisitMapNavigationSource _pendingVisitNavSource = VisitMapNavigationSource.ShellNav;
 
     public MainViewModel ViewModel { get; }
 
@@ -48,6 +51,7 @@ public sealed partial class MainWindow : Window
         IServiceProvider serviceProvider,
         IPhotoNavigationState photoNavigationState,
         IPlaceEditorSeedState placeEditorSeedState,
+        IPlaceFocusState placeFocusState,
         IResponsiveLayoutService responsiveLayout,
         INavigationService navigation,
         ICatalogInvalidation catalogInvalidation)
@@ -56,6 +60,7 @@ public sealed partial class MainWindow : Window
         _serviceProvider = serviceProvider;
         _photoNavigationState = photoNavigationState;
         _placeEditorSeedState = placeEditorSeedState;
+        _placeFocusState = placeFocusState;
         _responsiveLayout = responsiveLayout;
         _navigation = navigation;
         _catalogInvalidation = catalogInvalidation;
@@ -241,6 +246,7 @@ public sealed partial class MainWindow : Window
         if (_navigatingBack || _navigatingForward)
         {
             _navigation.ReplaceCurrent(entry);
+            LogNavigation($"ReplaceCurrent tag={tag}");
             return;
         }
 
@@ -249,11 +255,28 @@ public sealed partial class MainWindow : Window
         {
             CaptureCurrentPageState();
             _navigation.NavigateRoot(NavigationEntry.Home);
+            LogNavigation("NavigateRoot home");
+            return;
+        }
+
+        if (_navigation.IsCurrent(entry))
+        {
+            LogNavigation($"Skip duplicate Track tag={tag}");
             return;
         }
 
         CaptureCurrentPageState();
         _navigation.Navigate(entry);
+        _navigation.RemoveConsecutiveDuplicates();
+        LogNavigation($"Navigate tag={tag}");
+    }
+
+    private void LogNavigation(string action)
+    {
+        var current = _navigation.Current?.Tag ?? "(null)";
+        var stack = string.Join(" > ", _navigation.GetBackStackTags());
+        StartupDiagnostics.WriteStep(
+            $"[Nav] {action} | current={current} | back=[{stack}] | back/forward={_navigatingBack}/{_navigatingForward}");
     }
 
     private static bool IsTopLevelTag(string? tag) =>
@@ -275,11 +298,13 @@ public sealed partial class MainWindow : Window
 
     private void NavigateBack()
     {
+        LogNavigation("NavigateBack requested");
         if (_navigation.TryGoBack(out var entry))
         {
             _navigatingBack = true;
             try
             {
+                LogNavigation($"TryGoBack → {entry.Tag}");
                 RestoreEntry(entry);
             }
             finally
@@ -292,6 +317,7 @@ public sealed partial class MainWindow : Window
 
         var currentTag = _navigation.Current?.Tag;
         var parentTag = GetHierarchicalParentTag(currentTag);
+        LogNavigation($"Empty back stack; hierarchical parent={parentTag ?? "(null)"} from={currentTag}");
         _navigatingBack = true;
         try
         {
@@ -607,18 +633,9 @@ public sealed partial class MainWindow : Window
         _travelRecordsViewModel.BackRequested += OnShellBackRequested;
         page.OpenImportRequested += OnTravelOpenImportRequested;
         ContentFrame.Content = page;
-        var travelNav = _serviceProvider.GetRequiredService<ITravelRecordsNavigationState>();
-        var hasMemoryFocus = travelNav.PendingFocusPlaceId is not null
-            || !string.IsNullOrWhiteSpace(travelNav.PendingFocusPlaceName);
-        if (hasMemoryFocus || ShouldReload("travel", CatalogSurface.Travel))
-        {
-            MarkLoaded("travel");
-            _ = page.ViewModel.LoadCommand.ExecuteAsync(null);
-        }
-        else
-        {
-            page.ViewModel.ClearFeaturedMemory();
-        }
+        // Always reload from Backend (Import / catalog updates must appear).
+        MarkLoaded("travel");
+        _ = page.ViewModel.LoadCommand.ExecuteAsync(null);
     }
 
     private void NavigateToTravelRecordsDetail()
@@ -644,15 +661,32 @@ public sealed partial class MainWindow : Window
         _visitRecordViewModel.BackRequested += OnShellBackRequested;
         page.OpenImportRequested += OnVisitOpenImportRequested;
         ContentFrame.Content = page;
-        if (ShouldReload("visits", CatalogSurface.Visits))
+
+        var reloadData = ShouldReload("visits", CatalogSurface.Visits);
+        if (reloadData)
         {
             MarkLoaded("visits");
-            _ = page.ViewModel.LoadCommand.ExecuteAsync(null);
         }
-        else
+
+        var source = _pendingVisitNavSource;
+        _pendingVisitNavSource = VisitMapNavigationSource.ShellNav;
+        var generation = _placeFocusState.BeginNavigation(source);
+
+        // Do not ApplyPendingFocus here — wait for layout + mapReady via ActivateAsync.
+        LogNavigation(
+            $"NavigateToVisitRecord Activate Source={source} Gen={generation} Reload={reloadData} Focus={_placeFocusState.HasPendingFocus}");
+
+        page.DispatcherQueue.TryEnqueue(async () =>
         {
-            _ = page.ViewModel.ApplyPendingFocusCommand.ExecuteAsync(null);
-        }
+            try
+            {
+                await page.ActivateAsync(generation, source, reloadData);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"VisitRecord Activate failed: {ex}");
+            }
+        });
     }
 
     private void NavigateToPendingMemory()
@@ -847,7 +881,11 @@ public sealed partial class MainWindow : Window
 
     private void OnPhotoOpenRequested(object? sender, EventArgs e)
     {
-        SelectNavigationItem(_photoNavigationState.Target == PhotoNavigationTarget.Detail ? "photo" : "photo-viewer");
+        // OpenRequested is for Viewer entry from list surfaces only (not Detail back).
+        var tag = _photoNavigationState.Target == PhotoNavigationTarget.Detail
+            ? "photo"
+            : "photo-viewer";
+        SelectNavigationItem(tag);
     }
 
     private void OnPhotoViewerClosed(object? sender, EventArgs e) => NavigateBack();
@@ -857,11 +895,11 @@ public sealed partial class MainWindow : Window
 
     private void OnPhotoDetailClosed(object? sender, EventArgs e)
     {
+        // Always pop BackStack — never Navigate(photo-viewer) or the stack becomes
+        // gallery > viewer > detail > viewer and Detail↔Viewer loops forever.
         if (_photoNavigationState.DetailOpenedFromViewer)
         {
             _photoNavigationState.DetailOpenedFromViewer = false;
-            SelectNavigationItem("photo-viewer");
-            return;
         }
 
         NavigateBack();
@@ -879,8 +917,11 @@ public sealed partial class MainWindow : Window
     private void OnVisitOpenPlaceRequested(object? sender, EventArgs e) =>
         SelectNavigationItem("place");
 
-    private void OnHomeOpenVisitRecordRequested(object? sender, EventArgs e) =>
+    private void OnHomeOpenVisitRecordRequested(object? sender, EventArgs e)
+    {
+        _pendingVisitNavSource = VisitMapNavigationSource.Home;
         SelectNavigationItem("visits");
+    }
 
     private void OnHomeOpenGalleryRequested(object? sender, EventArgs e) =>
         SelectNavigationItem("gallery");
@@ -906,8 +947,11 @@ public sealed partial class MainWindow : Window
     private void OnHomeOpenSettingsRequested(object? sender, EventArgs e) =>
         SelectNavigationItem("settings");
 
-    private void OnTravelOpenVisitRecordRequested(object? sender, EventArgs e) =>
+    private void OnTravelOpenVisitRecordRequested(object? sender, EventArgs e)
+    {
+        _pendingVisitNavSource = VisitMapNavigationSource.TravelRecord;
         SelectNavigationItem("visits");
+    }
 
     private void OnTravelOpenImportRequested(object? sender, EventArgs e) =>
         SelectNavigationItem("import");
@@ -1042,6 +1086,26 @@ public sealed partial class MainWindow : Window
 
     private void SelectNavigationItem(string tag)
     {
+        if (!_navigatingBack
+            && !_navigatingForward
+            && _navigation.IsCurrent(NavigationEntry.Of(tag))
+            && IsContentShowingTag(tag))
+        {
+            // Travel/Home focus onto the already-visible visit map must still Activate.
+            if (tag == "visits"
+                && (_placeFocusState.HasPendingFocus || _placeFocusState.HasPendingFilters
+                    || _pendingVisitNavSource is VisitMapNavigationSource.TravelRecord
+                        or VisitMapNavigationSource.Home))
+            {
+                LogNavigation($"Re-Activate visit map in place. PendingSource={_pendingVisitNavSource}");
+                NavigateToVisitRecord();
+                return;
+            }
+
+            LogNavigation($"Skip duplicate SelectNavigationItem tag={tag}");
+            return;
+        }
+
         NavigateByTag(tag);
         _suppressSelectionNavigation = true;
         try
@@ -1053,6 +1117,24 @@ public sealed partial class MainWindow : Window
             _suppressSelectionNavigation = false;
         }
     }
+
+    private bool IsContentShowingTag(string tag) =>
+        tag switch
+        {
+            "photo-viewer" => ContentFrame.Content is PhotoViewerPage,
+            "photo" => ContentFrame.Content is PhotoDetailPage,
+            "gallery" => ContentFrame.Content is GalleryPage,
+            "home" => ContentFrame.Content is HomePage,
+            "visits" => ContentFrame.Content is VisitRecordPage,
+            "pending" => ContentFrame.Content is PendingMemoryPage,
+            "favorites" => ContentFrame.Content is FavoritesPage,
+            "import" => ContentFrame.Content is ImportPage,
+            "place" => ContentFrame.Content is PlaceManagementPage,
+            "travel" => ContentFrame.Content is TravelRecordsPage,
+            "travel-detail" => ContentFrame.Content is TravelRecordsDetailPage,
+            "settings" => ContentFrame.Content is SettingsPage,
+            _ => false
+        };
 
     private void SyncNavigationSelection(string tag)
     {

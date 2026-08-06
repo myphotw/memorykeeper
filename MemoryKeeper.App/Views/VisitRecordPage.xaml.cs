@@ -19,6 +19,8 @@ public sealed partial class VisitRecordPage : Page
     private GoogleMapController? _mapController;
     private VisitRecordPlaceItem? _selectedPlaceSubscription;
     private readonly List<VisitPreviewItem> _previewSubscriptions = [];
+    private CancellationTokenSource? _layoutDebounceCts;
+    private int _activateRequestId;
 
     public event EventHandler? OpenImportRequested;
 
@@ -40,10 +42,14 @@ public sealed partial class VisitRecordPage : Page
             ApplyResponsiveLayout(_responsiveLayout.CurrentBreakpoint);
             PositionSearchDropdowns();
         };
-        SizeChanged += (_, _) =>
+        SizeChanged += (_, e) =>
         {
             ApplyResponsiveLayout(_responsiveLayout.CurrentBreakpoint);
             PositionSearchDropdowns();
+            if (_mapController is not null && e.NewSize.Width >= 32 && e.NewSize.Height >= 32)
+            {
+                _ = DebouncedNotifyLayoutAsync();
+            }
         };
         ViewModel.PropertyChanged += OnViewModelPropertyChanged;
         RefreshSelectedPlaceCard();
@@ -167,28 +173,151 @@ public sealed partial class VisitRecordPage : Page
         Grid.SetColumn(MapPane, 1);
     }
 
-    private async void VisitRecordPage_OnLoaded(object sender, RoutedEventArgs e)
+    private void VisitRecordPage_OnLoaded(object sender, RoutedEventArgs e)
     {
-        if (_mapController is null)
-        {
-            _mapController = new GoogleMapController(
-                MapWebView,
-                _loggerFactory.CreateLogger<GoogleMapController>());
-            ViewModel.AttachMap(_mapController);
-            await ViewModel.InitializeMapCommand.ExecuteAsync(null);
-        }
-
-        if (ViewModel.YearGroups.Count == 0)
-        {
-            await ViewModel.LoadCommand.ExecuteAsync(null);
-        }
-
+        _loggerFactory.CreateLogger<VisitRecordPage>().LogInformation(
+            "VisitRecordPage Loaded. Size={Width:0}x{Height:0} WebView={WebW:0}x{WebH:0}",
+            ActualWidth,
+            ActualHeight,
+            MapWebView.ActualWidth,
+            MapWebView.ActualHeight);
+        EnsureMapController();
         ApplyResponsiveLayout(_responsiveLayout.CurrentBreakpoint);
     }
 
     private void VisitRecordPage_OnUnloaded(object sender, RoutedEventArgs e)
     {
+        _loggerFactory.CreateLogger<VisitRecordPage>().LogInformation("VisitRecordPage Unloaded.");
         // Keep map/controller alive — page instances are cached by NavigationService.
+    }
+
+    /// <summary>
+    /// Called from MainWindow for every visit-map navigation (HOME and TRAVEL_RECORD).
+    /// </summary>
+    public async Task ActivateAsync(
+        int navigationGeneration,
+        VisitMapNavigationSource source,
+        bool reloadData)
+    {
+        var requestId = Interlocked.Increment(ref _activateRequestId);
+        var logger = _loggerFactory.CreateLogger<VisitRecordPage>();
+        logger.LogInformation(
+            "VisitRecordPage Activate start. Source={Source} Gen={Gen} Reload={Reload} RequestId={RequestId}",
+            source,
+            navigationGeneration,
+            reloadData,
+            requestId);
+
+        EnsureMapController();
+        await WaitUntilMapHostSizedAsync();
+
+        if (requestId != _activateRequestId)
+        {
+            logger.LogInformation("stale async result ignored (page activate). RequestId={RequestId}", requestId);
+            return;
+        }
+
+        logger.LogInformation(
+            "WebView actual size ready. Size={Width:0}x{Height:0} Visible={Visible}",
+            MapWebView.ActualWidth,
+            MapWebView.ActualHeight,
+            MapWebView.Visibility);
+
+        await ViewModel.ActivateVisitSurfaceAsync(navigationGeneration, source, reloadData);
+
+        logger.LogInformation("VisitRecordPage Activate done. Gen={Gen} RequestId={RequestId}", navigationGeneration, requestId);
+    }
+
+    private void EnsureMapController()
+    {
+        if (_mapController is not null)
+        {
+            return;
+        }
+
+        _mapController = new GoogleMapController(
+            MapWebView,
+            _loggerFactory.CreateLogger<GoogleMapController>());
+        ViewModel.AttachMap(_mapController);
+    }
+
+    private async Task WaitUntilMapHostSizedAsync()
+    {
+        if (IsMapHostSized())
+        {
+            return;
+        }
+
+        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnSizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            if (IsMapHostSized())
+            {
+                tcs.TrySetResult();
+            }
+        }
+
+        MapWebView.SizeChanged += OnSizeChanged;
+        SizeChanged += OnSizeChanged;
+        try
+        {
+            UpdateLayout();
+            MapWebView.UpdateLayout();
+            if (IsMapHostSized())
+            {
+                return;
+            }
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            using var reg = cts.Token.Register(() => tcs.TrySetResult());
+            await tcs.Task;
+        }
+        finally
+        {
+            MapWebView.SizeChanged -= OnSizeChanged;
+            SizeChanged -= OnSizeChanged;
+        }
+    }
+
+    private bool IsMapHostSized() =>
+        MapWebView.XamlRoot is not null
+        && MapWebView.Visibility == Visibility.Visible
+        && MapWebView.ActualWidth >= 32
+        && MapWebView.ActualHeight >= 32;
+
+    private async Task DebouncedNotifyLayoutAsync()
+    {
+        _layoutDebounceCts?.Cancel();
+        _layoutDebounceCts?.Dispose();
+        _layoutDebounceCts = new CancellationTokenSource();
+        var token = _layoutDebounceCts.Token;
+        try
+        {
+            await Task.Delay(120, token);
+            var width = MapWebView.ActualWidth;
+            var height = MapWebView.ActualHeight;
+            _loggerFactory.CreateLogger<VisitRecordPage>().LogInformation(
+                "layout debounce. WebView={Width:0}x{Height:0} CardVisible={Card}",
+                width,
+                height,
+                SelectedPlaceCard.Visibility == Visibility.Visible);
+
+            if (width < 32 || height < 32)
+            {
+                return;
+            }
+
+            if (_mapController is not null)
+            {
+                await _mapController.NotifyLayoutAsync(token);
+            }
+
+            await ViewModel.FlushPendingMapFocusAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            // newer layout event won
+        }
     }
 
     private async void SearchBox_OnKeyDown(object sender, KeyRoutedEventArgs e)

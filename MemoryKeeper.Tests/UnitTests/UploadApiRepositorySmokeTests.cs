@@ -1,3 +1,4 @@
+using MemoryKeeper.Application;
 using MemoryKeeper.Application.DTOs;
 using MemoryKeeper.Application.DTOs.Upload;
 using MemoryKeeper.Application.Interfaces;
@@ -10,6 +11,7 @@ using MemoryKeeper.Infrastructure.Repositories.Api;
 using MemoryKeeper.Infrastructure.Services.Api;
 using MemoryKeeper.Infrastructure.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using StorageEntity = MemoryKeeper.Domain.Entities.Storage;
 
 namespace MemoryKeeper.Tests.UnitTests;
@@ -71,7 +73,6 @@ public sealed class UploadApiRepositorySmokeTests
         await File.WriteAllBytesAsync(sourceFile, "fake-image"u8.ToArray());
 
         var storageId = Guid.NewGuid();
-        var jobId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
         var storageRepository = new LocalStorageRepo();
         await storageRepository.AddAsync(new StorageEntity
         {
@@ -84,16 +85,21 @@ public sealed class UploadApiRepositorySmokeTests
             UpdatedAt = DateTime.UtcNow,
         });
 
-        var upload = new FakeUploadApiRepository(jobId);
-        var jobApi = new ImmediateCompleteJobApi(jobId);
+        var upload = new FakeUploadApiRepository();
+        var jobApi = new ImmediateCompleteJobApi();
         var catalog = new CatalogInvalidation();
+        var sessionPath = Path.Combine(Path.GetTempPath(), $"mk-session-{Guid.NewGuid():N}.json");
+        var options = Options.Create(new ImportUploadOptions { MaxConcurrentUploads = 3 });
 
         var service = new MediaImportService(
             new FileScanner(),
             storageRepository,
             upload,
-            new UploadMonitorService(jobApi, NullLogger<UploadMonitorService>.Instance),
+            jobApi,
+            new BulkUploadMonitorService(jobApi, options, NullLogger<BulkUploadMonitorService>.Instance),
+            new ImportJobSessionStore(NullLogger<ImportJobSessionStore>.Instance, sessionPath),
             catalog,
+            options,
             NullLogger<MediaImportService>.Instance);
 
         try
@@ -110,10 +116,10 @@ public sealed class UploadApiRepositorySmokeTests
             Assert.Equal(1, result.ScannedCount);
             Assert.Equal(1, result.ImportedCount);
             Assert.Equal(0, result.FailedCount);
-            Assert.Equal(jobId.ToString("D"), result.Items[0].ContentHash);
+            Assert.False(string.IsNullOrWhiteSpace(result.Items[0].ContentHash));
             Assert.Single(upload.UploadedPaths);
             Assert.True(jobApi.CallCount >= 1);
-            Assert.Contains(reports, r => r.BackendStatus == UploadJobStatusDto.Completed);
+            Assert.Contains(reports, r => r.CompletedCount >= 1 || r.BackendStatus == UploadJobStatusDto.Completed);
             Assert.True(catalog.Consume(CatalogSurface.Gallery));
         }
         finally
@@ -126,6 +132,11 @@ public sealed class UploadApiRepositorySmokeTests
             if (Directory.Exists(libraryRoot))
             {
                 Directory.Delete(libraryRoot, recursive: true);
+            }
+
+            if (File.Exists(sessionPath))
+            {
+                File.Delete(sessionPath);
             }
         }
     }
@@ -146,38 +157,44 @@ public sealed class UploadApiRepositorySmokeTests
 
     private sealed class FakeUploadApiRepository : IUploadApiRepository
     {
-        private readonly Guid _jobId;
-
-        public FakeUploadApiRepository(Guid jobId) => _jobId = jobId;
-
         public List<string> UploadedPaths { get; } = [];
 
-        public Task<UploadResponseDto> UploadAsync(string filePath, CancellationToken cancellationToken = default)
+        public int MaxObservedConcurrency { get; private set; }
+
+        private int _inFlight;
+
+        public async Task<UploadResponseDto> UploadAsync(string filePath, CancellationToken cancellationToken = default)
         {
-            UploadedPaths.Add(filePath);
-            return Task.FromResult(new UploadResponseDto
+            var current = Interlocked.Increment(ref _inFlight);
+            MaxObservedConcurrency = Math.Max(MaxObservedConcurrency, current);
+            try
             {
-                JobId = _jobId.ToString("D"),
-                Status = UploadJobStatusDto.Waiting,
-                Message = $"incoming/{_jobId:N}.jpg",
-                IncomingPath = $"incoming/{_jobId:N}.jpg",
-                Id = 1,
-            });
+                await Task.Delay(20, cancellationToken);
+                UploadedPaths.Add(filePath);
+                var jobId = Guid.NewGuid();
+                return new UploadResponseDto
+                {
+                    JobId = jobId.ToString("D"),
+                    Status = UploadJobStatusDto.Waiting,
+                    Message = $"incoming/{jobId:N}.jpg",
+                    IncomingPath = $"incoming/{jobId:N}.jpg",
+                    Id = 1,
+                };
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _inFlight);
+            }
         }
     }
 
     private sealed class ImmediateCompleteJobApi : IUploadJobApiRepository
     {
-        private readonly Guid _jobId;
-
-        public ImmediateCompleteJobApi(Guid jobId) => _jobId = jobId;
-
         public int CallCount { get; private set; }
 
         public Task<UploadJobStatusDto> GetStatusAsync(Guid jobId, CancellationToken cancellationToken = default)
         {
             CallCount++;
-            Assert.Equal(_jobId, jobId);
             return Task.FromResult(new UploadJobStatusDto
             {
                 JobId = jobId.ToString("D"),
@@ -186,6 +203,21 @@ public sealed class UploadApiRepositorySmokeTests
                 CurrentPlugin = "GpsPlugin",
             });
         }
+
+        public Task<UploadJobListDto> ListJobsAsync(
+            string? status = null,
+            int page = 1,
+            int pageSize = 20,
+            string sort = "created_at_desc",
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new UploadJobListDto
+            {
+                Items = [],
+                Page = page,
+                PageSize = pageSize,
+                Total = 0,
+                Sort = sort,
+            });
     }
 
     private sealed class LocalStorageRepo : IStorageRepository

@@ -155,12 +155,20 @@ public partial class TravelRecordsViewModel : ObservableObject
             await RefreshHomeLocationAsync(token);
             var dashboard = await _travelRecordsService.GetDashboardAsync(token);
             ApplyDashboard(dashboard);
+            _logger.LogInformation(
+                "TravelRecords UI applied. YearChapters={Years}, Trips={Trips}, HasMostVisited={Most}, HasRecent={Recent}",
+                YearChapters.Count,
+                YearChapters.Sum(c => c.Trips.Count),
+                HasMostVisited,
+                HasRecent);
             ApplyPendingMemoryFocus();
             if (!HasFeaturedMemory)
             {
                 StatusMessage = NeedsHomeLocation
                     ? "Home Location을 설정하면 '가장 멀리 여행한 장소'를 계산합니다."
-                    : "스크롤하며 여행을 다시 떠올려 보세요.";
+                    : HasYearChapters
+                        ? "스크롤하며 여행을 다시 떠올려 보세요."
+                        : "표시할 여행기록이 없습니다. Backend Gallery에 장소/촬영일 메타데이터가 필요합니다.";
             }
 
             _ = LoadThumbnailsAsync(token);
@@ -172,7 +180,9 @@ public partial class TravelRecordsViewModel : ObservableObject
         catch (Exception ex)
         {
             _logger.LogError(ex, "Travel records dashboard load failed.");
-            StatusMessage = "여행기록을 불러오지 못했습니다.";
+            StatusMessage = $"여행기록을 불러오지 못했습니다. {ex.Message}";
+            HasYearChapters = false;
+            HasHighlights = false;
         }
         finally
         {
@@ -288,6 +298,13 @@ public partial class TravelRecordsViewModel : ObservableObject
 
         ClearPendingFilters();
         _placeFocusState.FocusPlaceId = item.PlaceId;
+        _placeFocusState.FocusPlaceName = item.PlaceName;
+        _placeFocusState.FocusMediaId = item.RepresentativeMediaId;
+        _logger.LogInformation(
+            "TravelRecords open place → VisitMap. PlaceId={PlaceId} PlaceName={PlaceName} RepMediaId={MediaId}",
+            item.PlaceId,
+            item.PlaceName,
+            item.RepresentativeMediaId);
         OpenVisitRecordRequested?.Invoke(this, EventArgs.Empty);
     }
 
@@ -301,6 +318,13 @@ public partial class TravelRecordsViewModel : ObservableObject
 
         ClearPendingFilters();
         _placeFocusState.FocusPlaceId = item.PlaceId;
+        _placeFocusState.FocusPlaceName = item.PlaceName;
+        _placeFocusState.FocusMediaId = item.RepresentativeMediaId;
+        _logger.LogInformation(
+            "TravelRecords open place → VisitMap. PlaceId={PlaceId} PlaceName={PlaceName} RepMediaId={MediaId}",
+            item.PlaceId,
+            item.PlaceName,
+            item.RepresentativeMediaId);
         OpenVisitRecordRequested?.Invoke(this, EventArgs.Empty);
     }
 
@@ -316,10 +340,13 @@ public partial class TravelRecordsViewModel : ObservableObject
         if (!string.IsNullOrWhiteSpace(item.Country) && item.PlaceCount > 1)
         {
             _placeFocusState.PendingCountry = item.Country;
+            _placeFocusState.FocusPlaceId = null;
+            _placeFocusState.FocusPlaceName = null;
         }
         else
         {
             _placeFocusState.FocusPlaceId = item.FocusPlaceId;
+            _placeFocusState.FocusPlaceName = item.TripName;
         }
 
         OpenVisitRecordRequested?.Invoke(this, EventArgs.Empty);
@@ -477,21 +504,18 @@ public partial class TravelRecordsViewModel : ObservableObject
             foreach (var target in targets)
             {
                 token.ThrowIfCancellationRequested();
-                if (target.MediaId is null || string.IsNullOrWhiteSpace(target.Path))
+                if (string.IsNullOrWhiteSpace(target.Path) || !HttpImageLoader.IsHttpUrl(target.Path))
                 {
                     continue;
                 }
 
-                var path = await _thumbnailService.GetOrCreateThumbnailAsync(
-                    target.MediaId.Value,
-                    target.Path,
-                    token);
-                if (string.IsNullOrWhiteSpace(path))
+                await EnqueueAsync(() =>
                 {
-                    continue;
-                }
-
-                await EnqueueAsync(() => target.SetImage(new BitmapImage(new Uri(path))));
+                    target.SetImage(HttpImageLoader.TryCreate(
+                        target.Path,
+                        _logger,
+                        context: $"TravelThumb:{target.MediaId:N}"));
+                });
             }
         }
         catch (OperationCanceledException)

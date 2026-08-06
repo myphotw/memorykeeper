@@ -99,7 +99,7 @@
 
 
 
-        <Grid Grid.Row="4" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="8">
+        <Grid Grid.Row="4" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8">
 
             <ProgressBar
                 Minimum="0"
@@ -107,17 +107,16 @@
                 Value="{Binding ProgressValue, Mode=OneWay}"
                 Height="8" />
 
-
             <TextBlock
                 Grid.Row="1"
                 Text="{Binding CurrentStage, Mode=OneWay}"
                 FontWeight="SemiBold"
                 Opacity="0.85" />
 
-            <TextBlock
-                Grid.Row="2"
-                Text="{Binding ProgressCountText, Mode=OneWay}"
-                Opacity="0.75" />
+            <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="16">
+                <TextBlock Text="{Binding UploadProgressText, Mode=OneWay}" Opacity="0.85" />
+                <TextBlock Text="{Binding AnalysisProgressText, Mode=OneWay}" Opacity="0.85" />
+            </StackPanel>
 
             <TextBlock
                 Grid.Row="3"
@@ -125,13 +124,23 @@
                 Opacity="0.75"
                 TextWrapping="Wrap" />
 
-            <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="20">
+            <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="16">
                 <TextBlock Text="{Binding TotalCountText, Mode=OneWay}" />
-                <TextBlock Text="{Binding ProcessedCountText, Mode=OneWay}" />
+                <TextBlock Text="{Binding UploadingCountText, Mode=OneWay}" />
+                <TextBlock Text="{Binding WaitingCountText, Mode=OneWay}" />
+                <TextBlock Text="{Binding ProcessingCountText, Mode=OneWay}" />
                 <TextBlock Text="{Binding RegisteredCountText, Mode=OneWay}" />
                 <TextBlock Text="{Binding DuplicateCountText, Mode=OneWay}" />
                 <TextBlock Text="{Binding FailedCountText, Mode=OneWay}" />
             </StackPanel>
+
+            <Button
+                Grid.Row="5"
+                Content="실패 항목 재시도"
+                Command="{Binding RetryImportCommand}"
+                IsEnabled="{Binding IsRetryReady, Mode=OneWay}"
+                HorizontalAlignment="Left"
+                Padding="10,4" />
         </Grid>
 
         <TextBlock

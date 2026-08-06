@@ -169,7 +169,12 @@ public partial class VisitPreviewItem : ObservableObject
 
     public Guid MediaId => Photo.MediaId;
 
+    public string BackendFileId => Photo.BackendFileId;
+
     public string FileName => Photo.FileName;
+
+    public string ThumbnailUrl =>
+        !string.IsNullOrWhiteSpace(Photo.ThumbnailUrl) ? Photo.ThumbnailUrl : Photo.AbsoluteLibraryPath;
 
     public string AbsoluteLibraryPath => Photo.AbsoluteLibraryPath;
 

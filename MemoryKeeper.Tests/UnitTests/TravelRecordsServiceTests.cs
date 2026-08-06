@@ -99,6 +99,62 @@ public class TravelRecordsServiceTests
         Assert.Contains(seasonDetail.Places, item => item.PlaceId == maldives.Id);
     }
 
+    [Fact]
+    public async Task GetDashboardAsync_CreatesUndatedYearChapter_WithoutInventingVisitDays()
+    {
+        var repo = new FixedAggregates(
+        [
+            new TravelPlaceAggregateRaw
+            {
+                PlaceId = Guid.NewGuid(),
+                PlaceName = "날짜없는곳",
+                Country = "대한민국",
+                PhotoCount = 2,
+                VisitDates = [],
+                AbsoluteLibraryPath = "http://127.0.0.1:8000/api/common/gallery/x/thumbnail",
+            },
+            new TravelPlaceAggregateRaw
+            {
+                PlaceId = Guid.NewGuid(),
+                PlaceName = "속초",
+                Country = "대한민국",
+                PhotoCount = 1,
+                VisitDates = [new DateTime(2025, 12, 20)],
+                AbsoluteLibraryPath = "http://127.0.0.1:8000/api/common/gallery/y/thumbnail",
+            },
+        ]);
+
+        var homeLocation = new HomeLocationService(
+            new HomeSettingRepository([]),
+            new NoOpLocationResolver(),
+            NullLogger<HomeLocationService>.Instance);
+        var service = new TravelRecordsService(
+            repo,
+            new InMemoryMediaTagRepository(),
+            new InMemoryTagRepository(),
+            homeLocation,
+            NullLogger<TravelRecordsService>.Instance);
+
+        var dashboard = await service.GetDashboardAsync();
+        Assert.Contains(dashboard.YearChapters, c => c.Year == 2025);
+        var undated = Assert.Single(dashboard.YearChapters, c => c.Year == 0);
+        Assert.Equal("날짜 미상", undated.YearTitle);
+        Assert.Contains(undated.Trips, t => t.TripName == "날짜없는곳" && t.VisitDayCount == 0 && t.PhotoCount == 2);
+        Assert.Equal("속초", dashboard.MostVisitedPlace?.PlaceName);
+        Assert.Equal(1, dashboard.MostVisitedPlace?.VisitRecordCount);
+    }
+
+    private sealed class FixedAggregates : ITravelRecordsRepository
+    {
+        private readonly IReadOnlyList<TravelPlaceAggregateRaw> _items;
+
+        public FixedAggregates(IReadOnlyList<TravelPlaceAggregateRaw> items) => _items = items;
+
+        public Task<IReadOnlyList<TravelPlaceAggregateRaw>> GetPlaceAggregatesAsync(
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(_items);
+    }
+
     private static Place CreatePlace(string name, string country, double lat, double lon) => new()
     {
         Id = Guid.NewGuid(),

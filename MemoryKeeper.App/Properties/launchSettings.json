@@ -1,0 +1,16 @@
+{
+  "profiles": {
+    "MemoryKeeper": {
+      "commandName": "Project",
+      "commandLineArgs": "",
+      "workingDirectory": "$(ProjectDir)",
+      "nativeDebugging": false
+    },
+    "MemoryKeeper (x64 Debug exe)": {
+      "commandName": "Executable",
+      "executablePath": "$(ProjectDir)bin\\x64\\Debug\\net8.0-windows10.0.19041.0\\MemoryKeeper.exe",
+      "workingDirectory": "$(ProjectDir)bin\\x64\\Debug\\net8.0-windows10.0.19041.0\\",
+      "nativeDebugging": false
+    }
+  }
+}

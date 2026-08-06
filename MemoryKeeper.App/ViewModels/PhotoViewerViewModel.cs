@@ -6,8 +6,9 @@ using MemoryKeeper.App.Models;
 using MemoryKeeper.App.Services;
 using MemoryKeeper.Application;
 using MemoryKeeper.Application.DTOs;
+using MemoryKeeper.Application.Interfaces;
 using MemoryKeeper.Application.Layout;
-using MemoryKeeper.Application.Services;
+using MemoryKeeper.Infrastructure.Services.Api;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml.Media.Imaging;
@@ -16,15 +17,15 @@ namespace MemoryKeeper.App.ViewModels;
 
 public partial class PhotoViewerViewModel : ObservableObject
 {
-    private readonly PhotoDetailService _photoDetailService;
+    private readonly IGalleryApiRepository _galleryApiRepository;
+    private readonly BaseApiClient _apiClient;
     private readonly IPhotoNavigationState _photoNavigationState;
     private readonly IPlaceFocusState _placeFocusState;
-    private readonly IThumbnailService _thumbnailService;
     private readonly ILogger<PhotoViewerViewModel> _logger;
     private readonly DispatcherQueue? _dispatcherQueue;
     private BitmapImage? _previousImage;
-    private string? _preloadedNextPath;
-    private string? _preloadedPreviousPath;
+    private string? _preloadedNextUrl;
+    private string? _preloadedPreviousUrl;
     private CancellationTokenSource? _filmStripCts;
     private int _filmStripRadius = ResponsiveLayoutRules.FilmStripVisibleRadius(LayoutBreakpoint.Medium);
     private Guid? _currentMediaId;
@@ -48,16 +49,16 @@ public partial class PhotoViewerViewModel : ObservableObject
     public event EventHandler<int>? NavigateSlideRequested;
 
     public PhotoViewerViewModel(
-        PhotoDetailService photoDetailService,
+        IGalleryApiRepository galleryApiRepository,
+        BaseApiClient apiClient,
         IPhotoNavigationState photoNavigationState,
         IPlaceFocusState placeFocusState,
-        IThumbnailService thumbnailService,
         ILogger<PhotoViewerViewModel> logger)
     {
-        _photoDetailService = photoDetailService;
+        _galleryApiRepository = galleryApiRepository;
+        _apiClient = apiClient;
         _photoNavigationState = photoNavigationState;
         _placeFocusState = placeFocusState;
-        _thumbnailService = thumbnailService;
         _logger = logger;
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
     }
@@ -82,6 +83,7 @@ public partial class PhotoViewerViewModel : ObservableObject
     {
         if (_photoNavigationState.FocusMediaId is Guid mediaId)
         {
+            // State only — MainWindow navigates via OpenDetailRequested (single push).
             _photoNavigationState.RequestOpenDetail(mediaId);
             OpenDetailRequested?.Invoke(this, EventArgs.Empty);
         }
@@ -140,7 +142,7 @@ public partial class PhotoViewerViewModel : ObservableObject
     [RelayCommand]
     private async Task SelectFilmStripItemAsync(FilmStripItem? item)
     {
-        if (item is null || item.MediaId == _photoNavigationState.FocusMediaId)
+        if (item is null)
         {
             return;
         }
@@ -150,13 +152,7 @@ public partial class PhotoViewerViewModel : ObservableObject
 
     public void ApplyBreakpoint(LayoutBreakpoint breakpoint)
     {
-        var radius = ResponsiveLayoutRules.FilmStripVisibleRadius(breakpoint);
-        if (radius == _filmStripRadius)
-        {
-            return;
-        }
-
-        _filmStripRadius = radius;
+        _filmStripRadius = ResponsiveLayoutRules.FilmStripVisibleRadius(breakpoint);
         if (_currentMediaId is Guid mediaId)
         {
             _ = RefreshFilmStripAsync(mediaId);
@@ -173,7 +169,8 @@ public partial class PhotoViewerViewModel : ObservableObject
                 NavigateSlideRequested?.Invoke(this, slideDirection);
             }
 
-            var detail = await _photoDetailService.GetPhotoDetailAsync(mediaId);
+            var apiDetail = await _galleryApiRepository.GetPhotoAsync(mediaId);
+            var detail = GalleryBackendMapper.ToPhotoDetail(apiDetail, _apiClient.ApiBaseUrl);
             _photoNavigationState.FocusMediaId = mediaId;
             _currentMediaId = mediaId;
             RefreshNavigationState();
@@ -184,11 +181,28 @@ public partial class PhotoViewerViewModel : ObservableObject
             Country = detail.Country;
             HasGps = detail.HasGps;
 
-            var path = ResolveImagePath(detail);
-            var image = LoadImage(path);
-            DisposePreviousImage();
-            _previousImage = PhotoImage;
-            PhotoImage = image;
+            var displayUrl = ResolveDisplayUrl(detail);
+            _logger.LogInformation(
+                "PhotoViewer display URL. MediaId={MediaId}, BackendFileId={FileId}, PreviewUrl={Preview}, ThumbnailUrl={Thumb}, DisplayUrl={Display}, OriginalUrl={Original}",
+                mediaId,
+                apiDetail.FileId,
+                detail.PreviewUrl,
+                detail.ThumbnailUrl,
+                displayUrl,
+                detail.OriginalPath);
+
+            BitmapImage? image = null;
+            await EnqueueAsync(() =>
+            {
+                image = LoadDisplayImage(displayUrl, context: $"PhotoViewer:{apiDetail.FileId}");
+                DisposePreviousImage();
+                _previousImage = PhotoImage;
+                PhotoImage = image;
+                _logger.LogInformation(
+                    "PhotoViewer ImageSource set. IsNull={IsNull}, Url={Url}",
+                    image is null,
+                    displayUrl);
+            });
 
             await RefreshFilmStripAsync(mediaId);
             await PreloadAdjacentAsync();
@@ -196,6 +210,7 @@ public partial class PhotoViewerViewModel : ObservableObject
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to load photo viewer media. MediaId={MediaId}", mediaId);
+            await EnqueueAsync(() => PhotoImage = null);
         }
         finally
         {
@@ -237,9 +252,10 @@ public partial class PhotoViewerViewModel : ObservableObject
         {
             try
             {
-                var detail = await _photoDetailService.GetPhotoDetailAsync(item.MediaId);
+                var apiDetail = await _galleryApiRepository.GetPhotoAsync(item.MediaId, token);
                 token.ThrowIfCancellationRequested();
-                item.AbsoluteLibraryPath = detail.AbsoluteLibraryPath;
+                var detail = GalleryBackendMapper.ToPhotoDetail(apiDetail, _apiClient.ApiBaseUrl);
+                item.AbsoluteLibraryPath = detail.ThumbnailUrl ?? detail.PreviewUrl ?? string.Empty;
             }
             catch (OperationCanceledException)
             {
@@ -285,23 +301,20 @@ public partial class PhotoViewerViewModel : ObservableObject
         foreach (var item in items)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (string.IsNullOrWhiteSpace(item.AbsoluteLibraryPath) || !File.Exists(item.AbsoluteLibraryPath))
+            if (!HttpImageLoader.IsHttpUrl(item.AbsoluteLibraryPath))
             {
                 continue;
             }
 
             try
             {
-                var path = await _thumbnailService.GetOrCreateThumbnailAsync(
-                    item.MediaId,
-                    item.AbsoluteLibraryPath,
-                    cancellationToken);
-                if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+                await EnqueueAsync(() =>
                 {
-                    continue;
-                }
-
-                Enqueue(() => item.ThumbnailImage = new BitmapImage(new Uri(path)));
+                    item.ThumbnailImage = HttpImageLoader.TryCreate(
+                        item.AbsoluteLibraryPath,
+                        _logger,
+                        context: $"FilmStrip:{item.MediaId:N}");
+                });
             }
             catch (OperationCanceledException)
             {
@@ -314,28 +327,52 @@ public partial class PhotoViewerViewModel : ObservableObject
         }
     }
 
-    private void Enqueue(Action action)
+    private Task EnqueueAsync(Action action)
     {
         if (_dispatcherQueue is null || _dispatcherQueue.HasThreadAccess)
         {
             action();
-            return;
+            return Task.CompletedTask;
         }
 
-        _dispatcherQueue.TryEnqueue(() => action());
+        var tcs = new TaskCompletionSource();
+        if (!_dispatcherQueue.TryEnqueue(() =>
+            {
+                try
+                {
+                    action();
+                    tcs.SetResult();
+                }
+                catch (Exception ex)
+                {
+                    tcs.SetException(ex);
+                }
+            }))
+        {
+            tcs.SetException(new InvalidOperationException("Failed to enqueue UI work."));
+        }
+
+        return tcs.Task;
     }
 
     private async Task PreloadAdjacentAsync()
     {
-        _preloadedNextPath = null;
-        _preloadedPreviousPath = null;
+        _preloadedNextUrl = null;
+        _preloadedPreviousUrl = null;
 
         if (_photoNavigationState.TryGetNext(out var nextId))
         {
             try
             {
-                var next = await _photoDetailService.GetPhotoDetailAsync(nextId);
-                _preloadedNextPath = ResolveImagePath(next);
+                var next = GalleryBackendMapper.ToPhotoDetail(
+                    await _galleryApiRepository.GetPhotoAsync(nextId),
+                    _apiClient.ApiBaseUrl);
+                _preloadedNextUrl = ResolveDisplayUrl(next);
+                if (HttpImageLoader.IsHttpUrl(_preloadedNextUrl))
+                {
+                    await EnqueueAsync(() =>
+                        _ = HttpImageLoader.TryCreate(_preloadedNextUrl, _logger, "PhotoViewer:PreloadNext"));
+                }
             }
             catch (Exception ex)
             {
@@ -347,8 +384,15 @@ public partial class PhotoViewerViewModel : ObservableObject
         {
             try
             {
-                var previous = await _photoDetailService.GetPhotoDetailAsync(previousId);
-                _preloadedPreviousPath = ResolveImagePath(previous);
+                var previous = GalleryBackendMapper.ToPhotoDetail(
+                    await _galleryApiRepository.GetPhotoAsync(previousId),
+                    _apiClient.ApiBaseUrl);
+                _preloadedPreviousUrl = ResolveDisplayUrl(previous);
+                if (HttpImageLoader.IsHttpUrl(_preloadedPreviousUrl))
+                {
+                    await EnqueueAsync(() =>
+                        _ = HttpImageLoader.TryCreate(_preloadedPreviousUrl, _logger, "PhotoViewer:PreloadPrevious"));
+                }
             }
             catch (Exception ex)
             {
@@ -371,33 +415,44 @@ public partial class PhotoViewerViewModel : ObservableObject
             : $"{city} · {place}";
     }
 
-    private static string? ResolveImagePath(PhotoDetailDto detail)
+    /// <summary>PreviewUrl → ThumbnailUrl. Never OriginalUrl for auto display.</summary>
+    internal static string? ResolveDisplayUrl(PhotoDetailDto detail)
     {
-        if (!string.IsNullOrWhiteSpace(detail.AbsoluteLibraryPath) && File.Exists(detail.AbsoluteLibraryPath))
+        if (HttpImageLoader.IsHttpUrl(detail.PreviewUrl))
+        {
+            return detail.PreviewUrl;
+        }
+
+        if (HttpImageLoader.IsHttpUrl(detail.AbsoluteLibraryPath))
         {
             return detail.AbsoluteLibraryPath;
         }
 
-        if (!string.IsNullOrWhiteSpace(detail.OriginalPath) && File.Exists(detail.OriginalPath))
+        if (HttpImageLoader.IsHttpUrl(detail.ThumbnailUrl))
         {
-            return detail.OriginalPath;
+            return detail.ThumbnailUrl;
+        }
+
+        if (HttpImageLoader.IsHttpUrl(detail.ThumbnailPath))
+        {
+            return detail.ThumbnailPath;
         }
 
         return null;
     }
 
-    private static BitmapImage? LoadImage(string? path)
+    private BitmapImage? LoadDisplayImage(string? url, string context)
     {
-        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        if (HttpImageLoader.IsHttpUrl(url))
         {
-            return null;
+            return HttpImageLoader.TryCreate(url, _logger, context);
         }
 
-        return new BitmapImage
-        {
-            CreateOptions = BitmapCreateOptions.IgnoreImageCache,
-            UriSource = new Uri(path)
-        };
+        _logger.LogWarning(
+            "PhotoViewer has no HTTP display URL. Context={Context}, Url={Url}",
+            context,
+            url);
+        return null;
     }
 
     private void DisposePreviousImage()

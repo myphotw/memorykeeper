@@ -37,11 +37,14 @@ public partial class VisitRecordViewModel : ObservableObject
     private IMapController? _mapController;
     private CancellationTokenSource? _suggestCts;
     private CancellationTokenSource? _thumbCts;
+    private CancellationTokenSource? _activationCts;
     private bool _suppressMapCamera;
+    private bool _activationOwnsFocus;
     private int _mapSyncVersion;
     private readonly SemaphoreSlim _mapSyncLock = new(1, 1);
     private IReadOnlyList<VisitRecordPlaceItem> _allMapItems = [];
     private IReadOnlyList<VisitRecordPlaceItem> _timelineItems = [];
+    private VisitRecordPlaceItem? _pendingMapFocus;
 
     [ObservableProperty]
     private string searchText = string.Empty;
@@ -149,7 +152,199 @@ public partial class VisitRecordViewModel : ObservableObject
         IsMapReady = false;
     }
 
-    partial void OnSearchTextChanged(string value) => _ = RefreshSuggestionsAsync(value);
+    /// <summary>
+    /// Single activation path for HOME and TRAVEL_RECORD → Visit Map.
+    /// Waits for mapReady, syncs markers, then applies pending focus camera.
+    /// </summary>
+    public async Task ActivateVisitSurfaceAsync(
+        int navigationGeneration,
+        VisitMapNavigationSource source,
+        bool reloadData,
+        CancellationToken cancellationToken = default)
+    {
+        _activationCts?.Cancel();
+        _activationCts?.Dispose();
+        _activationCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var ct = _activationCts.Token;
+
+        if (navigationGeneration != _placeFocusState.NavigationGeneration)
+        {
+            _logger.LogInformation(
+                "stale async result ignored (activate start). RequestedGen={Requested} CurrentGen={Current}",
+                navigationGeneration,
+                _placeFocusState.NavigationGeneration);
+            return;
+        }
+
+        if (_mapController is null)
+        {
+            _logger.LogWarning("ActivateVisitSurface aborted; map controller missing. Gen={Gen}", navigationGeneration);
+            return;
+        }
+
+        var wantsFocus = _placeFocusState.HasPendingFocus;
+        var wantsFilters = _placeFocusState.HasPendingFilters;
+        var recoveryCount = 0;
+
+        _activationOwnsFocus = true;
+        _suppressMapCamera = true;
+        try
+        {
+            _logger.LogInformation(
+                "ActivateVisitSurface start. Source={Source} Gen={Gen} Reload={Reload} WantsFocus={Focus} WantsFilters={Filters} WebViewHintReady={Layout}",
+                source,
+                navigationGeneration,
+                reloadData,
+                wantsFocus,
+                wantsFilters,
+                _mapController.IsHostLayoutReady);
+
+            var apiKeySetting = await _settingRepository.GetByKeyAsync(SettingKeys.GoogleMapsApiKey);
+            var apiKey = GoogleMapsApiKeyValidator.NormalizeOrNull(apiKeySetting?.Value);
+            if (apiKey is null)
+            {
+                StatusMessage = "Google API Key가 없거나 형식이 올바르지 않습니다. 설정 → Google API에서 AIza… Key를 저장하세요.";
+                IsMapReady = false;
+                return;
+            }
+
+            await _mapController.EnsureMapReadyAsync(apiKey, forceReload: false, ct);
+            IsMapReady = _mapController.IsReady;
+            _logger.LogInformation("mapReady confirmed. Gen={Gen} TilesLoaded={Tiles}", navigationGeneration, _mapController.HasTilesLoaded);
+
+            if (ct.IsCancellationRequested || navigationGeneration != _placeFocusState.NavigationGeneration)
+            {
+                _logger.LogInformation("stale async result ignored after mapReady. Gen={Gen}", navigationGeneration);
+                return;
+            }
+
+            if (reloadData || _allMapItems.Count == 0 || wantsFilters)
+            {
+                await LoadAsync();
+            }
+            else if (wantsFocus)
+            {
+                ApplyPendingFocusCore(clearWhenMissing: true, consumeFocusState: false);
+            }
+
+            if (ct.IsCancellationRequested || navigationGeneration != _placeFocusState.NavigationGeneration)
+            {
+                _logger.LogInformation("stale async result ignored after data. Gen={Gen}", navigationGeneration);
+                return;
+            }
+
+            await SyncMapAsync(fitBounds: !wantsFocus);
+            _logger.LogInformation("marker sync completed. Gen={Gen} FitBounds={Fit}", navigationGeneration, !wantsFocus);
+
+            await _mapController.NotifyLayoutAsync(ct);
+            var tilesOk = _mapController.HasTilesLoaded
+                          || await _mapController.WaitUntilTilesLoadedAsync(TimeSpan.FromSeconds(4), ct);
+            _logger.LogInformation("tilesloaded wait. Gen={Gen} Ok={Ok}", navigationGeneration, tilesOk);
+
+            // Selection-path recovery must NOT HTML-reload. Only nudge resize/center once.
+            if (!tilesOk && recoveryCount == 0)
+            {
+                recoveryCount = 1;
+                _logger.LogInformation(
+                    "tile recovery resize only (no HTML reload). Gen={Gen}",
+                    navigationGeneration);
+                await _mapController.NotifyLayoutAsync(ct);
+                if (SelectedPlace is not null
+                    && PlaceIdentity.HasValidCoordinates(SelectedPlace.Latitude, SelectedPlace.Longitude))
+                {
+                    await _mapController.CenterOnAsync(SelectedPlace.Latitude, SelectedPlace.Longitude, 15, ct);
+                }
+
+                tilesOk = _mapController.HasTilesLoaded
+                          || await _mapController.WaitUntilTilesLoadedAsync(TimeSpan.FromSeconds(2), ct);
+            }
+
+            if (ct.IsCancellationRequested || navigationGeneration != _placeFocusState.NavigationGeneration)
+            {
+                _logger.LogInformation("stale async result ignored before focus. Gen={Gen}", navigationGeneration);
+                return;
+            }
+
+            _suppressMapCamera = false;
+            if (wantsFocus)
+            {
+                if (SelectedPlace is null)
+                {
+                    ApplyPendingFocusCore(clearWhenMissing: true, consumeFocusState: false);
+                }
+
+                if (SelectedPlace is not null)
+                {
+                    _logger.LogInformation(
+                        "focus requested/applied. Gen={Gen} PlaceId={PlaceId} PlaceName={PlaceName} Lat={Lat} Lon={Lon}",
+                        navigationGeneration,
+                        SelectedPlace.PlaceId,
+                        SelectedPlace.PlaceName,
+                        SelectedPlace.Latitude,
+                        SelectedPlace.Longitude);
+                    await FocusSelectedOnMapAsync(SelectedPlace);
+                    StatusMessage = $"'{SelectedPlace.PlaceName}' · 사진 위치로 이동했습니다.";
+                }
+                else
+                {
+                    StatusMessage = "방문지도에서 해당 사진/장소를 찾지 못했습니다.";
+                    _logger.LogWarning("focus apply failed; place not found. Gen={Gen}", navigationGeneration);
+                }
+
+                _placeFocusState.ClearFocus();
+            }
+
+            _logger.LogInformation(
+                "ActivateVisitSurface done. Source={Source} Gen={Gen} TilesOk={Tiles} Recovery={Recovery}",
+                source,
+                navigationGeneration,
+                tilesOk,
+                recoveryCount);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            _logger.LogInformation("ActivateVisitSurface canceled. Gen={Gen}", navigationGeneration);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "ActivateVisitSurface failed. Gen={Gen}", navigationGeneration);
+            StatusMessage = $"지도를 준비하지 못했습니다. {ex.Message}";
+        }
+        finally
+        {
+            _suppressMapCamera = false;
+            _activationOwnsFocus = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task InitializeMapAsync()
+    {
+        if (_mapController is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var apiKeySetting = await _settingRepository.GetByKeyAsync(SettingKeys.GoogleMapsApiKey);
+            var apiKey = GoogleMapsApiKeyValidator.NormalizeOrNull(apiKeySetting?.Value);
+            if (apiKey is null)
+            {
+                StatusMessage = "Google API Key가 없거나 형식이 올바르지 않습니다. 설정 → Google API에서 AIza… Key를 저장하세요.";
+                IsMapReady = false;
+                return;
+            }
+
+            await _mapController.EnsureMapReadyAsync(apiKey, forceReload: false);
+            IsMapReady = _mapController.IsReady;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Visit record map init failed.");
+            StatusMessage = $"지도를 초기화하지 못했습니다. {ex.Message}";
+        }
+    }
 
     partial void OnSelectedPlaceChanged(VisitRecordPlaceItem? value)
     {
@@ -161,7 +356,8 @@ public partial class VisitRecordViewModel : ObservableObject
 
         if (value is not null)
         {
-            _placeFocusState.FocusPlaceId = value.PlaceId;
+            // Do not write FocusPlaceId here — that is navigation state for shell entry,
+            // and rewriting it on every click can confuse pending activation.
             _ = LoadPreviewAsync(value);
             if (!_suppressMapCamera)
             {
@@ -204,35 +400,7 @@ public partial class VisitRecordViewModel : ObservableObject
         await SearchAsync();
     }
 
-    [RelayCommand]
-    private async Task InitializeMapAsync()
-    {
-        if (_mapController is null)
-        {
-            return;
-        }
-
-        try
-        {
-            var apiKeySetting = await _settingRepository.GetByKeyAsync(SettingKeys.GoogleMapsApiKey);
-            var apiKey = GoogleMapsApiKeyValidator.NormalizeOrNull(apiKeySetting?.Value);
-            if (apiKey is null)
-            {
-                StatusMessage = "Google API Key가 없거나 형식이 올바르지 않습니다. 설정 → Google API에서 AIza… Key를 저장하세요.";
-                IsMapReady = false;
-                return;
-            }
-
-            await _mapController.InitializeAsync(apiKey);
-            IsMapReady = _mapController.IsReady;
-            await SyncMapAsync();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Visit record map init failed.");
-            StatusMessage = $"지도를 초기화하지 못했습니다. {ex.Message}";
-        }
-    }
+    partial void OnSearchTextChanged(string value) => _ = RefreshSuggestionsAsync(value);
 
     [RelayCommand]
     private async Task SearchAsync()
@@ -575,7 +743,7 @@ public partial class VisitRecordViewModel : ObservableObject
         RebuildYearGroups();
         HasNoResults = _timelineItems.Count == 0;
 
-        ApplyPendingFocusCore(clearWhenMissing: true);
+        ApplyPendingFocusCore(clearWhenMissing: true, consumeFocusState: !_activationOwnsFocus);
 
         StatusMessage = HasNoResults
             ? "검색 결과가 없습니다."
@@ -583,82 +751,81 @@ public partial class VisitRecordViewModel : ObservableObject
                 ? $"방문지도 {_timelineItems.Count}곳 / 지도 {_allMapItems.Count}곳"
                 : $"'{SearchText.Trim()}' Timeline {_timelineItems.Count}곳 (지도 전체 {_allMapItems.Count}곳 유지)";
 
-        _ = SyncMapAsync();
-        _ = LoadTimelineThumbnailsAsync(_timelineItems);
+        if (!_activationOwnsFocus)
+        {
+            _ = SyncMapAsync();
+        }
+        // Thumbnails load lazily on marker/place selection only (no map-entry preload).
     }
 
     /// <summary>
     /// Applies FocusPlaceId / FocusMediaId when navigating from Photo Viewer / Detail without a full reload.
+    /// Prefer <see cref="ActivateVisitSurfaceAsync"/> for shell navigation.
     /// </summary>
     [RelayCommand]
     private async Task ApplyPendingFocusAsync()
     {
-        if (!string.IsNullOrWhiteSpace(_placeFocusState.PendingSearchText)
-            || _placeFocusState.PendingSeason is not null
-            || !string.IsNullOrWhiteSpace(_placeFocusState.PendingCountry))
-        {
-            await LoadAsync();
-            return;
-        }
-
-        if (_placeFocusState.FocusPlaceId is null && _placeFocusState.FocusMediaId is null)
-        {
-            return;
-        }
-
-        if (_allMapItems.Count == 0 && _timelineItems.Count == 0)
-        {
-            await LoadAsync();
-            return;
-        }
-
-        if (!ApplyPendingFocusCore(clearWhenMissing: true))
-        {
-            StatusMessage = "방문지도에서 해당 사진/장소를 찾지 못했습니다.";
-            return;
-        }
-
-        await SyncMapAsync();
-        if (SelectedPlace is not null)
-        {
-            await FocusSelectedOnMapAsync(SelectedPlace);
-            StatusMessage = $"'{SelectedPlace.PlaceName}' · 사진 위치로 이동했습니다.";
-        }
+        await ActivateVisitSurfaceAsync(
+            _placeFocusState.NavigationGeneration,
+            _placeFocusState.NavigationSource == VisitMapNavigationSource.Unknown
+                ? VisitMapNavigationSource.ShellNav
+                : _placeFocusState.NavigationSource,
+            reloadData: _allMapItems.Count == 0 || _placeFocusState.HasPendingFilters);
     }
 
-    private bool ApplyPendingFocusCore(bool clearWhenMissing)
+    private bool ApplyPendingFocusCore(bool clearWhenMissing, bool consumeFocusState = true)
     {
         var focusId = _placeFocusState.FocusPlaceId;
         var focusMediaId = _placeFocusState.FocusMediaId;
-        if (focusId is null && focusMediaId is null)
+        var focusName = _placeFocusState.FocusPlaceName?.Trim();
+        if (focusId is null && focusMediaId is null && string.IsNullOrWhiteSpace(focusName))
         {
             SelectedPlace = _timelineItems.FirstOrDefault()
                             ?? _allMapItems.FirstOrDefault();
             return false;
         }
 
-        _placeFocusState.FocusPlaceId = null;
-        _placeFocusState.FocusMediaId = null;
+        if (consumeFocusState)
+        {
+            _placeFocusState.ClearFocus();
+        }
 
         VisitRecordPlaceItem? place = null;
         if (focusId is Guid id)
         {
-            place = _timelineItems.FirstOrDefault(item => item.PlaceId == id)
-                    ?? _allMapItems.FirstOrDefault(item => item.PlaceId == id);
+            // Prefer map items (validated GPS) over timeline when PlaceIds match.
+            place = PreferMapCoords(
+                _allMapItems.FirstOrDefault(item => item.PlaceId == id)
+                ?? _timelineItems.FirstOrDefault(item => item.PlaceId == id));
+        }
+
+        if (place is null && !string.IsNullOrWhiteSpace(focusName))
+        {
+            place = PreferMapCoords(
+                _allMapItems.FirstOrDefault(item =>
+                    string.Equals(item.PlaceName, focusName, StringComparison.OrdinalIgnoreCase))
+                ?? _timelineItems.FirstOrDefault(item =>
+                    string.Equals(item.PlaceName, focusName, StringComparison.OrdinalIgnoreCase)));
         }
 
         if (place is null && focusMediaId is Guid mediaId)
         {
-            place = _allMapItems.FirstOrDefault(item =>
-                        item.AllPhotos.Any(photo => photo.MediaId == mediaId)
-                        || item.Place.RepresentativeMediaId == mediaId)
-                    ?? _timelineItems.FirstOrDefault(item =>
-                        item.AllPhotos.Any(photo => photo.MediaId == mediaId)
-                        || item.Place.RepresentativeMediaId == mediaId);
+            place = PreferMapCoords(
+                _allMapItems.FirstOrDefault(item =>
+                    item.AllPhotos.Any(photo => photo.MediaId == mediaId)
+                    || item.Place.RepresentativeMediaId == mediaId)
+                ?? _timelineItems.FirstOrDefault(item =>
+                    item.AllPhotos.Any(photo => photo.MediaId == mediaId)
+                    || item.Place.RepresentativeMediaId == mediaId));
         }
 
         if (place is null)
         {
+            _logger.LogWarning(
+                "Visit map focus miss. FocusId={FocusId} FocusName={FocusName} FocusMediaId={MediaId}",
+                focusId,
+                focusName,
+                focusMediaId);
             if (clearWhenMissing && SelectedPlace is null)
             {
                 SelectedPlace = _timelineItems.FirstOrDefault();
@@ -666,6 +833,14 @@ public partial class VisitRecordViewModel : ObservableObject
 
             return false;
         }
+
+        _logger.LogInformation(
+            "Visit map focus hit. PlaceId={PlaceId} PlaceName={PlaceName} Lat={Lat} Lon={Lon} HasLocation={HasLocation} MapInit=pending",
+            place.PlaceId,
+            place.PlaceName,
+            place.Latitude,
+            place.Longitude,
+            PlaceIdentity.HasValidCoordinates(place.Latitude, place.Longitude));
 
         int? year = null;
         if (focusMediaId is Guid mid)
@@ -690,7 +865,7 @@ public partial class VisitRecordViewModel : ObservableObject
             var scoped = YearGroups
                 .FirstOrDefault(group => group.Year == selectedYear)
                 ?.Places.FirstOrDefault(item => item.PlaceId == place.PlaceId);
-            SelectedPlace = scoped ?? place;
+            SelectedPlace = PreferMapCoords(scoped ?? place) ?? place;
         }
         else
         {
@@ -698,6 +873,33 @@ public partial class VisitRecordViewModel : ObservableObject
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// When a timeline place lacks GPS, reuse the matching map place (same PlaceId / name).
+    /// </summary>
+    private VisitRecordPlaceItem? PreferMapCoords(VisitRecordPlaceItem? place)
+    {
+        if (place is null)
+        {
+            return null;
+        }
+
+        if (PlaceIdentity.HasValidCoordinates(place.Latitude, place.Longitude))
+        {
+            return place;
+        }
+
+        var fromMap = _allMapItems.FirstOrDefault(item => item.PlaceId == place.PlaceId)
+                      ?? _allMapItems.FirstOrDefault(item =>
+                          string.Equals(item.PlaceName, place.PlaceName, StringComparison.OrdinalIgnoreCase));
+        if (fromMap is not null
+            && PlaceIdentity.HasValidCoordinates(fromMap.Latitude, fromMap.Longitude))
+        {
+            return fromMap;
+        }
+
+        return place;
     }
 
     private void ExpandYearGroup(int year)
@@ -798,7 +1000,7 @@ public partial class VisitRecordViewModel : ObservableObject
         };
     }
 
-    private async Task SyncMapAsync()
+    private async Task SyncMapAsync(bool fitBounds = true)
     {
         if (_mapController?.IsReady != true)
         {
@@ -829,7 +1031,9 @@ public partial class VisitRecordViewModel : ObservableObject
                 markerItems = _allMapItems.Where(item => !item.IsUnclassified).ToList();
             }
 
-            var markers = markerItems.Select(item => new MapMarker(
+            var markers = markerItems
+                .Where(item => PlaceIdentity.HasValidCoordinates(item.Latitude, item.Longitude))
+                .Select(item => new MapMarker(
                 item.PlaceId,
                 item.PlaceName,
                 item.Latitude,
@@ -857,7 +1061,7 @@ public partial class VisitRecordViewModel : ObservableObject
                 StatusMessage = $"전체 장소 {markers.Count}곳을 지도에 표시합니다.";
             }
 
-            if (markers.Count > 0)
+            if (fitBounds && markers.Count > 0)
             {
                 await _mapController.FitMarkersAsync();
             }
@@ -874,95 +1078,170 @@ public partial class VisitRecordViewModel : ObservableObject
 
     private async Task FocusSelectedOnMapAsync(VisitRecordPlaceItem item)
     {
-        if (_mapController?.IsReady != true)
+        if (_mapController is null)
         {
             return;
         }
 
+        if (!_mapController.IsReady)
+        {
+            _pendingMapFocus = item;
+            _logger.LogInformation(
+                "selection focus pending; map not ready. PlaceId={PlaceId} PlaceName={PlaceName}",
+                item.PlaceId,
+                item.PlaceName);
+            return;
+        }
+
+        // Photo panel open can shrink WebView briefly — defer camera, never reload.
+        if (!_mapController.IsHostLayoutReady)
+        {
+            _pendingMapFocus = item;
+            _logger.LogInformation(
+                "selection focus pending; host too small. PlaceId={PlaceId} SizeHint=layout-not-ready",
+                item.PlaceId);
+            return;
+        }
+
+        var lat = item.Latitude;
+        var lon = item.Longitude;
+        var placeId = item.PlaceId;
+
+        if (!PlaceIdentity.HasValidCoordinates(lat, lon))
+        {
+            var fromMap = _allMapItems.FirstOrDefault(m => m.PlaceId == item.PlaceId)
+                          ?? _allMapItems.FirstOrDefault(m =>
+                              string.Equals(m.PlaceName, item.PlaceName, StringComparison.OrdinalIgnoreCase));
+            if (fromMap is not null
+                && PlaceIdentity.HasValidCoordinates(fromMap.Latitude, fromMap.Longitude))
+            {
+                lat = fromMap.Latitude;
+                lon = fromMap.Longitude;
+                placeId = fromMap.PlaceId;
+            }
+            else
+            {
+                _logger.LogInformation(
+                    "selection skip center; no location. PlaceId={PlaceId} PlaceName={PlaceName}",
+                    item.PlaceId,
+                    item.PlaceName);
+                StatusMessage = $"'{item.PlaceName}' · 위치 정보가 없습니다.";
+                _pendingMapFocus = null;
+                return;
+            }
+        }
+
         try
         {
-            await _mapController.SelectMarkerAsync(item.PlaceId, center: true);
-            await _mapController.CenterOnAsync(item.Latitude, item.Longitude, 16);
+            _pendingMapFocus = null;
+            _logger.LogInformation(
+                "selection map update (no reload/sync). PlaceId={PlaceId} PlaceName={PlaceName} Lat={Lat} Lon={Lon} Zoom=15 HostReady={Host} Tiles={Tiles}",
+                placeId,
+                item.PlaceName,
+                lat,
+                lon,
+                _mapController.IsHostLayoutReady,
+                _mapController.HasTilesLoaded);
+            // Single JS path: selectMarker → panTo/setZoom. Do not CenterOn+forceRelayout.
+            // Do not SyncMapAsync / EnsureMapReady / Initialize on selection.
+            await _mapController.SelectMarkerAsync(placeId, center: true);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to focus map on place.");
+            _logger.LogWarning(ex, "selection map update failed. PlaceId={PlaceId}", placeId);
+            StatusMessage = $"'{item.PlaceName}' · 지도를 표시하지 못했습니다.";
         }
+    }
+
+    /// <summary>
+    /// Called when WebView layout becomes usable again after photo-panel resize.
+    /// Applies a deferred selection camera without HTML reload.
+    /// </summary>
+    public async Task FlushPendingMapFocusAsync()
+    {
+        if (_pendingMapFocus is null || _mapController?.IsReady != true || !_mapController.IsHostLayoutReady)
+        {
+            return;
+        }
+
+        var item = _pendingMapFocus;
+        _logger.LogInformation(
+            "flush pending selection focus. PlaceId={PlaceId} PlaceName={PlaceName}",
+            item.PlaceId,
+            item.PlaceName);
+        await FocusSelectedOnMapAsync(item);
     }
 
     private async Task LoadPreviewAsync(VisitRecordPlaceItem item)
-    {
-        var previews = item.PreviewPhotos
-            .Select(photo => new VisitPreviewItem(photo))
-            .ToList();
-        PreviewPhotos = new ObservableCollection<VisitPreviewItem>(previews);
-
-        foreach (var preview in previews)
-        {
-            try
-            {
-                var path = await _thumbnailService.GetOrCreateThumbnailAsync(
-                    preview.MediaId,
-                    preview.AbsoluteLibraryPath);
-                if (!string.IsNullOrWhiteSpace(path))
-                {
-                    await EnqueueAsync(() => preview.ThumbnailImage = new BitmapImage(new Uri(path)));
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Preview thumbnail failed. MediaId={MediaId}", preview.MediaId);
-            }
-        }
-    }
-
-    private async Task LoadTimelineThumbnailsAsync(IReadOnlyList<VisitRecordPlaceItem> items)
     {
         _thumbCts?.Cancel();
         _thumbCts?.Dispose();
         _thumbCts = new CancellationTokenSource();
         var token = _thumbCts.Token;
 
+        var photos = item.PreviewPhotos.Count > 0 ? item.PreviewPhotos : item.AllPhotos;
+        var previews = photos.Select(photo => new VisitPreviewItem(photo)).ToList();
+        PreviewPhotos = new ObservableCollection<VisitPreviewItem>(previews);
+
+        _logger.LogInformation(
+            "Visit map place selected. Place={Place}, Photos={Count}",
+            item.PlaceName,
+            previews.Count);
+
         try
         {
-            foreach (var item in items)
+            foreach (var preview in previews)
             {
                 token.ThrowIfCancellationRequested();
-                if (string.IsNullOrWhiteSpace(item.RepresentativeAbsolutePath) ||
-                    item.RepresentativeMediaId is not Guid mediaId)
+                var url = preview.ThumbnailUrl;
+                _logger.LogInformation(
+                    "Visit preview thumb. BackendFileId={FileId}, Url={Url}",
+                    preview.BackendFileId,
+                    url);
+
+                if (!HttpImageLoader.IsHttpUrl(url))
                 {
+                    _logger.LogWarning(
+                        "Visit preview missing HTTP ThumbnailUrl. BackendFileId={FileId}",
+                        preview.BackendFileId);
                     continue;
                 }
 
-                try
+                await EnqueueAsync(() =>
                 {
-                    var path = await _thumbnailService.GetOrCreateThumbnailAsync(
-                        mediaId,
-                        item.RepresentativeAbsolutePath,
-                        token);
-                    if (!string.IsNullOrWhiteSpace(path))
+                    var bitmap = HttpImageLoader.TryCreate(
+                        url,
+                        _logger,
+                        context: $"VisitPreview:{preview.BackendFileId}");
+                    preview.ThumbnailImage = bitmap;
+                    if (bitmap is null)
                     {
-                        await EnqueueAsync(() =>
-                        {
-                            var image = new BitmapImage(new Uri(path));
-                            item.ThumbnailImage = image;
-                            PropagateThumbnailToYearGroups(item.PlaceId, image);
-                        });
+                        _logger.LogWarning(
+                            "Visit preview ThumbnailImage null. BackendFileId={FileId}, Url={Url}",
+                            preview.BackendFileId,
+                            url);
                     }
-                }
-                catch (OperationCanceledException)
+                });
+            }
+
+            token.ThrowIfCancellationRequested();
+            var firstImage = previews.FirstOrDefault(p => p.ThumbnailImage is not null)?.ThumbnailImage;
+            if (firstImage is not null)
+            {
+                await EnqueueAsync(() =>
                 {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Timeline thumbnail failed. PlaceId={PlaceId}", item.PlaceId);
-                }
+                    item.ThumbnailImage = firstImage;
+                    PropagateThumbnailToYearGroups(item.PlaceId, firstImage);
+                });
             }
         }
         catch (OperationCanceledException)
         {
-            // expected
+            // Selection changed — ignore.
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Visit preview thumbnails failed. Place={Place}", item.PlaceName);
         }
     }
 
@@ -1025,7 +1304,16 @@ public partial class VisitRecordViewModel : ObservableObject
     private void OnMapReady(object? sender, EventArgs e)
     {
         IsMapReady = true;
+        if (_activationOwnsFocus)
+        {
+            return;
+        }
+
         _ = SyncMapAsync();
+        if (_mapController is not null)
+        {
+            _ = _mapController.NotifyLayoutAsync();
+        }
     }
 
     private void OnMarkerClicked(object? sender, Guid placeId)

@@ -44,6 +44,17 @@ public interface INavigationService
 
     void Navigate(NavigationEntry entry);
 
+    /// <summary>Navigate only if not already on <paramref name="entry"/>.</summary>
+    bool NavigateIfNeeded(NavigationEntry entry);
+
+    bool IsCurrent(NavigationEntry entry);
+
+    /// <summary>Remove consecutive duplicates at the top of the back stack.</summary>
+    int RemoveConsecutiveDuplicates();
+
+    /// <summary>Back-stack tags from oldest to newest (diagnostic).</summary>
+    IReadOnlyList<string> GetBackStackTags();
+
     void NavigateRoot(NavigationEntry entry);
 
     void ReplaceCurrent(NavigationEntry entry);
@@ -89,6 +100,54 @@ public sealed class NavigationService : INavigationService
         }
 
         Current = entry;
+    }
+
+    /// <summary>
+    /// Navigates only when the target differs from <see cref="Current"/>.
+    /// Returns false when already on the same entry (no back-stack push).
+    /// </summary>
+    public bool NavigateIfNeeded(NavigationEntry entry)
+    {
+        if (Current is { } current && current.Equals(entry))
+        {
+            return false;
+        }
+
+        Navigate(entry);
+        return true;
+    }
+
+    public bool IsCurrent(NavigationEntry entry) =>
+        Current is { } current && current.Equals(entry);
+
+    /// <summary>
+    /// Collapses consecutive duplicate entries at the top of the back stack.
+    /// </summary>
+    public int RemoveConsecutiveDuplicates()
+    {
+        if (_back.Count == 0)
+        {
+            return 0;
+        }
+
+        var removed = 0;
+        while (_back.Count > 0 && Current is { } current && _back.Peek().Equals(current))
+        {
+            _back.Pop();
+            removed++;
+        }
+
+        return removed;
+    }
+
+    public IReadOnlyList<string> GetBackStackTags()
+    {
+        if (_back.Count == 0)
+        {
+            return [];
+        }
+
+        return _back.Select(e => e.Tag).Reverse().ToArray();
     }
 
     public void NavigateRoot(NavigationEntry entry)

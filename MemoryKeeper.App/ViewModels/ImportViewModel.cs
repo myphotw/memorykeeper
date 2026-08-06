@@ -6,6 +6,7 @@ using MemoryKeeper.Application.Diagnostics;
 using MemoryKeeper.Application.DTOs;
 using MemoryKeeper.Application.DTOs.Upload;
 using MemoryKeeper.Application.Services;
+using MemoryKeeper.Domain.Enums;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI.Xaml;
@@ -13,8 +14,7 @@ using Microsoft.UI.Xaml;
 namespace MemoryKeeper.App.ViewModels;
 
 /// <summary>
-/// Import UI + progress (M8). There is no separate ImportProgressViewModel;
-/// backend WAITING/PROCESSING/COMPLETED/FAILED progress lives here.
+/// Import UI + progress (Phase 3B). Upload acceptance and analysis monitoring are separate.
 /// </summary>
 public partial class ImportViewModel : ObservableObject
 {
@@ -22,6 +22,8 @@ public partial class ImportViewModel : ObservableObject
     private readonly IFolderPickerService _folderPickerService;
     private readonly ILogger<ImportViewModel> _logger;
     private CancellationTokenSource? _importCancellation;
+    private IReadOnlyList<MediaImportItemResult> _lastItems = [];
+    private Guid? _lastStorageId;
 
     [ObservableProperty]
     private string memoryKeeperStoragePath = string.Empty;
@@ -51,10 +53,40 @@ public partial class ImportViewModel : ObservableObject
     private int failedCount;
 
     [ObservableProperty]
+    private int pendingCount;
+
+    [ObservableProperty]
+    private int uploadingCount;
+
+    [ObservableProperty]
+    private int waitingCount;
+
+    [ObservableProperty]
+    private int processingCount;
+
+    [ObservableProperty]
+    private int completedCount;
+
+    [ObservableProperty]
+    private int cancelledCount;
+
+    [ObservableProperty]
+    private int uploadFinishedCount;
+
+    [ObservableProperty]
+    private int analysisFinishedCount;
+
+    [ObservableProperty]
     private string currentFileName = string.Empty;
 
     [ObservableProperty]
     private double progressValue;
+
+    [ObservableProperty]
+    private double uploadProgressValue;
+
+    [ObservableProperty]
+    private double analysisProgressValue;
 
     [ObservableProperty]
     private string currentStage = string.Empty;
@@ -74,7 +106,10 @@ public partial class ImportViewModel : ObservableObject
     [ObservableProperty]
     private string? failureMessage;
 
-    /// <summary>Retry prepared after FAILED. Retry UI is not wired yet (M8).</summary>
+    [ObservableProperty]
+    private string progressSummary = string.Empty;
+
+    /// <summary>Retry prepared after FAILED.</summary>
     [ObservableProperty]
     private bool isRetryReady;
 
@@ -88,7 +123,19 @@ public partial class ImportViewModel : ObservableObject
 
     public string FailedCountText => $"실패 {FailedCount}";
 
+    public string WaitingCountText => $"대기 {WaitingCount}";
+
+    public string ProcessingCountText => $"처리 중 {ProcessingCount}";
+
+    public string UploadingCountText => $"업로드 {UploadingCount}";
+
     public string ProgressCountText => TotalCount <= 0 ? string.Empty : $"{ProcessedCount} / {TotalCount}";
+
+    public string UploadProgressText =>
+        TotalCount <= 0 ? string.Empty : $"전송 {UploadFinishedCount} / {TotalCount}";
+
+    public string AnalysisProgressText =>
+        TotalCount <= 0 ? string.Empty : $"분석 {AnalysisFinishedCount} / {TotalCount}";
 
     public string BackendProgressText =>
         string.IsNullOrWhiteSpace(BackendStatus)
@@ -123,12 +170,17 @@ public partial class ImportViewModel : ObservableObject
         {
             await using var scope = _scopeFactory.CreateAsyncScope();
             var storageService = scope.ServiceProvider.GetRequiredService<StorageService>();
+            var mediaImportService = scope.ServiceProvider.GetRequiredService<MediaImportService>();
             var storage = await ResolveImportStorageAsync(storageService);
 
             MemoryKeeperStoragePath = storage?.PhotoRoot ?? string.Empty;
+
+            var resumed = await mediaImportService.ResumePersistedJobsAsync();
             StatusMessage = storage is null
                 ? "MemoryKeeper 저장소가 설정되지 않았습니다. 설정에서 폴더를 지정하세요."
-                : "사진등록 준비가 완료되었습니다.";
+                : resumed > 0
+                    ? $"사진등록 준비 완료. 이전 세션 Job {resumed}건 상태를 갱신했습니다."
+                    : "사진등록 준비가 완료되었습니다.";
         }, markBusy: false);
     }
 
@@ -167,11 +219,12 @@ public partial class ImportViewModel : ObservableObject
 
             MemoryKeeperStoragePath = storage.PhotoRoot;
             ResetProgress();
+            _lastStorageId = storage.Id;
 
             _importCancellation = new CancellationTokenSource();
             var progress = new Progress<ImportProgressDto>(ApplyProgress);
 
-            StatusMessage = "Backend Upload 실행 중...";
+            StatusMessage = "Backend Upload 실행 중 (병렬 전송 + 분석 모니터)...";
             var result = await mediaImportService.ImportAsync(
                 new MediaImportRequest
                 {
@@ -181,55 +234,37 @@ public partial class ImportViewModel : ObservableObject
                 progress,
                 _importCancellation.Token);
 
-            if (result.FailedCount > 0)
-            {
-                var failed = result.Items.LastOrDefault(item =>
-                    !string.IsNullOrWhiteSpace(item.ErrorMessage));
-                FailureMessage = failed?.ErrorMessage
-                    ?? $"사진등록 실패 {result.FailedCount}건.";
-                LastJobId = failed?.ContentHash;
-                IsRetryReady = true;
-                CurrentStage = UploadJobStatusDto.Failed;
-                BackendStatus = UploadJobStatusDto.Failed;
-                StatusMessage = FailureMessage;
-                _logger.LogWarning(
-                    "[Photo Register] Import FAILED. Failed={Failed}, JobId={JobId}, RetryReady={RetryReady}",
-                    result.FailedCount,
-                    LastJobId,
-                    IsRetryReady);
-                await UserFeedback.ShowInfoAsync(
-                    HostXamlRoot,
-                    "사진 등록 실패",
-                    FailureMessage);
-                return;
-            }
-
-            IsRetryReady = false;
-            FailureMessage = null;
-            CurrentStage = UploadJobStatusDto.Completed;
-            BackendStatus = UploadJobStatusDto.Completed;
-            StatusMessage =
-                $"사진등록 완료. 전체 {result.ScannedCount}, 등록 {result.ImportedCount}, 실패 {result.FailedCount}";
-
-            _logger.LogInformation(
-                "[Photo Register] COMPLETED — Gallery Reload via catalog invalidation.");
-
-            await UserFeedback.ShowInfoAsync(
-                HostXamlRoot,
-                "사진 등록 완료",
-                "사진 등록이 완료되었습니다. 갤러리가 갱신됩니다.");
-            ImportCompletedNavigateHome?.Invoke(this, EventArgs.Empty);
+            ApplyImportResult(result);
         });
     }
 
-    /// <summary>
-    /// Retry entry point prepared for FAILED jobs. Not bound to UI yet (M8).
-    /// </summary>
     [RelayCommand(CanExecute = nameof(CanRetryImport))]
-    private Task RetryImportAsync()
+    private async Task RetryImportAsync()
     {
-        StatusMessage = "Retry는 준비되었습니다. UI는 아직 연결되지 않았습니다.";
-        return Task.CompletedTask;
+        var failed = _lastItems.Where(i => i.Status == MediaStatus.Failed).ToList();
+        if (failed.Count == 0 || _lastStorageId is null)
+        {
+            StatusMessage = "재시도할 실패 항목이 없습니다.";
+            return;
+        }
+
+        await RunBusyAsync(async () =>
+        {
+            await using var scope = _scopeFactory.CreateAsyncScope();
+            var mediaImportService = scope.ServiceProvider.GetRequiredService<MediaImportService>();
+            _importCancellation = new CancellationTokenSource();
+            var progress = new Progress<ImportProgressDto>(ApplyProgress);
+            StatusMessage = "실패 항목 재시도 중...";
+
+            var result = await mediaImportService.RetryFailedAsync(
+                _lastStorageId.Value,
+                SourceFolderPath,
+                failed,
+                progress,
+                _importCancellation.Token);
+
+            ApplyImportResult(result);
+        });
     }
 
     private bool CanRetryImport() => IsRetryReady && !IsBusy;
@@ -238,7 +273,52 @@ public partial class ImportViewModel : ObservableObject
     private void CancelImport()
     {
         _importCancellation?.Cancel();
-        StatusMessage = "사진등록 취소가 요청되었습니다.";
+        StatusMessage = "사진등록 취소가 요청되었습니다. 이미 접수된 Job은 서버에서 계속 처리됩니다.";
+    }
+
+    private void ApplyImportResult(MediaImportResult result)
+    {
+        _lastItems = result.Items;
+        _lastStorageId = result.StorageId;
+
+        if (result.FailedCount > 0)
+        {
+            var failed = result.Items.LastOrDefault(item =>
+                item.Status == MediaStatus.Failed && !string.IsNullOrWhiteSpace(item.ErrorMessage));
+            FailureMessage = failed?.ErrorMessage
+                ?? $"사진등록 실패 {result.FailedCount}건.";
+            LastJobId = failed?.ContentHash;
+            IsRetryReady = true;
+            CurrentStage = UploadJobStatusDto.Failed;
+            BackendStatus = UploadJobStatusDto.Failed;
+            StatusMessage =
+                $"완료(부분). 등록 {result.ImportedCount}, 중복 {result.DuplicateCount}, 실패 {result.FailedCount}";
+            _logger.LogWarning(
+                "[Photo Register] Import finished with failures. Failed={Failed}, JobId={JobId}",
+                result.FailedCount,
+                LastJobId);
+            _ = UserFeedback.ShowInfoAsync(
+                HostXamlRoot,
+                "사진 등록 부분 실패",
+                FailureMessage);
+            return;
+        }
+
+        IsRetryReady = false;
+        FailureMessage = null;
+        CurrentStage = UploadJobStatusDto.Completed;
+        BackendStatus = UploadJobStatusDto.Completed;
+        StatusMessage =
+            $"사진등록 완료. 전체 {result.ScannedCount}, 등록 {result.ImportedCount}, 중복 {result.DuplicateCount}, 실패 {result.FailedCount}";
+
+        _logger.LogInformation(
+            "[Photo Register] COMPLETED — Gallery Reload via catalog invalidation.");
+
+        _ = UserFeedback.ShowInfoAsync(
+            HostXamlRoot,
+            "사진 등록 완료",
+            "사진 등록이 완료되었습니다. 갤러리가 갱신됩니다.");
+        ImportCompletedNavigateHome?.Invoke(this, EventArgs.Empty);
     }
 
     private static async Task<StorageDto?> ResolveImportStorageAsync(StorageService storageService)
@@ -266,10 +346,21 @@ public partial class ImportViewModel : ObservableObject
         ImportedCount = progress.ImportedCount;
         DuplicateCount = progress.DuplicateCount;
         FailedCount = progress.FailedCount;
+        PendingCount = progress.PendingCount;
+        UploadingCount = progress.UploadingCount;
+        WaitingCount = progress.WaitingCount;
+        ProcessingCount = progress.ProcessingCount;
+        CompletedCount = progress.CompletedCount;
+        CancelledCount = progress.CancelledCount;
+        UploadFinishedCount = progress.UploadFinishedCount;
+        AnalysisFinishedCount = progress.AnalysisFinishedCount;
         CurrentFileName = progress.CurrentFileName ?? string.Empty;
         BackendStatus = progress.BackendStatus ?? string.Empty;
         BackendProgress = progress.BackendProgress ?? 0;
         CurrentPlugin = progress.CurrentPlugin ?? string.Empty;
+        ProgressSummary = progress.StatusSummary ?? string.Empty;
+        UploadProgressValue = progress.UploadProgressRatio;
+        AnalysisProgressValue = progress.AnalysisProgressRatio;
         if (!string.IsNullOrWhiteSpace(progress.JobId))
         {
             LastJobId = progress.JobId;
@@ -285,13 +376,13 @@ public partial class ImportViewModel : ObservableObject
             ? (string.IsNullOrWhiteSpace(BackendStatus) ? "처리 중..." : BackendStatus)
             : progress.CurrentStage;
         ProgressValue = progress.ProgressRatio;
-        StatusMessage = string.IsNullOrWhiteSpace(BackendProgressText)
-            ? (string.IsNullOrWhiteSpace(CurrentFileName)
-                ? CurrentStage
-                : $"{CurrentStage} · {CurrentFileName} ({ProgressCountText})")
-            : string.IsNullOrWhiteSpace(CurrentFileName)
-                ? BackendProgressText
-                : $"{BackendProgressText} · {CurrentFileName} ({ProgressCountText})";
+        StatusMessage = string.IsNullOrWhiteSpace(ProgressSummary)
+            ? (string.IsNullOrWhiteSpace(BackendProgressText)
+                ? (string.IsNullOrWhiteSpace(CurrentFileName)
+                    ? CurrentStage
+                    : $"{CurrentStage} · {CurrentFileName}")
+                : $"{BackendProgressText} · {CurrentFileName}")
+            : ProgressSummary;
         NotifyProgressTexts();
     }
 
@@ -302,9 +393,20 @@ public partial class ImportViewModel : ObservableObject
         ImportedCount = 0;
         DuplicateCount = 0;
         FailedCount = 0;
+        PendingCount = 0;
+        UploadingCount = 0;
+        WaitingCount = 0;
+        ProcessingCount = 0;
+        CompletedCount = 0;
+        CancelledCount = 0;
+        UploadFinishedCount = 0;
+        AnalysisFinishedCount = 0;
         CurrentFileName = string.Empty;
         CurrentStage = string.Empty;
         ProgressValue = 0;
+        UploadProgressValue = 0;
+        AnalysisProgressValue = 0;
+        ProgressSummary = string.Empty;
         BackendStatus = string.Empty;
         BackendProgress = 0;
         CurrentPlugin = string.Empty;
@@ -321,7 +423,12 @@ public partial class ImportViewModel : ObservableObject
         OnPropertyChanged(nameof(RegisteredCountText));
         OnPropertyChanged(nameof(DuplicateCountText));
         OnPropertyChanged(nameof(FailedCountText));
+        OnPropertyChanged(nameof(WaitingCountText));
+        OnPropertyChanged(nameof(ProcessingCountText));
+        OnPropertyChanged(nameof(UploadingCountText));
         OnPropertyChanged(nameof(ProgressCountText));
+        OnPropertyChanged(nameof(UploadProgressText));
+        OnPropertyChanged(nameof(AnalysisProgressText));
         OnPropertyChanged(nameof(BackendProgressText));
         RetryImportCommand.NotifyCanExecuteChanged();
     }
@@ -348,7 +455,7 @@ public partial class ImportViewModel : ObservableObject
         }
         catch (OperationCanceledException)
         {
-            StatusMessage = "사진등록이 취소되었습니다.";
+            StatusMessage = "사진등록이 취소되었습니다. 이미 접수된 Job은 서버에서 계속 처리됩니다.";
         }
         catch (Exception ex)
         {

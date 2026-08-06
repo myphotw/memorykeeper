@@ -6,6 +6,7 @@ using MemoryKeeper.App.Services;
 using MemoryKeeper.Application.DTOs;
 using MemoryKeeper.Application.Interfaces;
 using MemoryKeeper.Application.Services;
+using MemoryKeeper.Infrastructure.Services.Api;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml.Media.Imaging;
@@ -17,6 +18,7 @@ public partial class HomeViewModel : ObservableObject
     private static readonly TimeSpan HeroInterval = TimeSpan.FromSeconds(4);
 
     private readonly IGalleryApiRepository _galleryApiRepository;
+    private readonly BaseApiClient _apiClient;
     private readonly IThumbnailService _thumbnailService;
     private readonly IPlaceFocusState _placeFocusState;
     private readonly IPhotoNavigationState _photoNavigationState;
@@ -80,6 +82,36 @@ public partial class HomeViewModel : ObservableObject
     private DashboardStatisticsDto statistics = new();
 
     [ObservableProperty]
+    private ObservableCollection<HomeYearBarItem> yearBars = [];
+
+    [ObservableProperty]
+    private ObservableCollection<HomeCountrySliceItem> countrySlices = [];
+
+    [ObservableProperty]
+    private bool hasYearChart;
+
+    [ObservableProperty]
+    private bool hasCountryChart;
+
+    [ObservableProperty]
+    private string photoCountDisplay = "0장";
+
+    [ObservableProperty]
+    private string gpsCountDisplay = "0장";
+
+    [ObservableProperty]
+    private string placeCountDisplay = "0곳";
+
+    [ObservableProperty]
+    private string countryCountDisplay = "0개국";
+
+    [ObservableProperty]
+    private string countrySummaryText = string.Empty;
+
+    [ObservableProperty]
+    private string lastUpdatedDisplay = string.Empty;
+
+    [ObservableProperty]
     private string statusMessage = "추억을 불러오는 중…";
 
     [ObservableProperty]
@@ -130,6 +162,7 @@ public partial class HomeViewModel : ObservableObject
 
     public HomeViewModel(
         IGalleryApiRepository galleryApiRepository,
+        BaseApiClient apiClient,
         IThumbnailService thumbnailService,
         IPlaceFocusState placeFocusState,
         IPhotoNavigationState photoNavigationState,
@@ -137,6 +170,7 @@ public partial class HomeViewModel : ObservableObject
         ILogger<HomeViewModel> logger)
     {
         _galleryApiRepository = galleryApiRepository;
+        _apiClient = apiClient;
         _thumbnailService = thumbnailService;
         _placeFocusState = placeFocusState;
         _photoNavigationState = photoNavigationState;
@@ -163,24 +197,34 @@ public partial class HomeViewModel : ObservableObject
         _thumbnailCts = new CancellationTokenSource();
         var token = _thumbnailCts.Token;
 
-        // Keep IsBusy only for dashboard data so a slow/hung thumbnail decode
-        // cannot leave the home ProgressRing spinning forever.
         await RunBusyAsync(async () =>
         {
             ClearLocalDashboardSections();
             try
             {
-                Statistics = await GalleryBackendBridge.GetStatisticsAsync(_galleryApiRepository, token);
-                StatusMessage = "Backend 통계를 불러왔습니다.";
+                var dashboard = await GalleryBackendBridge.GetHomeDashboardAsync(
+                    _galleryApiRepository,
+                    _apiClient.ApiBaseUrl ?? string.Empty,
+                    token);
+                ApplyDashboard(dashboard);
+                StatusMessage = "추억을 불러왔습니다.";
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Backend statistics failed.");
-                Statistics = new DashboardStatisticsDto();
-                StatusMessage = $"통계를 불러오지 못했습니다. {ex.Message}";
+                _logger.LogWarning(ex, "Home dashboard failed; falling back to statistics.");
+                try
+                {
+                    Statistics = await GalleryBackendBridge.GetStatisticsAsync(_galleryApiRepository, token);
+                    UpdateStatisticsSummary();
+                    StatusMessage = "통계만 불러왔습니다.";
+                }
+                catch (Exception statsEx)
+                {
+                    _logger.LogWarning(statsEx, "Backend statistics failed.");
+                    Statistics = new DashboardStatisticsDto();
+                    StatusMessage = $"추억을 불러오지 못했습니다. {ex.Message}";
+                }
             }
-
-            UpdateStatisticsSummary();
         });
 
         if (token.IsCancellationRequested)
@@ -405,6 +449,16 @@ public partial class HomeViewModel : ObservableObject
         PendingLatestImportedText = string.Empty;
         PendingThumbnailImage = null;
         StatisticsSummaryText = "시간을 따라 여행을 다시 만나 보세요.";
+        YearBars = [];
+        CountrySlices = [];
+        HasYearChart = false;
+        HasCountryChart = false;
+        PhotoCountDisplay = "0장";
+        GpsCountDisplay = "0장";
+        PlaceCountDisplay = "0곳";
+        CountryCountDisplay = "0개국";
+        CountrySummaryText = string.Empty;
+        LastUpdatedDisplay = string.Empty;
         HasHero = false;
         HasHeroCarousel = false;
         HasTodayMemories = false;
@@ -420,7 +474,62 @@ public partial class HomeViewModel : ObservableObject
     private void UpdateStatisticsSummary()
     {
         StatisticsSummaryText =
-            $"사진 {Statistics.PhotoCount} · 장소 {Statistics.PlaceCount} · 즐겨찾기 {Statistics.FavoriteCount}";
+            $"사진 {Statistics.PhotoCount} · 장소 {Statistics.PlaceCount} · 국가 {Statistics.CountryCount}";
+        PhotoCountDisplay = $"{Statistics.PhotoCount:N0}장";
+        GpsCountDisplay = $"{Statistics.GpsCount:N0}장";
+        PlaceCountDisplay = $"{Statistics.PlaceCount:N0}곳";
+        CountryCountDisplay = $"{Statistics.CountryCount:N0}개국";
+        CountrySummaryText = string.IsNullOrWhiteSpace(Statistics.CountrySummary)
+            ? "기록된 국가 없음"
+            : Statistics.CountrySummary;
+        LastUpdatedDisplay = string.IsNullOrWhiteSpace(Statistics.LastUpdatedText)
+            ? DateTime.Now.ToString("yyyy.MM.dd")
+            : Statistics.LastUpdatedText;
+        RebuildCharts();
+    }
+
+    private void RebuildCharts()
+    {
+        const double maxBarHeight = 120d;
+        var years = Statistics.ByYear.Where(x => x.Count > 0).ToList();
+        var maxYear = years.Count == 0 ? 0 : years.Max(x => x.Count);
+        YearBars = new ObservableCollection<HomeYearBarItem>(
+            years.Select(x =>
+            {
+                var ratio = maxYear <= 0 ? 0 : (double)x.Count / maxYear;
+                return new HomeYearBarItem(x.Name, x.Count, ratio, Math.Max(6, ratio * maxBarHeight));
+            }));
+        HasYearChart = YearBars.Count > 0;
+
+        var colors = new[]
+        {
+            Windows.UI.Color.FromArgb(255, 0, 122, 255),
+            Windows.UI.Color.FromArgb(255, 52, 199, 89),
+            Windows.UI.Color.FromArgb(255, 255, 149, 0),
+            Windows.UI.Color.FromArgb(255, 175, 82, 222),
+            Windows.UI.Color.FromArgb(255, 90, 200, 250),
+            Windows.UI.Color.FromArgb(255, 255, 59, 48),
+        };
+
+        var countries = Statistics.ByCountry.Where(x => x.Count > 0).Take(6).ToList();
+        var total = countries.Sum(x => x.Count);
+        var slices = new List<HomeCountrySliceItem>();
+        var angle = -90d;
+        for (var i = 0; i < countries.Count; i++)
+        {
+            var item = countries[i];
+            var sweep = total <= 0 ? 0 : 360d * item.Count / total;
+            if (i == countries.Count - 1)
+            {
+                sweep = 270 - angle; // close the circle (-90 + 360 = 270)
+            }
+
+            slices.Add(new HomeCountrySliceItem(item.Name, item.Count, angle, Math.Max(0.1, sweep), colors[i % colors.Length]));
+            angle += sweep;
+        }
+
+        CountrySlices = new ObservableCollection<HomeCountrySliceItem>(slices);
+        HasCountryChart = CountrySlices.Count > 0;
     }
 
     private void ApplyDashboard(HomeDashboardDto dashboard)
@@ -446,7 +555,7 @@ public partial class HomeViewModel : ObservableObject
             ? $"최근 담은 날 {PendingSummary.LatestImportedAt.Value.ToLocalTime():yyyy.MM.dd}"
             : string.Empty;
         PendingThumbnailImage = null;
-        StatisticsSummaryText = "시간을 따라 여행을 다시 만나 보세요.";
+        UpdateStatisticsSummary();
 
         HasHero = HeroMemories.Count > 0;
         HasHeroCarousel = HeroMemories.Count > 1;
@@ -614,6 +723,13 @@ public partial class HomeViewModel : ObservableObject
         setLoading(true);
         try
         {
+            if (HttpImageLoader.IsHttpUrl(absolutePath))
+            {
+                await EnqueueAsync(() =>
+                    setImage(HttpImageLoader.TryCreate(absolutePath, _logger, $"home:{mediaId}")));
+                return;
+            }
+
             var path = await _thumbnailService.GetOrCreateThumbnailAsync(mediaId.Value, absolutePath, token);
             if (string.IsNullOrWhiteSpace(path))
             {

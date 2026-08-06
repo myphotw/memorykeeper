@@ -16,6 +16,12 @@ public partial class GalleryItem : ObservableObject
 
     public Guid MediaId => Media.Id;
 
+    public string BackendFileId => Media.BackendFileId;
+
+    public string? ThumbnailUrl => Media.ThumbnailUrl;
+
+    public string? PreviewUrl => Media.PreviewUrl;
+
     public string FileName => Media.FileName;
 
     public string CapturedAtText => Media.CapturedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "-";

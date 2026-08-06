@@ -1,12 +1,13 @@
 using MemoryKeeper.App.Models;
 using MemoryKeeper.App.Services;
 using MemoryKeeper.App.ViewModels;
-using MemoryKeeper.Application.Layout;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
+using Microsoft.UI.Xaml.Shapes;
+using Windows.Foundation;
 
 namespace MemoryKeeper.App.Views;
 
@@ -32,6 +33,7 @@ public sealed partial class HomePage : Page
             ApplyDesktopLayout();
             ApplyCardShadows();
             UpdateHomeChrome();
+            RebuildCountryDonut();
         };
     }
 
@@ -44,48 +46,93 @@ public sealed partial class HomePage : Page
     private void HomePage_OnSizeChanged(object sender, SizeChangedEventArgs e) =>
         ApplyDesktopLayout();
 
-    /// <summary>Desktop(V1) only — keep two columns when width allows.</summary>
     private void ApplyDesktopLayout()
     {
-        var wide = ActualWidth >= 900;
+        var wide = ActualWidth >= 960;
+        HeroCard.Height = ActualHeight > 0 && ActualHeight < 860 ? 280 : 320;
 
         if (wide)
         {
-            MidGrid.ColumnSpacing = 20;
-            BottomGrid.ColumnSpacing = 20;
-            MidGrid.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
-            MidGrid.ColumnDefinitions[1].Width = new GridLength(1.35, GridUnitType.Star);
-            BottomGrid.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
-            BottomGrid.ColumnDefinitions[1].Width = new GridLength(1, GridUnitType.Star);
-            Grid.SetColumn(RecentPhotosCard, 1);
+            StatsGrid.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
+            StatsGrid.ColumnDefinitions[1].Width = new GridLength(1, GridUnitType.Star);
+            StatsGrid.ColumnDefinitions[2].Width = new GridLength(1, GridUnitType.Star);
+            StatsGrid.ColumnDefinitions[3].Width = new GridLength(1, GridUnitType.Star);
+            Grid.SetRow(StatPhotosCard, 0);
+            Grid.SetColumn(StatPhotosCard, 0);
+            Grid.SetRow(StatGpsCard, 0);
+            Grid.SetColumn(StatGpsCard, 1);
+            Grid.SetRow(StatPlacesCard, 0);
+            Grid.SetColumn(StatPlacesCard, 2);
+            Grid.SetRow(StatCountriesCard, 0);
+            Grid.SetColumn(StatCountriesCard, 3);
+
+            BottomSplitGrid.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
+            BottomSplitGrid.ColumnDefinitions[1].Width = new GridLength(1, GridUnitType.Star);
             Grid.SetRow(RecentPhotosCard, 0);
-            Grid.SetColumn(QuickActionsCard, 1);
-            Grid.SetRow(QuickActionsCard, 0);
-            MidGrid.Height = ActualHeight > 0 && ActualHeight < 900 ? 148 : 168;
+            Grid.SetColumn(RecentPhotosCard, 0);
+            Grid.SetRow(SummaryCard, 0);
+            Grid.SetColumn(SummaryCard, 1);
+
+            QuickActionsPanel.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
+            QuickActionsPanel.ColumnDefinitions[1].Width = new GridLength(1, GridUnitType.Star);
+            QuickActionsPanel.ColumnDefinitions[2].Width = new GridLength(1, GridUnitType.Star);
+            QuickActionsPanel.ColumnDefinitions[3].Width = new GridLength(1, GridUnitType.Star);
+            Grid.SetRow(QuickImportCard, 0);
+            Grid.SetColumn(QuickImportCard, 0);
+            Grid.SetRow(QuickOrganizeCard, 0);
+            Grid.SetColumn(QuickOrganizeCard, 1);
+            Grid.SetRow(QuickMapCard, 0);
+            Grid.SetColumn(QuickMapCard, 2);
+            Grid.SetRow(QuickTravelCard, 0);
+            Grid.SetColumn(QuickTravelCard, 3);
+
+            HeroStatsPanel.Visibility = Visibility.Visible;
         }
         else
         {
-            MidGrid.ColumnSpacing = 0;
-            BottomGrid.ColumnSpacing = 0;
-            MidGrid.ColumnDefinitions[1].Width = new GridLength(0);
-            BottomGrid.ColumnDefinitions[1].Width = new GridLength(0);
-            Grid.SetColumn(RecentPhotosCard, 0);
-            Grid.SetRow(RecentPhotosCard, 1);
-            Grid.SetColumn(QuickActionsCard, 0);
-            Grid.SetRow(QuickActionsCard, 1);
-            MidGrid.Height = double.NaN; // Auto
-        }
+            StatsGrid.ColumnDefinitions[2].Width = new GridLength(0);
+            StatsGrid.ColumnDefinitions[3].Width = new GridLength(0);
+            Grid.SetRow(StatPhotosCard, 0);
+            Grid.SetColumn(StatPhotosCard, 0);
+            Grid.SetRow(StatGpsCard, 0);
+            Grid.SetColumn(StatGpsCard, 1);
+            Grid.SetRow(StatPlacesCard, 1);
+            Grid.SetColumn(StatPlacesCard, 0);
+            Grid.SetRow(StatCountriesCard, 1);
+            Grid.SetColumn(StatCountriesCard, 1);
 
-        HeroCard.Height = ActualHeight > 0 && ActualHeight < 900 ? 240 : 300;
+            BottomSplitGrid.ColumnDefinitions[1].Width = new GridLength(0);
+            Grid.SetRow(RecentPhotosCard, 0);
+            Grid.SetColumn(RecentPhotosCard, 0);
+            Grid.SetRow(SummaryCard, 1);
+            Grid.SetColumn(SummaryCard, 0);
+
+            QuickActionsPanel.ColumnDefinitions[2].Width = new GridLength(0);
+            QuickActionsPanel.ColumnDefinitions[3].Width = new GridLength(0);
+            Grid.SetRow(QuickImportCard, 0);
+            Grid.SetColumn(QuickImportCard, 0);
+            Grid.SetRow(QuickOrganizeCard, 0);
+            Grid.SetColumn(QuickOrganizeCard, 1);
+            Grid.SetRow(QuickMapCard, 1);
+            Grid.SetColumn(QuickMapCard, 0);
+            Grid.SetRow(QuickTravelCard, 1);
+            Grid.SetColumn(QuickTravelCard, 1);
+
+            HeroStatsPanel.Visibility = Visibility.Collapsed;
+        }
     }
 
     private void ApplyCardShadows()
     {
         AttachShadow(HeroCard, 8);
-        AttachShadow(ImportSummaryCard, 6);
-        AttachShadow(RecentPhotosCard, 6);
-        AttachShadow(RecentVisitsCard, 6);
-        AttachShadow(QuickActionsCard, 6);
+        AttachShadow(StatPhotosCard, 4);
+        AttachShadow(StatGpsCard, 4);
+        AttachShadow(StatPlacesCard, 4);
+        AttachShadow(StatCountriesCard, 4);
+        AttachShadow(RecentVisitsCard, 5);
+        AttachShadow(RecentPhotosCard, 5);
+        AttachShadow(SummaryCard, 5);
+        AttachShadow(QuickActionsCard, 5);
     }
 
     private static void AttachShadow(Border border, float depth)
@@ -96,15 +143,18 @@ public sealed partial class HomePage : Page
 
     private async void HomePage_OnLoaded(object sender, RoutedEventArgs e)
     {
-        if (ViewModel.HasHero || ViewModel.HasRecentImports || ViewModel.HasRecentVisits)
+        if (ViewModel.HasHero || ViewModel.HasRecentImports || ViewModel.HasRecentVisits
+            || ViewModel.Statistics.PhotoCount > 0)
         {
             ViewModel.ResumeHeroCarousel();
             UpdateHomeChrome();
+            RebuildCountryDonut();
             return;
         }
 
         await ViewModel.LoadCommand.ExecuteAsync(null);
         UpdateHomeChrome();
+        RebuildCountryDonut();
     }
 
     private void HomePage_OnUnloaded(object sender, RoutedEventArgs e)
@@ -127,49 +177,120 @@ public sealed partial class HomePage : Page
         if (e.PropertyName is nameof(HomeViewModel.HasHero)
             or nameof(HomeViewModel.HasRecentImports)
             or nameof(HomeViewModel.HasRecentVisits)
-            or nameof(HomeViewModel.HasPending)
-            or nameof(HomeViewModel.PendingLatestImportedText)
             or nameof(HomeViewModel.IsBusy)
-            or nameof(HomeViewModel.RecentImports)
-            or nameof(HomeViewModel.Statistics))
+            or nameof(HomeViewModel.Statistics)
+            or nameof(HomeViewModel.CountrySlices)
+            or nameof(HomeViewModel.StatusMessage))
         {
             UpdateHomeChrome();
+            RebuildCountryDonut();
         }
     }
 
     private void UpdateHomeChrome()
     {
+        var stats = ViewModel.Statistics;
         var hasLibrary = ViewModel.HasHero
             || ViewModel.HasRecentImports
             || ViewModel.HasRecentVisits
-            || ViewModel.Statistics.PhotoCount > 0;
+            || stats.PhotoCount > 0;
 
         var showEmpty = !ViewModel.IsBusy && !hasLibrary;
+        var showSkeleton = ViewModel.IsBusy && !hasLibrary;
+
         EmptyState.Visibility = showEmpty ? Visibility.Visible : Visibility.Collapsed;
-        MainContent.Visibility = showEmpty ? Visibility.Collapsed : Visibility.Visible;
+        SkeletonRoot.Visibility = showSkeleton ? Visibility.Visible : Visibility.Collapsed;
+        MainScroll.Visibility = showEmpty || showSkeleton ? Visibility.Collapsed : Visibility.Visible;
+    }
 
-        NoHeroHint.Visibility = !showEmpty && !ViewModel.HasHero
-            ? Visibility.Visible
-            : Visibility.Collapsed;
+    private void RebuildCountryDonut()
+    {
+        CountryDonutCanvas.Children.Clear();
+        var slices = ViewModel.CountrySlices;
+        if (slices.Count == 0)
+        {
+            return;
+        }
 
-        ImportDateText.Text = !string.IsNullOrWhiteSpace(ViewModel.PendingLatestImportedText)
-            ? ViewModel.PendingLatestImportedText
-            : hasLibrary ? "가져오기 기록 있음" : "아직 가져오지 않음";
+        const double size = 112;
+        const double thickness = 22;
+        var center = new Point(size / 2, size / 2);
+        var outer = size / 2 - 2;
+        var inner = outer - thickness;
 
-        var importCount = ViewModel.RecentImports.Count;
-        ImportCountText.Text = importCount > 0
-            ? $"최근 사진 {importCount}장"
-            : ViewModel.Statistics.PhotoCount > 0
-                ? $"라이브러리 {ViewModel.Statistics.PhotoCount}장"
-                : "가져온 사진 없음";
+        foreach (var slice in slices)
+        {
+            var path = new Microsoft.UI.Xaml.Shapes.Path
+            {
+                Fill = slice.Brush,
+                Data = CreateDonutSlice(center, outer, inner, slice.StartAngle, slice.SweepAngle)
+            };
+            CountryDonutCanvas.Children.Add(path);
+        }
 
-        ImportStatusText.Text = ViewModel.HasPending
-            ? ViewModel.PendingSummaryText
-            : "정리할 사진이 없어요";
-        ImportStatusText.Foreground = new SolidColorBrush(
-            ViewModel.HasPending
-                ? Windows.UI.Color.FromArgb(255, 212, 165, 116)
-                : Windows.UI.Color.FromArgb(255, 107, 102, 96));
+        CountryDonutCanvas.Children.Add(new Ellipse
+        {
+            Width = inner * 2,
+            Height = inner * 2,
+            Fill = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 250, 250, 250))
+        });
+        Canvas.SetLeft(CountryDonutCanvas.Children[^1], center.X - inner);
+        Canvas.SetTop(CountryDonutCanvas.Children[^1], center.Y - inner);
+    }
+
+    private static Geometry CreateDonutSlice(
+        Point center,
+        double outerRadius,
+        double innerRadius,
+        double startAngleDegrees,
+        double sweepAngleDegrees)
+    {
+        if (sweepAngleDegrees >= 359.9)
+        {
+            // Full ring: outer circle minus hole via combined geometry isn't needed —
+            // approximate with two half-slices.
+            sweepAngleDegrees = 359.9;
+        }
+
+        var startOuter = PointOnCircle(center, outerRadius, startAngleDegrees);
+        var endOuter = PointOnCircle(center, outerRadius, startAngleDegrees + sweepAngleDegrees);
+        var startInner = PointOnCircle(center, innerRadius, startAngleDegrees);
+        var endInner = PointOnCircle(center, innerRadius, startAngleDegrees + sweepAngleDegrees);
+        var large = sweepAngleDegrees > 180;
+
+        var figure = new PathFigure
+        {
+            StartPoint = startOuter,
+            IsClosed = true,
+            IsFilled = true
+        };
+        figure.Segments.Add(new ArcSegment
+        {
+            Point = endOuter,
+            Size = new Size(outerRadius, outerRadius),
+            IsLargeArc = large,
+            SweepDirection = SweepDirection.Clockwise
+        });
+        figure.Segments.Add(new LineSegment { Point = endInner });
+        figure.Segments.Add(new ArcSegment
+        {
+            Point = startInner,
+            Size = new Size(innerRadius, innerRadius),
+            IsLargeArc = large,
+            SweepDirection = SweepDirection.Counterclockwise
+        });
+
+        var geometry = new PathGeometry();
+        geometry.Figures.Add(figure);
+        return geometry;
+    }
+
+    private static Point PointOnCircle(Point center, double radius, double angleDegrees)
+    {
+        var radians = Math.PI * angleDegrees / 180.0;
+        return new Point(
+            center.X + (radius * Math.Cos(radians)),
+            center.Y + (radius * Math.Sin(radians)));
     }
 
     private void UpdateHeroVisual(bool crossFade)
@@ -227,8 +348,8 @@ public sealed partial class HomePage : Page
     private void HeroCard_OnTapped(object sender, TappedRoutedEventArgs e) =>
         ViewModel.OpenHeroCommand.Execute(null);
 
-    private void HeroReplay_OnClick(object sender, RoutedEventArgs e) =>
-        ViewModel.OpenHeroCommand.Execute(null);
+    private void HeroNav_OnTapped(object sender, TappedRoutedEventArgs e) =>
+        e.Handled = true;
 
     private void HeroPrevious_OnClick(object sender, RoutedEventArgs e) =>
         ViewModel.PreviousHeroCommand.Execute(null);
@@ -236,28 +357,12 @@ public sealed partial class HomePage : Page
     private void HeroNext_OnClick(object sender, RoutedEventArgs e) =>
         ViewModel.NextHeroCommand.Execute(null);
 
-    private void HeroIndicator_OnTapped(object sender, TappedRoutedEventArgs e)
+    private void RecentVisitCard_OnTapped(object sender, TappedRoutedEventArgs e)
     {
         e.Handled = true;
-        if (sender is FrameworkElement { Tag: HomeHeroIndicator indicator })
-        {
-            ViewModel.SelectHeroIndicatorCommand.Execute(indicator);
-        }
-    }
-
-    private void RecentVisitList_OnItemClick(object sender, ItemClickEventArgs e)
-    {
-        if (e.ClickedItem is HomeRecentVisitItem item)
+        if (sender is FrameworkElement { Tag: HomeRecentVisitItem item })
         {
             ViewModel.OpenRecentVisitCommand.Execute(item);
-        }
-    }
-
-    private void RecentImportGrid_OnItemClick(object sender, ItemClickEventArgs e)
-    {
-        if (e.ClickedItem is HomePhotoItem item)
-        {
-            ViewModel.OpenRecentImportCommand.Execute(item);
         }
     }
 
@@ -270,12 +375,60 @@ public sealed partial class HomePage : Page
         }
     }
 
+    private void StatPhotos_OnTapped(object sender, TappedRoutedEventArgs e)
+    {
+        e.Handled = true;
+        ViewModel.QuickGalleryCommand.Execute(null);
+    }
+
+    private void StatGps_OnTapped(object sender, TappedRoutedEventArgs e)
+    {
+        e.Handled = true;
+        ViewModel.QuickVisitRecordCommand.Execute(null);
+    }
+
+    private void StatPlaces_OnTapped(object sender, TappedRoutedEventArgs e)
+    {
+        e.Handled = true;
+        ViewModel.QuickVisitRecordCommand.Execute(null);
+    }
+
+    private void StatCountries_OnTapped(object sender, TappedRoutedEventArgs e)
+    {
+        e.Handled = true;
+        ViewModel.OpenStatisticsCommand.Execute(null);
+    }
+
+    private void QuickImport_OnTapped(object sender, TappedRoutedEventArgs e)
+    {
+        e.Handled = true;
+        ViewModel.QuickImportCommand.Execute(null);
+    }
+
+    private void QuickOrganize_OnTapped(object sender, TappedRoutedEventArgs e)
+    {
+        e.Handled = true;
+        ViewModel.OpenPendingCommand.Execute(null);
+    }
+
+    private void QuickMap_OnTapped(object sender, TappedRoutedEventArgs e)
+    {
+        e.Handled = true;
+        ViewModel.QuickVisitRecordCommand.Execute(null);
+    }
+
+    private void QuickTravel_OnTapped(object sender, TappedRoutedEventArgs e)
+    {
+        e.Handled = true;
+        ViewModel.OpenStatisticsCommand.Execute(null);
+    }
+
     private void Card_OnPointerEntered(object sender, PointerRoutedEventArgs e)
     {
         if (sender is Border border)
         {
             border.Shadow ??= new ThemeShadow();
-            border.Translation = new System.Numerics.Vector3(0, 0, 14);
+            border.Translation = new System.Numerics.Vector3(0, 0, 12);
         }
     }
 
@@ -283,7 +436,7 @@ public sealed partial class HomePage : Page
     {
         if (sender is Border border)
         {
-            var depth = ReferenceEquals(border, HeroCard) ? 8f : 6f;
+            var depth = ReferenceEquals(border, HeroCard) ? 8f : 5f;
             border.Translation = new System.Numerics.Vector3(0, 0, depth);
         }
     }

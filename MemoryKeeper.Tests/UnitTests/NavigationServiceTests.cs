@@ -66,6 +66,63 @@ public class NavigationServiceTests
     }
 
     [Fact]
+    public void NavigateIfNeeded_SkipsSameEntry()
+    {
+        var nav = new NavigationService();
+        nav.Navigate(NavigationEntry.Of("gallery"));
+        nav.Navigate(NavigationEntry.Of("photo-viewer"));
+
+        Assert.False(nav.NavigateIfNeeded(NavigationEntry.Of("photo-viewer")));
+        Assert.True(nav.CanGoBack);
+        Assert.Equal("photo-viewer", nav.Current?.Tag);
+
+        Assert.True(nav.NavigateIfNeeded(NavigationEntry.Of("photo")));
+        Assert.Equal("photo", nav.Current?.Tag);
+        Assert.True(nav.TryGoBack(out var back));
+        Assert.Equal("photo-viewer", back.Tag);
+        Assert.True(nav.TryGoBack(out var gallery));
+        Assert.Equal("gallery", gallery.Tag);
+    }
+
+    [Fact]
+    public void Gallery_Viewer_Detail_Back_Back_ReturnsGallery()
+    {
+        var nav = new NavigationService();
+        nav.Navigate(NavigationEntry.Of("gallery"));
+        nav.Navigate(NavigationEntry.Of("photo-viewer"));
+        nav.Navigate(NavigationEntry.Of("photo"));
+
+        Assert.True(nav.TryGoBack(out var viewer));
+        Assert.Equal("photo-viewer", viewer.Tag);
+        Assert.True(nav.TryGoBack(out var gallery));
+        Assert.Equal("gallery", gallery.Tag);
+        Assert.False(nav.CanGoBack);
+    }
+
+    [Fact]
+    public void DetailBack_MustNotPushNewViewer()
+    {
+        // Simulates the bug: Detail close used Navigate(viewer) instead of GoBack.
+        var nav = new NavigationService();
+        nav.Navigate(NavigationEntry.Of("gallery"));
+        nav.Navigate(NavigationEntry.Of("photo-viewer"));
+        nav.Navigate(NavigationEntry.Of("photo"));
+
+        // Wrong: push viewer again
+        nav.Navigate(NavigationEntry.Of("photo-viewer"));
+        Assert.Equal(new[] { "gallery", "photo-viewer", "photo" }, nav.GetBackStackTags().ToArray());
+
+        // Correct path uses GoBack only — stack stays gallery > viewer after detail.
+        var correct = new NavigationService();
+        correct.Navigate(NavigationEntry.Of("gallery"));
+        correct.Navigate(NavigationEntry.Of("photo-viewer"));
+        correct.Navigate(NavigationEntry.Of("photo"));
+        Assert.True(correct.TryGoBack(out _));
+        Assert.Equal(new[] { "gallery" }, correct.GetBackStackTags().ToArray());
+        Assert.Equal("photo-viewer", correct.Current?.Tag);
+    }
+
+    [Fact]
     public void PageState_SavePeekTake()
     {
         var nav = new NavigationService();

@@ -19,10 +19,18 @@ public sealed class PhotoDetailDto
 
     public string? ThumbnailPath { get; init; }
 
+    /// <summary>Absolute HTTP thumbnail URL (TC-Backend).</summary>
+    public string? ThumbnailUrl { get; init; }
+
+    /// <summary>Absolute HTTP preview URL (TC-Backend). Prefer for Viewer display.</summary>
+    public string? PreviewUrl { get; init; }
+
+    /// <summary>Absolute original URL/path. Export / original-view only — not auto-loaded in Viewer.</summary>
     public string OriginalPath { get; init; } = string.Empty;
 
     public string RelativePath { get; init; } = string.Empty;
 
+    /// <summary>Display path for legacy callers; prefer <see cref="PreviewUrl"/> then <see cref="ThumbnailUrl"/>.</summary>
     public string AbsoluteLibraryPath { get; init; } = string.Empty;
 
     public string FileName { get; init; } = string.Empty;

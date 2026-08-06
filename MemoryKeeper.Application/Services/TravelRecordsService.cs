@@ -37,6 +37,12 @@ public sealed class TravelRecordsService
         CancellationToken cancellationToken = default)
     {
         var aggregates = await _travelRecordsRepository.GetPlaceAggregatesAsync(cancellationToken);
+        _logger.LogInformation(
+            "TravelRecords dashboard aggregates. Places={Places}, WithVisits={WithVisits}, UndatedOnly={Undated}",
+            aggregates.Count,
+            aggregates.Count(a => a.VisitDates.Count > 0),
+            aggregates.Count(a => a.VisitDates.Count == 0 && a.PhotoCount > 0));
+
         if (aggregates.Count == 0)
         {
             return new TravelRecordsDashboardDto();
@@ -87,7 +93,7 @@ public sealed class TravelRecordsService
             .Where(item => item.Dates.Count > 0)
             .ToList();
 
-        return placeYears
+        var chapters = placeYears
             .GroupBy(item => item.Year)
             .OrderByDescending(group => group.Key)
             .Select(yearGroup =>
@@ -131,6 +137,41 @@ public sealed class TravelRecordsService
             })
             .Where(chapter => chapter.Trips.Count > 0)
             .ToList();
+
+        var undatedOnly = aggregates
+            .Where(place => place.VisitDates.Count == 0 && place.PhotoCount > 0)
+            .ToList();
+        if (undatedOnly.Count > 0)
+        {
+            var undatedTrips = undatedOnly
+                .Select(place => new TravelTripCardDto
+                {
+                    FocusPlaceId = place.PlaceId,
+                    TripName = place.PlaceName,
+                    LocationText = string.Empty,
+                    Country = place.Country?.Trim() ?? string.Empty,
+                    Year = 0,
+                    StartDate = null,
+                    EndDate = null,
+                    PeriodText = "날짜 미상",
+                    PlaceCount = 1,
+                    PhotoCount = place.PhotoCount,
+                    VisitDayCount = 0,
+                    RepresentativeMediaId = place.RepresentativeMediaId,
+                    AbsoluteLibraryPath = place.AbsoluteLibraryPath,
+                    PlaceNames = [place.PlaceName],
+                })
+                .OrderBy(trip => trip.TripName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            chapters.Add(new TravelYearChapterDto
+            {
+                Year = 0,
+                Trips = undatedTrips,
+            });
+        }
+
+        return chapters;
     }
 
     private static bool IsDomesticCountry(string? country)
@@ -438,9 +479,7 @@ public sealed class TravelRecordsService
             RelativeLastVisitText = FormatRelative(last),
             RepresentativeMediaId = item.RepresentativeMediaId,
             AbsoluteLibraryPath = item.AbsoluteLibraryPath,
-            TopTags = item.RepresentativeMediaId is Guid mediaId
-                ? await GetTopTagsAsync([mediaId], cancellationToken)
-                : [],
+            TopTags = [],
             Rank = rank
         };
     }
@@ -449,37 +488,11 @@ public sealed class TravelRecordsService
         IReadOnlyList<Guid> mediaIds,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var links = await _mediaTagRepository.GetByMediaIdsAsync(mediaIds, cancellationToken);
-            if (links.Count == 0)
-            {
-                return [];
-            }
-
-            var names = new List<string>();
-            foreach (var tagId in links.Select(link => link.TagId).Distinct())
-            {
-                var tag = await _tagRepository.GetByIdAsync(tagId, cancellationToken);
-                if (tag is null || tag.Source != TagSource.User || string.IsNullOrWhiteSpace(tag.Name))
-                {
-                    continue;
-                }
-
-                names.Add(tag.Name);
-                if (names.Count >= TopTagTake)
-                {
-                    break;
-                }
-            }
-
-            return names;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to load travel record tags.");
-            return [];
-        }
+        // Backend V2 photos are not tagged in SQLite; do not invent tags.
+        _ = mediaIds;
+        _ = cancellationToken;
+        await Task.CompletedTask;
+        return [];
     }
 
     public static int[] GetSeasonMonths(TravelSeason season) => season switch

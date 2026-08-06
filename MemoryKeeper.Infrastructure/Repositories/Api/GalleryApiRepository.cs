@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using MemoryKeeper.Application;
 using MemoryKeeper.Application.DTOs;
 using MemoryKeeper.Application.Interfaces;
 using MemoryKeeper.Infrastructure.Services.Api;
@@ -43,13 +44,19 @@ public sealed class GalleryApiRepository : IGalleryApiRepository
 
     public async Task<GalleryDtos.PhotoDetailDto> GetPhotoAsync(Guid fileId, CancellationToken cancellationToken = default)
     {
-        var path = $"{GalleryRoot}/{Uri.EscapeDataString(fileId.ToString("D"))}";
+        var apiFileId = BackendFileIdCodec.ToApiFileId(fileId);
+        if (string.IsNullOrWhiteSpace(apiFileId))
+        {
+            throw new ArgumentException("file_id is required.", nameof(fileId));
+        }
+
+        var path = $"{GalleryRoot}/{Uri.EscapeDataString(apiFileId)}";
         var response = await _apiClient.GetAsync<GalleryDtos.PhotoDetailDto>(path, cancellationToken)
             .ConfigureAwait(false);
         return response.Data
             ?? throw new ApiException(
                 System.Net.HttpStatusCode.NotFound,
-                $"Gallery detail returned empty body for file_id={fileId}");
+                $"Gallery detail returned empty body for file_id={apiFileId}");
     }
 
     public async Task<PagedResult<GalleryDtos.PhotoDto>> SearchAsync(

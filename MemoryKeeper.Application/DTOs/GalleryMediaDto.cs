@@ -6,6 +6,9 @@ public sealed class GalleryMediaDto
 {
     public Guid Id { get; init; }
 
+    /// <summary>Original TC-Backend <c>file_id</c> (Guid or content hash).</summary>
+    public string BackendFileId { get; init; } = string.Empty;
+
     public string FileName { get; init; } = string.Empty;
 
     public string AbsoluteLibraryPath { get; init; } = string.Empty;

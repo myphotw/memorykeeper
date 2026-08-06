@@ -77,11 +77,15 @@ public sealed class RecentVisitDto
 
     public string PlaceName { get; init; } = string.Empty;
 
+    public string Country { get; init; } = string.Empty;
+
     public string? AbsoluteLibraryPath { get; init; }
 
     public Guid? RepresentativeMediaId { get; init; }
 
     public int VisitRecordCount { get; init; }
+
+    public int PhotoCount { get; init; }
 
     public DateTimeOffset? LastVisitDate { get; init; }
 
@@ -97,6 +101,12 @@ public sealed class DashboardPhotoDto
     public bool IsFavorite { get; init; }
 
     public string FileName { get; init; } = string.Empty;
+
+    public string? PlaceName { get; init; }
+
+    public string? Country { get; init; }
+
+    public DateTimeOffset? CapturedAt { get; init; }
 }
 
 public sealed class PendingSummaryDto
@@ -118,15 +128,35 @@ public sealed class PendingSummaryDto
     public bool HasItems => Total > 0;
 }
 
+public sealed class DashboardStatBucketDto
+{
+    public string Name { get; init; } = string.Empty;
+
+    public int Count { get; init; }
+}
+
 public sealed class DashboardStatisticsDto
 {
     public int PhotoCount { get; init; }
 
     public int PlaceCount { get; init; }
 
+    /// <summary>GPS-tagged photo count from Backend statistics.</summary>
+    public int GpsCount { get; init; }
+
+    public int CountryCount { get; init; }
+
     public int VisitRecordCount { get; init; }
 
     public int FavoriteCount { get; init; }
 
     public int TagCount { get; init; }
+
+    public string CountrySummary { get; init; } = string.Empty;
+
+    public string LastUpdatedText { get; init; } = string.Empty;
+
+    public IReadOnlyList<DashboardStatBucketDto> ByYear { get; init; } = [];
+
+    public IReadOnlyList<DashboardStatBucketDto> ByCountry { get; init; } = [];
 }

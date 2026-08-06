@@ -51,8 +51,15 @@ public sealed record VisitRecordPreviewPhotoDto
 {
     public Guid MediaId { get; init; }
 
+    /// <summary>Original TC-Backend file_id (SHA-256 or Guid string).</summary>
+    public string BackendFileId { get; init; } = string.Empty;
+
     public string FileName { get; init; } = string.Empty;
 
+    /// <summary>Absolute HTTP thumbnail URL for WinUI BitmapImage.</summary>
+    public string ThumbnailUrl { get; init; } = string.Empty;
+
+    /// <summary>Legacy alias — same as <see cref="ThumbnailUrl"/> for Backend photos.</summary>
     public string AbsoluteLibraryPath { get; init; } = string.Empty;
 
     public bool IsFavorite { get; init; }

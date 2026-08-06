@@ -24,7 +24,8 @@ public static class DependencyInjection
         services.AddScoped<ITagRepository, TagRepository>();
         services.AddScoped<IMediaTagRepository, MediaTagRepository>();
         services.AddScoped<IDashboardRepository, DashboardRepository>();
-        services.AddScoped<ITravelRecordsRepository, TravelRecordsRepository>();
+        // V2: travel aggregates from Gallery API (SQLite TravelRecordsRepository unused).
+        services.AddScoped<ITravelRecordsRepository, MemoryKeeper.Infrastructure.Repositories.Api.GalleryTravelRecordsRepository>();
 
         return services;
     }

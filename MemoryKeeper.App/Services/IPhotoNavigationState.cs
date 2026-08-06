@@ -25,7 +25,9 @@ public interface IPhotoNavigationState
     /// <summary>Tag to return when viewer closes (gallery, pending, ...).</summary>
     string ReturnSourceTag { get; }
 
-    /// <summary>Detail was opened from viewer — back returns to viewer.</summary>
+    /// <summary>
+    /// Detail was opened from viewer. Informational only — back navigation must use GoBack, not this flag.
+    /// </summary>
     bool DetailOpenedFromViewer { get; set; }
 
     event EventHandler? OpenRequested;
@@ -101,7 +103,7 @@ public sealed class PhotoNavigationState : IPhotoNavigationState
         Target = PhotoNavigationTarget.Detail;
         DetailOpenedFromViewer = true;
         FocusMediaId = mediaId;
-        OpenRequested?.Invoke(this, EventArgs.Empty);
+        // Do not raise OpenRequested — page transitions are owned by MainWindow / GoBack.
     }
 
     public bool TryGetPrevious(out Guid mediaId)

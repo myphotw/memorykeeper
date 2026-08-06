@@ -17,4 +17,7 @@ public sealed class TcBackendOptions
     public string Version { get; set; } = "1.0.0";
 
     public string ServiceName { get; set; } = "MemoryKeeper";
+
+    /// <summary>Max parallel HTTP uploads for Import (Phase 3B). Clamped to 1–3.</summary>
+    public int MaxConcurrentUploads { get; set; } = 3;
 }

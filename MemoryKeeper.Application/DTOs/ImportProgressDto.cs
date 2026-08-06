@@ -12,6 +12,26 @@ public sealed class ImportProgressDto
 
     public int FailedCount { get; init; }
 
+    public int PendingCount { get; init; }
+
+    public int UploadingCount { get; init; }
+
+    public int UploadedCount { get; init; }
+
+    public int WaitingCount { get; init; }
+
+    public int ProcessingCount { get; init; }
+
+    public int CompletedCount { get; init; }
+
+    public int CancelledCount { get; init; }
+
+    /// <summary>Files whose HTTP upload finished (accepted by server or failed/cancelled after attempt).</summary>
+    public int UploadFinishedCount { get; init; }
+
+    /// <summary>Files whose analysis reached a terminal state (completed/duplicate/failed).</summary>
+    public int AnalysisFinishedCount { get; init; }
+
     public string? CurrentFileName { get; init; }
 
     /// <summary>
@@ -35,13 +55,21 @@ public sealed class ImportProgressDto
 
     public bool IsFailed { get; init; }
 
+    public string? StatusSummary { get; init; }
+
+    /// <summary>0–1 upload acceptance progress.</summary>
+    public double UploadProgressRatio =>
+        TotalCount <= 0 ? 0 : Math.Clamp((double)UploadFinishedCount / TotalCount, 0, 1);
+
+    /// <summary>0–1 analysis completion progress.</summary>
+    public double AnalysisProgressRatio =>
+        TotalCount <= 0 ? 0 : Math.Clamp((double)AnalysisFinishedCount / TotalCount, 0, 1);
+
     /// <summary>
-    /// 0–1 ratio. Prefers backend <see cref="BackendProgress"/> when present.
+    /// 0–1 ratio for the main ProgressBar — prefers analysis once uploads finish, else upload.
     /// </summary>
     public double ProgressRatio =>
-        BackendProgress is int bp
-            ? Math.Clamp(bp / 100.0, 0, 1)
-            : TotalCount <= 0
-                ? 0
-                : (double)ProcessedCount / TotalCount;
+        UploadFinishedCount >= TotalCount && TotalCount > 0
+            ? AnalysisProgressRatio
+            : UploadProgressRatio;
 }
