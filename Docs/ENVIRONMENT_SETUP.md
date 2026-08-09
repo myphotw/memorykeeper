@@ -22,7 +22,7 @@
 
 | 항목 | 값 |
 |------|-----|
-| 설치된 SDK | `8.0.423` (`C:\Program Files\dotnet\sdk`) |
+| 설치된 SDK | `8.0.423` (`dotnet --list-sdks`로 설치 위치 확인) |
 | `dotnet --version` | `8.0.423` |
 
 `global.json`은 리포지토리에 **없다**. SDK 8.x로 빌드하는 구성이다.

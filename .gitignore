@@ -55,3 +55,22 @@ MemoryKeeper.db
 
 # Release Backup
 MemoryKeeper_V1.0.0_Release/
+
+bin/
+obj/
+
+MemoryKeeper_V1.0.0_Release/
+
+*.exe
+*.dll
+*.pdb
+
+*.db
+*.sqlite
+
+*.WebView2/
+
+Release/
+Debug/
+
+.vs/
