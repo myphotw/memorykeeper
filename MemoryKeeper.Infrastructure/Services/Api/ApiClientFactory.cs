@@ -17,7 +17,9 @@ public static class ApiClientFactory
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        services.Configure<TcBackendOptions>(configuration.GetSection(TcBackendOptions.SectionName));
+        services.AddOptions<TcBackendOptions>()
+            .Bind(configuration.GetSection(TcBackendOptions.SectionName))
+            .PostConfigure(ApplyDeploymentOverrides);
         return AddTcBackendApiClientCore(services);
     }
 
@@ -29,20 +31,24 @@ public static class ApiClientFactory
         ArgumentNullException.ThrowIfNull(configure);
 
         services.Configure(configure);
+        services.PostConfigure<TcBackendOptions>(ApplyDeploymentOverrides);
         return AddTcBackendApiClientCore(services);
     }
 
     private static IServiceCollection AddTcBackendApiClientCore(IServiceCollection services)
     {
+        services.AddTransient<TcBackendAuthenticationHandler>();
         services.AddHttpClient(BaseApiClient.HttpClientName, (sp, client) =>
         {
             var options = sp.GetRequiredService<IOptions<TcBackendOptions>>().Value;
             var timeoutSeconds = options.Timeout > 0 ? options.Timeout : 30;
             client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
             client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
-        });
+        }).AddHttpMessageHandler<TcBackendAuthenticationHandler>();
 
         services.AddSingleton<BaseApiClient>();
+        services.AddSingleton<BackendConnectionService>();
+        services.AddSingleton<BackendMediaDownloader>();
         return services;
     }
 
@@ -58,6 +64,7 @@ public static class ApiClientFactory
         services.AddTcBackendApiClient(o =>
         {
             o.ApiBaseUrl = options.ApiBaseUrl;
+            o.AuthToken = options.AuthToken;
             o.Timeout = options.Timeout;
             o.RetryCount = options.RetryCount;
             o.Version = options.Version;
@@ -66,6 +73,23 @@ public static class ApiClientFactory
 
         var provider = services.BuildServiceProvider();
         return new ApiClientHandle(provider, provider.GetRequiredService<BaseApiClient>());
+    }
+
+    private static void ApplyDeploymentOverrides(TcBackendOptions options)
+    {
+        var baseUrl = Environment.GetEnvironmentVariable(
+            TcBackendOptions.ApiBaseUrlEnvironmentVariable);
+        if (!string.IsNullOrWhiteSpace(baseUrl))
+        {
+            options.ApiBaseUrl = baseUrl.Trim();
+        }
+
+        var authToken = Environment.GetEnvironmentVariable(
+            TcBackendOptions.AuthTokenEnvironmentVariable);
+        if (!string.IsNullOrWhiteSpace(authToken))
+        {
+            options.AuthToken = authToken.Trim();
+        }
     }
 
     public sealed class ApiClientHandle : IDisposable

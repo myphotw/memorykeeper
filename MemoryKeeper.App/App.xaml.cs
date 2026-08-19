@@ -100,6 +100,8 @@ public partial class App : Microsoft.UI.Xaml.Application
             StartupDiagnostics.WriteStep("[3] DI Container 생성 완료");
 
             var logger = _host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("MemoryKeeper.App");
+            HttpImageLoader.Configure(_host.Services.GetRequiredService<BackendMediaDownloader>());
+            _ = CheckBackendConnectionAsync(_host.Services, logger);
             logger.LogInformation(
                 "Memory Keeper starting. DatabaseDirectory={DatabaseDirectory}, StartupLog={StartupLog}",
                 DatabaseDirectory,
@@ -279,5 +281,33 @@ public partial class App : Microsoft.UI.Xaml.Application
                 services.AddTransient<MainWindow>();
             })
             .Build();
+    }
+
+    private static async Task CheckBackendConnectionAsync(
+        IServiceProvider services,
+        ILogger logger)
+    {
+        try
+        {
+            var connection = services.GetRequiredService<BackendConnectionService>();
+            var status = await connection.CheckAsync();
+            if (status.IsConnected)
+            {
+                logger.LogInformation(
+                    "TC-Backend connected. Version={Version}, ApiVersion={ApiVersion}",
+                    status.Health?.Version,
+                    status.Capabilities?.ApiVersion);
+            }
+            else
+            {
+                logger.LogWarning(
+                    "TC-Backend unavailable; local features remain available. Category={Category}",
+                    status.ErrorCategory);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "TC-Backend startup check was skipped after an unexpected error.");
+        }
     }
 }

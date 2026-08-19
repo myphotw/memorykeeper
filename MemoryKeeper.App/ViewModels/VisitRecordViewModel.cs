@@ -1197,7 +1197,7 @@ public partial class VisitRecordViewModel : ObservableObject
                 _logger.LogInformation(
                     "Visit preview thumb. BackendFileId={FileId}, Url={Url}",
                     preview.BackendFileId,
-                    url);
+                    ApiErrorClassifier.SafePath(url));
 
                 if (!HttpImageLoader.IsHttpUrl(url))
                 {
@@ -1219,7 +1219,7 @@ public partial class VisitRecordViewModel : ObservableObject
                         _logger.LogWarning(
                             "Visit preview ThumbnailImage null. BackendFileId={FileId}, Url={Url}",
                             preview.BackendFileId,
-                            url);
+                            ApiErrorClassifier.SafePath(url));
                     }
                 });
             }

@@ -4,25 +4,21 @@ using MemoryKeeper.Infrastructure.Services.Api;
 namespace MemoryKeeper.Tests.UnitTests;
 
 /// <summary>
-/// Smoke tests against a running TC-Backend (default http://localhost:8000).
-/// Skips when the server is unreachable.
+/// Explicitly opted-in, read-only checks against a deployed TC-Backend.
 /// </summary>
 public sealed class BaseApiClientSmokeTests
 {
     private static readonly string DefaultBaseUrl =
-        Environment.GetEnvironmentVariable("TC_BACKEND_URL") ?? "http://localhost:8000";
+        Environment.GetEnvironmentVariable(TcBackendOptions.ApiBaseUrlEnvironmentVariable)
+        ?? TcBackendOptions.ProductionApiBaseUrl;
 
-    [Fact]
+    [LiveBackendFact]
     public async Task Get_Root_Health_Dashboard_Succeed()
     {
-        if (!await IsServerReachableAsync(DefaultBaseUrl))
-        {
-            return; // skip when backend is down
-        }
-
         using var handle = ApiClientFactory.Create(new TcBackendOptions
         {
             ApiBaseUrl = DefaultBaseUrl,
+            AuthToken = Environment.GetEnvironmentVariable(TcBackendOptions.AuthTokenEnvironmentVariable) ?? string.Empty,
             Timeout = 15,
             RetryCount = 1,
             Version = "1.0.0",
@@ -31,30 +27,22 @@ public sealed class BaseApiClientSmokeTests
 
         var client = handle.Client;
 
-        var root = await client.GetAsync<JsonElement>("/");
-        Assert.True(root.Success);
-        Assert.Equal(JsonValueKind.Object, root.Data.ValueKind);
-        Assert.True(root.Data.TryGetProperty("service", out _) || root.Data.TryGetProperty("version", out _));
+        var publicHealth = await client.GetAsync<JsonElement>("/health");
+        Assert.True(publicHealth.Success);
+        Assert.Equal(JsonValueKind.Object, publicHealth.Data.ValueKind);
 
-        var health = await client.GetAsync<JsonElement>("/api/common/health");
-        Assert.True(health.Success);
-        Assert.Equal(JsonValueKind.Object, health.Data.ValueKind);
-        Assert.True(health.Data.TryGetProperty("status", out var status));
-        Assert.False(string.IsNullOrWhiteSpace(status.GetString()));
+        var readiness = await client.GetAsync<JsonElement>("/api/common/readiness");
+        Assert.True(readiness.Success);
+        Assert.Equal(JsonValueKind.Object, readiness.Data.ValueKind);
 
-        var dashboard = await client.GetAsync<JsonElement>("/api/common/dashboard");
-        Assert.True(dashboard.Success);
-        Assert.Equal(JsonValueKind.Object, dashboard.Data.ValueKind);
+        var capabilities = await client.GetAsync<JsonElement>("/api/common/capabilities");
+        Assert.True(capabilities.Success);
+        Assert.Equal(JsonValueKind.Object, capabilities.Data.ValueKind);
     }
 
-    [Fact]
+    [LiveBackendFact]
     public async Task ApiBaseUrl_Change_Is_Honored()
     {
-        if (!await IsServerReachableAsync(DefaultBaseUrl))
-        {
-            return;
-        }
-
         var wrongUrl = "http://127.0.0.1:9";
         using var bad = ApiClientFactory.Create(new TcBackendOptions
         {
@@ -72,22 +60,8 @@ public sealed class BaseApiClientSmokeTests
             RetryCount = 1,
         });
 
-        var root = await good.Client.GetAsync<JsonElement>("/");
-        Assert.True(root.Success);
+        var health = await good.Client.GetAsync<JsonElement>("/health");
+        Assert.True(health.Success);
         Assert.Equal(DefaultBaseUrl.TrimEnd('/'), good.Client.ApiBaseUrl.TrimEnd('/'));
-    }
-
-    private static async Task<bool> IsServerReachableAsync(string baseUrl)
-    {
-        try
-        {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
-            using var response = await http.GetAsync(baseUrl.TrimEnd('/') + "/health");
-            return response.IsSuccessStatusCode;
-        }
-        catch
-        {
-            return false;
-        }
     }
 }

@@ -15,6 +15,9 @@ public sealed class RelatedPhotoDto
 
 public sealed class PhotoDetailDto
 {
+    /// <summary>True when the item exists only in TC-Backend and local SQLite writes are unsafe.</summary>
+    public bool IsBackendOnly { get; init; }
+
     public Guid MediaId { get; init; }
 
     public string? ThumbnailPath { get; init; }

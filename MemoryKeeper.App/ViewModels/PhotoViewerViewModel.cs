@@ -186,10 +186,10 @@ public partial class PhotoViewerViewModel : ObservableObject
                 "PhotoViewer display URL. MediaId={MediaId}, BackendFileId={FileId}, PreviewUrl={Preview}, ThumbnailUrl={Thumb}, DisplayUrl={Display}, OriginalUrl={Original}",
                 mediaId,
                 apiDetail.FileId,
-                detail.PreviewUrl,
-                detail.ThumbnailUrl,
-                displayUrl,
-                detail.OriginalPath);
+                ApiErrorClassifier.SafePath(detail.PreviewUrl),
+                ApiErrorClassifier.SafePath(detail.ThumbnailUrl),
+                ApiErrorClassifier.SafePath(displayUrl),
+                ApiErrorClassifier.SafePath(detail.OriginalPath));
 
             BitmapImage? image = null;
             await EnqueueAsync(() =>
@@ -201,7 +201,7 @@ public partial class PhotoViewerViewModel : ObservableObject
                 _logger.LogInformation(
                     "PhotoViewer ImageSource set. IsNull={IsNull}, Url={Url}",
                     image is null,
-                    displayUrl);
+                    ApiErrorClassifier.SafePath(displayUrl));
             });
 
             await RefreshFilmStripAsync(mediaId);
@@ -451,7 +451,7 @@ public partial class PhotoViewerViewModel : ObservableObject
         _logger.LogWarning(
             "PhotoViewer has no HTTP display URL. Context={Context}, Url={Url}",
             context,
-            url);
+            ApiErrorClassifier.SafePath(url));
         return null;
     }
 

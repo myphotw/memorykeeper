@@ -19,16 +19,12 @@ namespace MemoryKeeper.Tests.UnitTests;
 public sealed class UploadApiRepositorySmokeTests
 {
     private static readonly string DefaultBaseUrl =
-        Environment.GetEnvironmentVariable("TC_BACKEND_URL") ?? "http://localhost:8000";
+        Environment.GetEnvironmentVariable(TcBackendOptions.ApiBaseUrlEnvironmentVariable)
+        ?? TcBackendOptions.ProductionApiBaseUrl;
 
-    [Fact]
+    [LiveBackendWriteFact]
     public async Task Live_Upload_Returns_JobId_When_Backend_Up()
     {
-        if (!await IsServerReachableAsync(DefaultBaseUrl))
-        {
-            return;
-        }
-
         var tempFile = Path.Combine(Path.GetTempPath(), $"mk-live-upload-{Guid.NewGuid():N}.jpg");
         await File.WriteAllBytesAsync(tempFile, [0xFF, 0xD8, 0xFF, 0xD9]);
 
@@ -37,6 +33,7 @@ public sealed class UploadApiRepositorySmokeTests
             using var handle = ApiClientFactory.Create(new TcBackendOptions
             {
                 ApiBaseUrl = DefaultBaseUrl,
+                AuthToken = Environment.GetEnvironmentVariable(TcBackendOptions.AuthTokenEnvironmentVariable) ?? string.Empty,
                 Timeout = 30,
                 RetryCount = 0,
                 ServiceName = "MemoryKeeper",
@@ -138,20 +135,6 @@ public sealed class UploadApiRepositorySmokeTests
             {
                 File.Delete(sessionPath);
             }
-        }
-    }
-
-    private static async Task<bool> IsServerReachableAsync(string baseUrl)
-    {
-        try
-        {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
-            using var response = await http.GetAsync(baseUrl.TrimEnd('/') + "/health");
-            return response.IsSuccessStatusCode;
-        }
-        catch
-        {
-            return false;
         }
     }
 

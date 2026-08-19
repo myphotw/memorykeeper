@@ -6,8 +6,16 @@ namespace MemoryKeeper.Infrastructure.Services.Api;
 public sealed class TcBackendOptions
 {
     public const string SectionName = "TcBackend";
+    public const string ProductionApiBaseUrl = "https://onepieces.synology.me:8443";
+    public const string ApiBaseUrlEnvironmentVariable = "TC_BACKEND_URL";
+    public const string AuthTokenEnvironmentVariable = "TC_BACKEND_AUTH_TOKEN";
 
-    public string ApiBaseUrl { get; set; } = "http://localhost:8000";
+    public string ApiBaseUrl { get; set; } = ProductionApiBaseUrl;
+
+    /// <summary>
+    /// Deployment-provisioned Bearer token. Never put the real value in tracked configuration.
+    /// </summary>
+    public string AuthToken { get; set; } = string.Empty;
 
     /// <summary>HTTP timeout in seconds.</summary>
     public int Timeout { get; set; } = 30;

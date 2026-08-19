@@ -54,23 +54,63 @@ public sealed class GalleryApiRepositoryUnitTests
         var detail = await repo.GetPhotoAsync(Guid.Parse("11111111-1111-1111-1111-111111111111"));
         Assert.Equal("a.jpg", detail.Filename);
         Assert.Equal(100, detail.Width);
+        Assert.All(handler.AuthorizationHeaders, header =>
+        {
+            Assert.Equal("Bearer", header?.Scheme);
+            Assert.Equal("gallery-test-token", header?.Parameter);
+        });
+    }
+
+    [Fact]
+    public async Task Empty_Gallery_Deserializes()
+    {
+        var handler = new StubHandler();
+        handler.Map["GET /api/common/gallery?page=1&page_size=20&sort=capture_datetime_desc&service_name=MemoryKeeper"] =
+            """{"items":[],"page":1,"page_size":20,"total":0,"sort":"capture_datetime_desc"}""";
+        using var provider = BuildProvider(handler);
+        var repo = provider.GetRequiredService<IGalleryApiRepository>();
+
+        var result = await repo.GetPhotosAsync();
+
+        Assert.Empty(result.Items);
+        Assert.Equal(0, result.TotalCount);
+    }
+
+    [Fact]
+    public async Task Gallery_Backend_Error_Is_Classified()
+    {
+        var handler = new StubHandler();
+        var key = "GET /api/common/gallery?page=1&page_size=20&sort=capture_datetime_desc&service_name=MemoryKeeper";
+        handler.Map[key] = "unavailable";
+        handler.StatusCodes[key] = HttpStatusCode.ServiceUnavailable;
+        using var provider = BuildProvider(handler);
+        var repo = provider.GetRequiredService<IGalleryApiRepository>();
+
+        var error = await Assert.ThrowsAsync<ApiException>(() => repo.GetPhotosAsync());
+
+        Assert.Equal(ApiErrorCategory.BackendUnavailable, error.Category);
     }
 
     private static ServiceProvider BuildProvider(HttpMessageHandler handler)
     {
         var services = new ServiceCollection();
         services.AddLogging(b => b.SetMinimumLevel(LogLevel.Warning));
-        services.Configure<TcBackendOptions>(o =>
+        services.AddTcBackendApiClient(o =>
         {
             o.ApiBaseUrl = "http://localhost:8000";
+            o.AuthToken = "gallery-test-token";
             o.Timeout = 10;
             o.RetryCount = 0;
             o.ServiceName = "MemoryKeeper";
             o.Version = "1.0.0";
         });
+        services.PostConfigure<TcBackendOptions>(o =>
+        {
+            o.ApiBaseUrl = "http://localhost:8000";
+            o.AuthToken = "gallery-test-token";
+        });
         services.AddHttpClient(BaseApiClient.HttpClientName)
             .ConfigurePrimaryHttpMessageHandler(() => handler);
-        services.AddSingleton<BaseApiClient>();
         services.AddSingleton<IGalleryApiRepository, GalleryApiRepository>();
         return services.BuildServiceProvider();
     }
@@ -79,11 +119,16 @@ public sealed class GalleryApiRepositoryUnitTests
     {
         public Dictionary<string, string> Map { get; } = new(StringComparer.Ordinal);
 
+        public Dictionary<string, HttpStatusCode> StatusCodes { get; } = new(StringComparer.Ordinal);
+
+        public List<System.Net.Http.Headers.AuthenticationHeaderValue?> AuthorizationHeaders { get; } = [];
+
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
             var path = request.RequestUri!.PathAndQuery;
+            AuthorizationHeaders.Add(request.Headers.Authorization);
             var key = $"{request.Method.Method} {path}";
             if (!Map.TryGetValue(key, out var body))
             {
@@ -93,7 +138,10 @@ public sealed class GalleryApiRepositoryUnitTests
                 });
             }
 
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            var statusCode = StatusCodes.TryGetValue(key, out var configuredStatus)
+                ? configuredStatus
+                : HttpStatusCode.OK;
+            return Task.FromResult(new HttpResponseMessage(statusCode)
             {
                 Content = new StringContent(body, Encoding.UTF8, "application/json"),
             });

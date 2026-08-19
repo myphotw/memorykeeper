@@ -47,6 +47,7 @@ public static class GalleryBackendMapper
 
         return new PhotoDetailDto
         {
+            IsBackendOnly = true,
             MediaId = mediaId,
             ThumbnailPath = thumb,
             ThumbnailUrl = thumb,

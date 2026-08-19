@@ -223,3 +223,25 @@ x86/ARM이 아닌 **win-x64** 산출물인지 확인한다.
 - [CURRENT_STATUS.md](./CURRENT_STATUS.md)
 - [NEXT_STEP_GUIDE.md](./NEXT_STEP_GUIDE.md)
 - [DATABASE_SCHEMA.md](./DATABASE_SCHEMA.md)
+
+---
+
+## TC-Backend deployment configuration
+
+The production Backend URL defaults to `https://onepieces.synology.me:8443`.
+Users do not enter the URL or Bearer token in the app. Developers or deployment
+automation provision overrides through environment variables:
+
+```powershell
+[Environment]::SetEnvironmentVariable("TC_BACKEND_AUTH_TOKEN", "<TOKEN>", "User")
+[Environment]::SetEnvironmentVariable("TC_BACKEND_URL", "https://onepieces.synology.me:8443", "User")
+```
+
+Restart MemoryKeeper after changing user environment variables. `TC_BACKEND_URL`
+is optional because the NAS URL is the production default. Never commit the real
+token to `appsettings.json`, source files, test fixtures, or documentation.
+
+Live Backend tests are disabled by default. Set `RUN_LIVE_BACKEND_TESTS=true`
+only for explicitly approved read-only checks. Existing upload smoke tests also
+require `RUN_LIVE_BACKEND_WRITE_TESTS=true` and must not be enabled for read-only
+verification.

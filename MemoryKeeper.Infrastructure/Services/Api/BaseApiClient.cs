@@ -133,7 +133,7 @@ public sealed class BaseApiClient
                             _logger.LogWarning(
                                 "TC-Backend {Method} {Path} returned {StatusCode}; retry {Attempt}/{RetryCount}",
                                 method,
-                                path,
+                                ApiErrorClassifier.SafePath(path),
                                 (int)response.StatusCode,
                                 attempt,
                                 retryCount);
@@ -143,8 +143,9 @@ public sealed class BaseApiClient
 
                         throw new ApiException(
                             response.StatusCode,
-                            $"TC-Backend request failed: {(int)response.StatusCode} {response.ReasonPhrase} ({method} {path})",
-                            serverMessage: string.IsNullOrWhiteSpace(body) ? null : body);
+                            $"TC-Backend request failed: {(int)response.StatusCode} {response.ReasonPhrase} ({method} {ApiErrorClassifier.SafePath(path)})",
+                            serverMessage: string.IsNullOrWhiteSpace(body) ? null : body,
+                            category: ApiErrorClassifier.FromStatusCode(response.StatusCode));
                     }
 
                     if (string.IsNullOrWhiteSpace(body))
@@ -161,9 +162,10 @@ public sealed class BaseApiClient
                     {
                         throw new ApiException(
                             response.StatusCode,
-                            $"Failed to deserialize TC-Backend response ({method} {path})",
+                            $"Failed to deserialize TC-Backend response ({method} {ApiErrorClassifier.SafePath(path)})",
                             serverMessage: body,
-                            innerException: ex);
+                            innerException: ex,
+                            category: ApiErrorCategory.MalformedResponse);
                     }
 
                     return ApiResponse<T>.Ok(data!);
@@ -176,17 +178,22 @@ public sealed class BaseApiClient
                 {
                     throw;
                 }
-                catch (Exception ex) when (allowRetry && IsIdempotent(method) && attempt <= retryCount)
+                catch (Exception ex)
                 {
-                    lastException = ex;
-                    _logger.LogWarning(
-                        ex,
-                        "TC-Backend {Method} {Path} failed; retry {Attempt}/{RetryCount}",
-                        method,
-                        path,
-                        attempt,
-                        retryCount);
-                    await DelayBeforeRetryAsync(attempt, cancellationToken).ConfigureAwait(false);
+                    if (allowRetry && IsIdempotent(method) && attempt <= retryCount)
+                    {
+                        lastException = ex;
+                        _logger.LogWarning(
+                            "TC-Backend {Method} {Path} transport failure; retry {Attempt}/{RetryCount}",
+                            method,
+                            ApiErrorClassifier.SafePath(path),
+                            attempt,
+                            retryCount);
+                        await DelayBeforeRetryAsync(attempt, cancellationToken).ConfigureAwait(false);
+                        continue;
+                    }
+
+                    throw ApiErrorClassifier.FromTransport(ex, method, path);
                 }
             }
         }
@@ -200,7 +207,7 @@ public sealed class BaseApiClient
 
         throw new ApiException(
             HttpStatusCode.ServiceUnavailable,
-            $"TC-Backend request failed after {retryCount} retries ({method} {path})",
+            $"TC-Backend request failed after {retryCount} retries ({method} {ApiErrorClassifier.SafePath(path)})",
             innerException: lastException);
     }
 
@@ -215,27 +222,8 @@ public sealed class BaseApiClient
         return new StringContent(json, Encoding.UTF8, "application/json");
     }
 
-    private static Uri BuildUri(string path, string apiBaseUrl)
-    {
-        if (string.IsNullOrWhiteSpace(apiBaseUrl))
-        {
-            throw new InvalidOperationException("TcBackend:ApiBaseUrl is not configured.");
-        }
-
-        var baseUrl = apiBaseUrl.TrimEnd('/');
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            return new Uri(baseUrl + "/", UriKind.Absolute);
-        }
-
-        if (Uri.TryCreate(path, UriKind.Absolute, out var absolute))
-        {
-            return absolute;
-        }
-
-        var relative = path.StartsWith('/') ? path : "/" + path;
-        return new Uri(baseUrl + relative, UriKind.Absolute);
-    }
+    private static Uri BuildUri(string path, string apiBaseUrl) =>
+        TcBackendRequestPolicy.ResolveUri(path, apiBaseUrl);
 
     private static bool IsIdempotent(HttpMethod method) =>
         method == HttpMethod.Get || method == HttpMethod.Head || method == HttpMethod.Delete;

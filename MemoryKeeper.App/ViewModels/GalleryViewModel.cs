@@ -506,8 +506,8 @@ public partial class GalleryViewModel : ObservableObject
                 page.TotalCount,
                 page.Items.Count,
                 first?.FileId,
-                first?.ThumbnailUrl,
-                firstMapped?.ThumbnailUrl,
+                ApiErrorClassifier.SafePath(first?.ThumbnailUrl),
+                ApiErrorClassifier.SafePath(firstMapped?.ThumbnailUrl),
                 _apiClient.ApiBaseUrl);
 
             var galleryItems = page.Items
@@ -749,7 +749,7 @@ public partial class GalleryViewModel : ObservableObject
                         {
                             _logger.LogWarning(
                                 "Gallery ThumbnailImageSource null. Url={Url}",
-                                remoteUrl);
+                                ApiErrorClassifier.SafePath(remoteUrl));
                         }
                     });
                 }
@@ -763,7 +763,7 @@ public partial class GalleryViewModel : ObservableObject
                         ex,
                         "Gallery thumbnail failed. MediaId={MediaId}, Url={Url}",
                         item.MediaId,
-                        item.Media.ThumbnailUrl);
+                        ApiErrorClassifier.SafePath(item.Media.ThumbnailUrl));
                     item.HasThumbnail = false;
                 }
                 finally

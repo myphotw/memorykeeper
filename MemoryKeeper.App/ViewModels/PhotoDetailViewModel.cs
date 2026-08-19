@@ -93,6 +93,9 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
     [ObservableProperty] private bool canGoPrevious;
     [ObservableProperty] private bool canGoNext;
     [ObservableProperty] private string playlistPositionText = string.Empty;
+    [ObservableProperty] private bool isBackendOnlyMedia;
+
+    public bool CanEditPhoto => PhotoWriteAccess.CanWriteLocal(IsBackendOnlyMedia);
 
     // Place registration dialog state
     [ObservableProperty] private ObservableCollection<NearbyPlaceCandidateDto> nearbyCandidates = [];
@@ -136,7 +139,13 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
         HasOriginalLocation && HasSelectedLocation && CanApplyPlaceChange;
 
     public bool CanApplyPlaceChange =>
-        PlaceLocationPreview.CanApply(OriginalLocation, SelectedLocation);
+        CanEditPhoto && PlaceLocationPreview.CanApply(OriginalLocation, SelectedLocation);
+
+    partial void OnIsBackendOnlyMediaChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanEditPhoto));
+        OnPropertyChanged(nameof(CanApplyPlaceChange));
+    }
 
     public event EventHandler? PlacePreviewChanged;
 
@@ -294,7 +303,7 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
     [RelayCommand]
     private async Task ToggleFavoriteAsync()
     {
-        await RunBusyAsync(async () =>
+        await RunLocalPhotoWriteAsync(async () =>
         {
             IsFavorite = await _photoDetailService.ToggleFavoriteAsync(MediaId);
             FavoriteButtonText = IsFavorite ? "⭐ 즐겨찾기 해제" : "⭐ 즐겨찾기";
@@ -305,13 +314,31 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
     }
 
     [RelayCommand]
-    private void OpenPlaceRegistration() => OpenPlaceRegistrationRequested?.Invoke(this, EventArgs.Empty);
+    private void OpenPlaceRegistration()
+    {
+        if (!RejectBackendOnlyWrite())
+        {
+            OpenPlaceRegistrationRequested?.Invoke(this, EventArgs.Empty);
+        }
+    }
 
     [RelayCommand]
-    private void OpenTagManager() => OpenTagManagerRequested?.Invoke(this, EventArgs.Empty);
+    private void OpenTagManager()
+    {
+        if (!RejectBackendOnlyWrite())
+        {
+            OpenTagManagerRequested?.Invoke(this, EventArgs.Empty);
+        }
+    }
 
     [RelayCommand]
-    private void OpenMemoEditor() => OpenMemoEditorRequested?.Invoke(this, EventArgs.Empty);
+    private void OpenMemoEditor()
+    {
+        if (!RejectBackendOnlyWrite())
+        {
+            OpenMemoEditorRequested?.Invoke(this, EventArgs.Empty);
+        }
+    }
 
     [RelayCommand]
     private void OpenOnMap()
@@ -366,6 +393,11 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
     [RelayCommand]
     private async Task UpdatePlaceAsync()
     {
+        if (RejectBackendOnlyWrite())
+        {
+            return;
+        }
+
         if (SelectedPlace is null)
         {
             StatusMessage = "변경할 장소를 선택하세요.";
@@ -386,7 +418,7 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
     [RelayCommand]
     private async Task SaveMemoAsync()
     {
-        await RunBusyAsync(async () =>
+        await RunLocalPhotoWriteAsync(async () =>
         {
             var detail = await _photoDetailService.UpdateMemoAsync(MediaId, MemoDraft);
             await ApplyDetailAsync(detail);
@@ -398,7 +430,7 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
     [RelayCommand]
     private async Task DeleteFromLibraryAsync()
     {
-        await RunBusyAsync(async () =>
+        await RunLocalPhotoWriteAsync(async () =>
         {
             await _photoDetailService.DeleteFromLibraryAsync(MediaId);
             _thumbnailService.DeleteThumbnail(MediaId);
@@ -554,6 +586,11 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
 
     public async Task TogglePlaceFavoriteAsync(PlacePickerItemDto place)
     {
+        if (RejectBackendOnlyWrite())
+        {
+            return;
+        }
+
         var updated = await _placeService.SetPlaceFavoriteAsync(place.Id, !place.IsFavorite);
         await LoadPlacePickerDataAsync();
         PlaceDialogStatus = updated.IsFavorite
@@ -783,6 +820,12 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
 
     public async Task<bool> ConfirmPlaceRegistrationAsync()
     {
+        if (RejectBackendOnlyWrite())
+        {
+            PlaceDialogStatus = StatusMessage;
+            return false;
+        }
+
         if (MediaId == Guid.Empty)
         {
             PlaceDialogStatus = "등록할 사진이 없습니다.";
@@ -962,6 +1005,11 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
     [RelayCommand]
     private async Task RemoveTagAsync(TagChipItem? tag)
     {
+        if (RejectBackendOnlyWrite())
+        {
+            return;
+        }
+
         if (tag is null || MediaId == Guid.Empty)
         {
             return;
@@ -981,6 +1029,15 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
 
     public async Task LoadTagPickerAsync()
     {
+        if (RejectBackendOnlyWrite())
+        {
+            TagPickerPinnedItems = [];
+            TagPickerRecentItems = [];
+            TagPickerCommonItems = [];
+            TagPickerCandidateItems = [];
+            return;
+        }
+
         if (MediaId == Guid.Empty)
         {
             TagPickerPinnedItems = [];
@@ -1002,6 +1059,11 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
 
     public async Task AssignTagsFromPickerAsync()
     {
+        if (RejectBackendOnlyWrite())
+        {
+            return;
+        }
+
         if (MediaId == Guid.Empty)
         {
             return;
@@ -1099,6 +1161,7 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
 
     private async Task ApplyDetailAsync(PhotoDetailDto detail)
     {
+        IsBackendOnlyMedia = detail.IsBackendOnly;
         MediaId = detail.MediaId;
         FileName = detail.FileName;
         CapturedAtText = detail.CapturedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "촬영일 정보 없음";
@@ -1135,8 +1198,10 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
         FileSizeText = detail.FileSizeBytes is long bytes ? FormatFileSize(bytes) : "-";
         Tags = new ObservableCollection<TagChipItem>(detail.Tags.Select(tag => new TagChipItem(tag)));
 
-        Places = new ObservableCollection<PlaceDto>(
-            (await _placeService.GetPlaceListAsync()).Where(place => place.IsActive));
+        Places = detail.IsBackendOnly
+            ? []
+            : new ObservableCollection<PlaceDto>(
+                (await _placeService.GetPlaceListAsync()).Where(place => place.IsActive));
         SelectedPlace = PlaceId is Guid id
             ? Places.FirstOrDefault(place => place.Id == id)
             : null;
@@ -1150,10 +1215,10 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
         {
             _logger.LogWarning(
                 "PhotoDetail ImageSource null. PreviewUrl={Preview}, ThumbnailUrl={Thumb}, Absolute={Abs}, Original={Original}",
-                detail.PreviewUrl,
-                detail.ThumbnailUrl,
-                detail.AbsoluteLibraryPath,
-                detail.OriginalPath);
+                ApiErrorClassifier.SafePath(detail.PreviewUrl),
+                ApiErrorClassifier.SafePath(detail.ThumbnailUrl),
+                ApiErrorClassifier.SafePath(detail.AbsoluteLibraryPath),
+                ApiErrorClassifier.SafePath(detail.OriginalPath));
         }
 
         RelatedPhotos = new ObservableCollection<RelatedPhotoItem>(
@@ -1161,7 +1226,35 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
         _ = LoadRelatedThumbnailsAsync(RelatedPhotos);
 
         await SyncMapAsync();
-        StatusMessage = FileName;
+        StatusMessage = detail.IsBackendOnly ? $"{FileName} · NAS 읽기 전용" : FileName;
+    }
+
+    private async Task RunLocalPhotoWriteAsync(Func<Task> localWrite)
+    {
+        var executed = await PhotoWriteAccess.TryExecuteLocalAsync(
+            IsBackendOnlyMedia,
+            () => RunBusyAsync(localWrite));
+        if (!executed)
+        {
+            ShowBackendReadOnlyMessage();
+        }
+    }
+
+    private bool RejectBackendOnlyWrite()
+    {
+        if (CanEditPhoto)
+        {
+            return false;
+        }
+
+        ShowBackendReadOnlyMessage();
+        return true;
+    }
+
+    private void ShowBackendReadOnlyMessage()
+    {
+        StatusMessage = "NAS 사진은 현재 읽기 전용입니다.";
+        ToastRequested?.Invoke(this, StatusMessage);
     }
 
     private void RefreshPlaylistUi()

@@ -10,19 +10,16 @@ namespace MemoryKeeper.Tests.UnitTests;
 public sealed class GalleryApiRepositorySmokeTests
 {
     private static readonly string DefaultBaseUrl =
-        Environment.GetEnvironmentVariable("TC_BACKEND_URL") ?? "http://localhost:8000";
+        Environment.GetEnvironmentVariable(TcBackendOptions.ApiBaseUrlEnvironmentVariable)
+        ?? TcBackendOptions.ProductionApiBaseUrl;
 
-    [Fact]
+    [LiveBackendFact]
     public async Task Live_Timeline_Succeeds_When_Backend_Up()
     {
-        if (!await IsServerReachableAsync(DefaultBaseUrl))
-        {
-            return;
-        }
-
         using var handle = ApiClientFactory.Create(new TcBackendOptions
         {
             ApiBaseUrl = DefaultBaseUrl,
+            AuthToken = Environment.GetEnvironmentVariable(TcBackendOptions.AuthTokenEnvironmentVariable) ?? string.Empty,
             Timeout = 20,
             RetryCount = 0,
             Version = "1.0.0",
@@ -36,17 +33,13 @@ public sealed class GalleryApiRepositorySmokeTests
         Assert.True(timeline.Total >= 0);
     }
 
-    [Fact]
+    [LiveBackendFact]
     public async Task Live_Gallery_List_Map_Statistics_When_Schema_Ready()
     {
-        if (!await IsServerReachableAsync(DefaultBaseUrl))
-        {
-            return;
-        }
-
         using var handle = ApiClientFactory.Create(new TcBackendOptions
         {
             ApiBaseUrl = DefaultBaseUrl,
+            AuthToken = Environment.GetEnvironmentVariable(TcBackendOptions.AuthTokenEnvironmentVariable) ?? string.Empty,
             Timeout = 20,
             RetryCount = 0,
             Version = "1.0.0",
@@ -74,17 +67,4 @@ public sealed class GalleryApiRepositorySmokeTests
         }
     }
 
-    private static async Task<bool> IsServerReachableAsync(string baseUrl)
-    {
-        try
-        {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
-            using var response = await http.GetAsync(baseUrl.TrimEnd('/') + "/health");
-            return response.IsSuccessStatusCode;
-        }
-        catch
-        {
-            return false;
-        }
-    }
 }
