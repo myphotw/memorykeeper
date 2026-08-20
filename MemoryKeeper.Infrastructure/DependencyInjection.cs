@@ -19,7 +19,7 @@ public static class DependencyInjection
         services.AddSingleton<IFileStorageService, FileStorageService>();
         services.AddSingleton<IMetadataExtractor, MetadataExtractorService>();
 
-        services.AddHttpClient<ILocationResolver, GoogleLocationResolver>();
+        services.AddTransient<ILocationResolver, TcBackendLocationResolver>();
 
         return services;
     }

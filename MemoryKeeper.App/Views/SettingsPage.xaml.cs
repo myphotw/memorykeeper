@@ -26,12 +26,6 @@ public sealed partial class SettingsPage : Page
 
     private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(ViewModel.GoogleMapsApiKey)
-            && ApiKeyBox.Password != ViewModel.GoogleMapsApiKey)
-        {
-            ApiKeyBox.Password = ViewModel.GoogleMapsApiKey;
-        }
-
         if (e.PropertyName is nameof(ViewModel.HasHomeSuggestions) && ViewModel.HasHomeSuggestions)
         {
             DispatcherQueue.TryEnqueue(() =>
@@ -53,7 +47,6 @@ public sealed partial class SettingsPage : Page
         base.OnNavigatedTo(e);
         ViewModel.HostXamlRoot = XamlRoot;
         // MainWindow calls LoadCommand with the target section; avoid overwriting with null.
-        ApiKeyBox.Password = ViewModel.GoogleMapsApiKey;
     }
 
     private async void OnTagsSectionOpened(object? sender, EventArgs e)
@@ -63,11 +56,6 @@ public sealed partial class SettingsPage : Page
 
     private void OnTagBackRequested(object? sender, EventArgs e) =>
         ViewModel.GoBackCommand.Execute(null);
-
-    private void ApiKeyBox_OnPasswordChanged(object sender, RoutedEventArgs e)
-    {
-        ViewModel.GoogleMapsApiKey = ApiKeyBox.Password;
-    }
 
     private void HomeSuggestion_OnItemClick(object sender, ItemClickEventArgs e)
     {

@@ -24,8 +24,7 @@ public enum VisitRecordSortMode
 
 public partial class VisitRecordViewModel : ObservableObject
 {
-    private readonly IGalleryApiRepository _galleryApiRepository;
-    private readonly BaseApiClient _apiClient;
+    private readonly IGalleryPhotoCatalog _galleryPhotoCatalog;
     private readonly PhotoDetailService _photoDetailService;
     private readonly IThumbnailService _thumbnailService;
     private readonly ISettingRepository _settingRepository;
@@ -104,8 +103,7 @@ public partial class VisitRecordViewModel : ObservableObject
     public event EventHandler? BackRequested;
 
     public VisitRecordViewModel(
-        IGalleryApiRepository galleryApiRepository,
-        BaseApiClient apiClient,
+        IGalleryPhotoCatalog galleryPhotoCatalog,
         PhotoDetailService photoDetailService,
         IThumbnailService thumbnailService,
         ISettingRepository settingRepository,
@@ -114,8 +112,7 @@ public partial class VisitRecordViewModel : ObservableObject
         IPlaceEditorSeedState placeEditorSeedState,
         ILogger<VisitRecordViewModel> logger)
     {
-        _galleryApiRepository = galleryApiRepository;
-        _apiClient = apiClient;
+        _galleryPhotoCatalog = galleryPhotoCatalog;
         _photoDetailService = photoDetailService;
         _thumbnailService = thumbnailService;
         _settingRepository = settingRepository;
@@ -199,15 +196,7 @@ public partial class VisitRecordViewModel : ObservableObject
                 wantsFilters,
                 _mapController.IsHostLayoutReady);
 
-            var apiKeySetting = await _settingRepository.GetByKeyAsync(SettingKeys.GoogleMapsApiKey);
-            var apiKey = GoogleMapsApiKeyValidator.NormalizeOrNull(apiKeySetting?.Value);
-            if (apiKey is null)
-            {
-                StatusMessage = "Google API Key가 없거나 형식이 올바르지 않습니다. 설정 → Google API에서 AIza… Key를 저장하세요.";
-                IsMapReady = false;
-                return;
-            }
-
+            var apiKey = await MapDisplayCredentialProvider.GetAsync(_settingRepository);
             await _mapController.EnsureMapReadyAsync(apiKey, forceReload: false, ct);
             IsMapReady = _mapController.IsReady;
             _logger.LogInformation("mapReady confirmed. Gen={Gen} TilesLoaded={Tiles}", navigationGeneration, _mapController.HasTilesLoaded);
@@ -327,15 +316,7 @@ public partial class VisitRecordViewModel : ObservableObject
 
         try
         {
-            var apiKeySetting = await _settingRepository.GetByKeyAsync(SettingKeys.GoogleMapsApiKey);
-            var apiKey = GoogleMapsApiKeyValidator.NormalizeOrNull(apiKeySetting?.Value);
-            if (apiKey is null)
-            {
-                StatusMessage = "Google API Key가 없거나 형식이 올바르지 않습니다. 설정 → Google API에서 AIza… Key를 저장하세요.";
-                IsMapReady = false;
-                return;
-            }
-
+            var apiKey = await MapDisplayCredentialProvider.GetAsync(_settingRepository);
             await _mapController.EnsureMapReadyAsync(apiKey, forceReload: false);
             IsMapReady = _mapController.IsReady;
         }
@@ -417,8 +398,7 @@ public partial class VisitRecordViewModel : ObservableObject
                 _placeFocusState.PendingCountry = null;
                 SearchText = string.Empty;
                 query = await GalleryBackendBridge.QueryVisitRecordsAsync(
-                    _galleryApiRepository,
-                    _apiClient.ApiBaseUrl,
+                    _galleryPhotoCatalog,
                     keyword: season.ToString());
             }
             else if (!string.IsNullOrWhiteSpace(_placeFocusState.PendingCountry))
@@ -427,15 +407,13 @@ public partial class VisitRecordViewModel : ObservableObject
                 _placeFocusState.PendingCountry = null;
                 SearchText = string.Empty;
                 query = await GalleryBackendBridge.QueryVisitRecordsAsync(
-                    _galleryApiRepository,
-                    _apiClient.ApiBaseUrl,
+                    _galleryPhotoCatalog,
                     country: country);
             }
             else
             {
                 query = await GalleryBackendBridge.QueryVisitRecordsAsync(
-                    _galleryApiRepository,
-                    _apiClient.ApiBaseUrl,
+                    _galleryPhotoCatalog,
                     keyword: string.IsNullOrWhiteSpace(SearchText) ? null : SearchText.Trim());
             }
 

@@ -1,7 +1,6 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using MemoryKeeper.Application;
 using MemoryKeeper.Application.DTOs;
 using MemoryKeeper.Application.Interfaces;
 using MemoryKeeper.Application.Navigation;
@@ -16,7 +15,6 @@ namespace MemoryKeeper.App.ViewModels;
 
 public partial class SettingsViewModel : ObservableObject
 {
-    private readonly ISettingRepository _settingRepository;
     private readonly HomeLocationService _homeLocationService;
     private readonly IPrototypeMaintenanceService _maintenanceService;
     private readonly LibraryCopyIntegrityService _libraryCopyIntegrityService;
@@ -46,9 +44,6 @@ public partial class SettingsViewModel : ObservableObject
     private bool isHomePanelVisible;
 
     [ObservableProperty]
-    private bool isGooglePanelVisible;
-
-    [ObservableProperty]
     private bool isGeneralVisible;
 
     [ObservableProperty]
@@ -70,16 +65,7 @@ public partial class SettingsViewModel : ObservableObject
     private bool isLogsVisible;
 
     [ObservableProperty]
-    private string googleMapsApiKey = string.Empty;
-
-    [ObservableProperty]
     private string homeAddress = string.Empty;
-
-    [ObservableProperty]
-    private string homeLatitude = string.Empty;
-
-    [ObservableProperty]
-    private string homeLongitude = string.Empty;
 
     [ObservableProperty]
     private string homePlaceId = string.Empty;
@@ -125,7 +111,6 @@ public partial class SettingsViewModel : ObservableObject
     public event EventHandler? TagsSectionOpened;
 
     public SettingsViewModel(
-        ISettingRepository settingRepository,
         HomeLocationService homeLocationService,
         IPrototypeMaintenanceService maintenanceService,
         LibraryCopyIntegrityService libraryCopyIntegrityService,
@@ -135,7 +120,6 @@ public partial class SettingsViewModel : ObservableObject
         INavigationService navigation,
         ILogger<SettingsViewModel> logger)
     {
-        _settingRepository = settingRepository;
         _homeLocationService = homeLocationService;
         _maintenanceService = maintenanceService;
         _libraryCopyIntegrityService = libraryCopyIntegrityService;
@@ -154,15 +138,6 @@ public partial class SettingsViewModel : ObservableObject
         try
         {
             await Storage.LoadCommand.ExecuteAsync(null);
-
-            var apiKey = await _settingRepository.GetByKeyAsync(SettingKeys.GoogleMapsApiKey);
-            GoogleMapsApiKey = apiKey?.Value ?? string.Empty;
-            if (!string.IsNullOrWhiteSpace(GoogleMapsApiKey)
-                && !GoogleMapsApiKeyValidator.LooksValid(GoogleMapsApiKey))
-            {
-                ShowError(
-                    "저장된 Google API Key 형식이 올바르지 않습니다. 설정 → Google API에서 AIza… Key를 다시 저장하세요.");
-            }
 
             var home = await _homeLocationService.GetAsync();
             ApplyHome(home);
@@ -187,9 +162,6 @@ public partial class SettingsViewModel : ObservableObject
 
     [RelayCommand]
     private void ShowHome() => ShowSection("home");
-
-    [RelayCommand]
-    private void ShowGoogleApi() => ShowSection("google");
 
     [RelayCommand]
     private void ShowPhotoImport() => ShowSection("photo-import");
@@ -284,40 +256,6 @@ public partial class SettingsViewModel : ObservableObject
         });
     }
 
-    [RelayCommand]
-    private async Task SaveApiKeyAsync()
-    {
-        await RunBusyAsync(async () =>
-        {
-            var value = GoogleMapsApiKey.Trim();
-            GoogleMapsApiKeyValidator.EnsureValidOrEmpty(value);
-
-            var existing = await _settingRepository.GetByKeyAsync(SettingKeys.GoogleMapsApiKey);
-            var now = DateTime.UtcNow;
-            if (existing is null)
-            {
-                await _settingRepository.AddAsync(new Domain.Entities.Setting
-                {
-                    Id = Guid.NewGuid(),
-                    Key = SettingKeys.GoogleMapsApiKey,
-                    Value = value,
-                    CreatedAt = now,
-                    UpdatedAt = now
-                });
-            }
-            else
-            {
-                existing.Value = value;
-                existing.UpdatedAt = now;
-                await _settingRepository.UpdateAsync(existing);
-            }
-
-            ShowSuccess(string.IsNullOrWhiteSpace(value)
-                ? "API Key를 비웠습니다. 지도·주소 검색이 비활성화됩니다."
-                : "Google API Key를 저장했습니다. 지도와 주소 검색에 바로 사용됩니다.");
-        });
-    }
-
     partial void OnHomeAddressChanged(string value)
     {
         if (_suppressHomeAddressSuggest)
@@ -346,7 +284,7 @@ public partial class SettingsViewModel : ObservableObject
             HomeSuggestions.Clear();
             HasHomeSuggestions = false;
             ShowSuccess("집(Home) 위치를 저장했습니다.");
-        });
+        }, "집 위치를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.");
     }
 
     [RelayCommand]
@@ -371,7 +309,7 @@ public partial class SettingsViewModel : ObservableObject
             var byAddress = await _homeLocationService.SaveAddressAsync(HomeAddress);
             ApplyHome(byAddress);
             ShowSuccess("집(Home) 위치를 저장했습니다.");
-        });
+        }, "집 위치를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.");
     }
 
     [RelayCommand]
@@ -488,7 +426,7 @@ public partial class SettingsViewModel : ObservableObject
         if (!await UserFeedback.ConfirmAsync(
                 HostXamlRoot,
                 "등록사진 초기화",
-                "등록된 사진 메타데이터(Media/Tag/Place)를 삭제합니다.\n사진 원본과 Google API Key는 유지됩니다.",
+                "등록된 사진 메타데이터(Media/Tag/Place)를 삭제합니다.\n사진 원본과 앱 설정은 유지됩니다.",
                 primaryText: "초기화"))
         {
             return;
@@ -507,7 +445,7 @@ public partial class SettingsViewModel : ObservableObject
         if (!await UserFeedback.ConfirmAsync(
                 HostXamlRoot,
                 "장소/여행기록 재생성",
-                "기존 장소를 모두 지운 뒤, GPS가 있는 사진마다 장소를 다시 만들고 연결합니다.\n방문지도·여행기록은 장소/사진 기준으로 다시 집계됩니다.\nGoogle API Key는 유지됩니다.",
+                "기존 장소를 모두 지운 뒤, GPS가 있는 사진마다 장소를 다시 만들고 연결합니다.\n방문지도·여행기록은 장소/사진 기준으로 다시 집계됩니다.",
                 primaryText: "재생성"))
         {
             return;
@@ -526,7 +464,7 @@ public partial class SettingsViewModel : ObservableObject
         if (!await UserFeedback.ConfirmAsync(
                 HostXamlRoot,
                 "썸네일 캐시 삭제",
-                "썸네일 캐시 파일을 삭제합니다. 사진 원본과 API Key는 유지됩니다.",
+                "썸네일 캐시 파일을 삭제합니다. 사진 원본과 앱 설정은 유지됩니다.",
                 primaryText: "삭제"))
         {
             return;
@@ -545,7 +483,7 @@ public partial class SettingsViewModel : ObservableObject
         if (!await UserFeedback.ConfirmAsync(
                 HostXamlRoot,
                 "전체 초기화",
-                "Database·Settings·Thumbnail을 초기화합니다.\nGoogle API Key도 삭제됩니다.\n사진 원본은 유지됩니다.",
+                "Database·Settings·Thumbnail을 초기화합니다.\n사진 원본은 유지됩니다.",
                 primaryText: "전체 초기화"))
         {
             return;
@@ -599,7 +537,7 @@ public partial class SettingsViewModel : ObservableObject
             _logger.LogWarning(ex, "Home place suggestion failed.");
             HomeSuggestions.Clear();
             HasHomeSuggestions = false;
-            ShowError(ex.Message);
+            ShowError("주소 검색에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.");
         }
     }
 
@@ -609,8 +547,7 @@ public partial class SettingsViewModel : ObservableObject
         IsOverviewVisible = section == "overview";
         IsStoragePanelVisible = section == "storage";
         IsHomePanelVisible = section == "home";
-        IsGooglePanelVisible = section == "google";
-        IsGeneralVisible = section is "storage" or "home" or "google";
+        IsGeneralVisible = section is "storage" or "home";
         IsPhotoVisible = section is "photo-import" or "metadata";
         IsAiVisible = section == "ai";
         IsMaintenanceVisible = section == "maintenance";
@@ -622,7 +559,6 @@ public partial class SettingsViewModel : ObservableObject
             "overview" => "설정",
             "storage" => "설정 › MemoryKeeper 저장소",
             "home" => "설정 › 집(Home) 위치",
-            "google" => "설정 › Google API",
             "photo-import" or "metadata" => "설정 › 사진관리",
             "tags" => "설정 › 태그관리",
             "ai" => "설정 › AI",
@@ -646,10 +582,8 @@ public partial class SettingsViewModel : ObservableObject
         {
             HomeAddress = home.Address;
             HomePlaceId = home.PlaceId;
-            HomeLatitude = home.Latitude?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
-            HomeLongitude = home.Longitude?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
             HomeResolvedSummary = home.IsConfigured
-                ? $"{home.Address}\n위도 {HomeLatitude} / 경도 {HomeLongitude}"
+                ? (string.IsNullOrWhiteSpace(home.Address) ? "집 위치가 설정되었습니다." : home.Address)
                 : "아직 집 위치가 설정되지 않았습니다.";
         }
         finally
@@ -682,7 +616,7 @@ public partial class SettingsViewModel : ObservableObject
         IsInfoBarOpen = true;
     }
 
-    private async Task RunBusyAsync(Func<Task> action)
+    private async Task RunBusyAsync(Func<Task> action, string? userErrorMessage = null)
     {
         if (IsBusy)
         {
@@ -697,7 +631,7 @@ public partial class SettingsViewModel : ObservableObject
         catch (Exception ex)
         {
             _logger.LogError(ex, "Settings action failed.");
-            ShowError(ex.Message);
+            ShowError(userErrorMessage ?? ex.Message);
         }
         finally
         {

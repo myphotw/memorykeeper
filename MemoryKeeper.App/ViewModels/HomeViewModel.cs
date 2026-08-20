@@ -6,7 +6,6 @@ using MemoryKeeper.App.Services;
 using MemoryKeeper.Application.DTOs;
 using MemoryKeeper.Application.Interfaces;
 using MemoryKeeper.Application.Services;
-using MemoryKeeper.Infrastructure.Services.Api;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml.Media.Imaging;
@@ -18,7 +17,7 @@ public partial class HomeViewModel : ObservableObject
     private static readonly TimeSpan HeroInterval = TimeSpan.FromSeconds(4);
 
     private readonly IGalleryApiRepository _galleryApiRepository;
-    private readonly BaseApiClient _apiClient;
+    private readonly IGalleryPhotoCatalog _galleryPhotoCatalog;
     private readonly IThumbnailService _thumbnailService;
     private readonly IPlaceFocusState _placeFocusState;
     private readonly IPhotoNavigationState _photoNavigationState;
@@ -162,7 +161,7 @@ public partial class HomeViewModel : ObservableObject
 
     public HomeViewModel(
         IGalleryApiRepository galleryApiRepository,
-        BaseApiClient apiClient,
+        IGalleryPhotoCatalog galleryPhotoCatalog,
         IThumbnailService thumbnailService,
         IPlaceFocusState placeFocusState,
         IPhotoNavigationState photoNavigationState,
@@ -170,7 +169,7 @@ public partial class HomeViewModel : ObservableObject
         ILogger<HomeViewModel> logger)
     {
         _galleryApiRepository = galleryApiRepository;
-        _apiClient = apiClient;
+        _galleryPhotoCatalog = galleryPhotoCatalog;
         _thumbnailService = thumbnailService;
         _placeFocusState = placeFocusState;
         _photoNavigationState = photoNavigationState;
@@ -192,6 +191,13 @@ public partial class HomeViewModel : ObservableObject
     [RelayCommand]
     private async Task LoadAsync()
     {
+        // MainWindow navigation and Page.Loaded can request Home at nearly the same time.
+        // Do not let the second request cancel the thumbnail token owned by the active load.
+        if (IsBusy)
+        {
+            return;
+        }
+
         StopHeroTimer();
         CancelThumbnailLoading();
         _thumbnailCts = new CancellationTokenSource();
@@ -204,7 +210,7 @@ public partial class HomeViewModel : ObservableObject
             {
                 var dashboard = await GalleryBackendBridge.GetHomeDashboardAsync(
                     _galleryApiRepository,
-                    _apiClient.ApiBaseUrl ?? string.Empty,
+                    _galleryPhotoCatalog,
                     token);
                 ApplyDashboard(dashboard);
                 StatusMessage = "추억을 불러왔습니다.";
@@ -715,7 +721,7 @@ public partial class HomeViewModel : ObservableObject
         Action<bool> setLoading,
         CancellationToken token)
     {
-        if (mediaId is null || string.IsNullOrWhiteSpace(absolutePath))
+        if (string.IsNullOrWhiteSpace(absolutePath))
         {
             return;
         }
@@ -725,8 +731,17 @@ public partial class HomeViewModel : ObservableObject
         {
             if (HttpImageLoader.IsHttpUrl(absolutePath))
             {
-                await EnqueueAsync(() =>
-                    setImage(HttpImageLoader.TryCreate(absolutePath, _logger, $"home:{mediaId}")));
+                var bitmap = await HttpImageLoader.LoadAsync(
+                    absolutePath,
+                    _logger,
+                    $"home:{mediaId}",
+                    token);
+                await EnqueueAsync(() => setImage(bitmap));
+                return;
+            }
+
+            if (mediaId is null)
+            {
                 return;
             }
 

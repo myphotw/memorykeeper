@@ -62,6 +62,9 @@ public partial class TravelRecordsViewModel : ObservableObject
     private bool hasFarthest;
 
     [ObservableProperty]
+    private string farthestEmptyMessage = "위치가 있는 여행 기록이 필요해요";
+
+    [ObservableProperty]
     private bool hasYearChapters;
 
     [ObservableProperty]
@@ -81,12 +84,6 @@ public partial class TravelRecordsViewModel : ObservableObject
 
     [ObservableProperty]
     private string homeAddressInput = string.Empty;
-
-    [ObservableProperty]
-    private string homeLatitudeInput = string.Empty;
-
-    [ObservableProperty]
-    private string homeLongitudeInput = string.Empty;
 
     [ObservableProperty]
     private string homeLocationSummary = string.Empty;
@@ -207,38 +204,7 @@ public partial class TravelRecordsViewModel : ObservableObject
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to save home address.");
-            StatusMessage = ex.Message;
-            return;
-        }
-        finally
-        {
-            IsBusy = false;
-        }
-
-        await LoadAsync();
-    }
-
-    [RelayCommand]
-    private async Task SaveHomeByCoordinatesAsync()
-    {
-        if (!double.TryParse(HomeLatitudeInput, System.Globalization.NumberStyles.Float,
-                System.Globalization.CultureInfo.InvariantCulture, out var lat)
-            || !double.TryParse(HomeLongitudeInput, System.Globalization.NumberStyles.Float,
-                System.Globalization.CultureInfo.InvariantCulture, out var lon))
-        {
-            StatusMessage = "위도/경도를 숫자로 입력하세요.";
-            return;
-        }
-
-        try
-        {
-            IsBusy = true;
-            await _homeLocationService.SaveCoordinatesAsync(lat, lon, HomeAddressInput);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to save home coordinates.");
-            StatusMessage = ex.Message;
+            StatusMessage = "집 위치를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.";
             return;
         }
         finally
@@ -254,11 +220,8 @@ public partial class TravelRecordsViewModel : ObservableObject
         var home = await _homeLocationService.GetAsync(token);
         NeedsHomeLocation = !home.IsConfigured;
         HomeAddressInput = home.Address;
-        HomeLatitudeInput = home.Latitude?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
-        HomeLongitudeInput = home.Longitude?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
         HomeLocationSummary = home.IsConfigured
-            ? $"Home: {home.Latitude:F4}, {home.Longitude:F4}" +
-              (string.IsNullOrWhiteSpace(home.Address) ? string.Empty : $" · {home.Address}")
+            ? (string.IsNullOrWhiteSpace(home.Address) ? "집 위치가 설정되었습니다." : $"집 위치: {home.Address}")
             : "Home Location 미설정";
     }
 
@@ -393,6 +356,9 @@ public partial class TravelRecordsViewModel : ObservableObject
         HasRecent = RecentPlaces.Count > 0;
         HasTopCountry = TopCountry is not null;
         HasFarthest = FarthestPlace is not null;
+        FarthestEmptyMessage = NeedsHomeLocation
+            ? "Home을 설정하면 보여요"
+            : "위치가 있는 여행 기록이 필요해요";
         HasHighlights = HasMostVisited || HasLongUnvisited || HasSeasons || HasRecent
             || HasTopCountry || HasFarthest;
         FeaturedMemory = null;

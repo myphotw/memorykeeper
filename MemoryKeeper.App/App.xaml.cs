@@ -121,7 +121,8 @@ public partial class App : Microsoft.UI.Xaml.Application
                     var setupWizard = scope.ServiceProvider.GetRequiredService<SetupWizardService>();
                     LaunchSetupStatus = await setupWizard.GetStatusAsync();
                     StartupDiagnostics.WriteStep(
-                        $"[4] SetupWizardService 완료 NeedsSetup={LaunchSetupStatus.NeedsSetup}, HasStorage={LaunchSetupStatus.HasStorage}, HasReachablePhotoRoot={LaunchSetupStatus.HasReachablePhotoRoot}");
+                        $"[4] SetupWizardService 완료 NeedsSetup={LaunchSetupStatus.NeedsSetup}, HasHomeLocation={LaunchSetupStatus.HasHomeLocation}");
+
                 }
 
                 StartupDiagnostics.WriteStep("[5] MainWindow 생성 시작");
@@ -218,6 +219,7 @@ public partial class App : Microsoft.UI.Xaml.Application
                 services.Configure<ImportUploadOptions>(
                     context.Configuration.GetSection(ImportUploadOptions.SectionName));
                 services.AddSingleton<IGalleryApiRepository, GalleryApiRepository>();
+                services.AddSingleton<IGalleryPhotoCatalog, GalleryPhotoCatalog>();
                 services.AddSingleton<IUploadApiRepository, UploadApiRepository>();
                 services.AddSingleton<IUploadJobApiRepository, UploadJobApiRepository>();
                 services.AddMemoryKeeperDatabase(DatabaseDirectory);

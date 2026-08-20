@@ -1,4 +1,5 @@
 using System.Text.Json;
+using MemoryKeeper.Application;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -96,7 +97,22 @@ public sealed class GoogleMapController : IMapController, IAsyncDisposable
                 _webView.ActualWidth,
                 _webView.ActualHeight);
 
-            await ReloadHtmlAsync(apiKey, cancellationToken);
+            try
+            {
+                await ReloadHtmlAsync(apiKey, cancellationToken);
+            }
+            catch (Exception ex) when (
+                !cancellationToken.IsCancellationRequested
+                && GoogleMapsApiKeyValidator.NormalizeOrNull(apiKey) is not null)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Google Maps initialization failed; switching to OpenStreetMap fallback.");
+                await ReloadHtmlAsync(apiKey: null, cancellationToken);
+                // Reuse the working OSM document for this deployment credential until a
+                // caller explicitly requests forceReload.
+                _lastApiKey = apiKey;
+            }
         }
         finally
         {
@@ -340,7 +356,7 @@ public sealed class GoogleMapController : IMapController, IAsyncDisposable
         {
             _logger.LogWarning(ex, "Google Map initialization timed out.");
             throw new InvalidOperationException(
-                "Google Maps 초기화 시간이 초과되었습니다. API Key와 네트워크를 확인하세요.",
+                "지도를 불러오는 데 시간이 오래 걸리고 있습니다. 네트워크 연결을 확인해 주세요.",
                 ex);
         }
     }

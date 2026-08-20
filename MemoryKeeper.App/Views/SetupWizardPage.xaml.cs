@@ -1,4 +1,5 @@
 using MemoryKeeper.App.ViewModels;
+using MemoryKeeper.Application.DTOs;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
@@ -14,8 +15,12 @@ public sealed partial class SetupWizardPage : Page
         DataContext = viewModel;
         InitializeComponent();
         ViewModel.PropertyChanged += ViewModel_OnPropertyChanged;
+        Loaded += OnLoaded;
         UpdateStepVisibility();
     }
+
+    private async void OnLoaded(object sender, RoutedEventArgs e) =>
+        await ViewModel.LoadCommand.ExecuteAsync(null);
 
     private void ViewModel_OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
@@ -30,14 +35,15 @@ public sealed partial class SetupWizardPage : Page
     {
         Step1Panel.Visibility = ViewModel.CurrentStep == 1 ? Visibility.Visible : Visibility.Collapsed;
         Step2Panel.Visibility = ViewModel.CurrentStep == 2 ? Visibility.Visible : Visibility.Collapsed;
-        Step3Panel.Visibility = ViewModel.CurrentStep == 3 ? Visibility.Visible : Visibility.Collapsed;
-        Step4Panel.Visibility = ViewModel.CurrentStep == 4 ? Visibility.Visible : Visibility.Collapsed;
         NextButton.Visibility = ViewModel.CanFinish ? Visibility.Collapsed : Visibility.Visible;
         FinishButton.Visibility = ViewModel.CanFinish ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private void ApiKeyBox_OnPasswordChanged(object sender, RoutedEventArgs e)
+    private void HomeSuggestion_OnItemClick(object sender, ItemClickEventArgs e)
     {
-        ViewModel.GoogleMapsApiKey = ApiKeyBox.Password;
+        if (e.ClickedItem is PlaceSuggestionDto suggestion)
+        {
+            _ = ViewModel.SelectHomeSuggestionCommand.ExecuteAsync(suggestion);
+        }
     }
 }

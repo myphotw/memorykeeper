@@ -1,6 +1,7 @@
 using MemoryKeeper.Application.Interfaces;
 using MemoryKeeper.Infrastructure.Repositories.Api;
 using MemoryKeeper.Infrastructure.Services.Api;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace MemoryKeeper.Tests.UnitTests;
 
@@ -65,6 +66,37 @@ public sealed class GalleryApiRepositorySmokeTests
             // Known TC-Backend DB drift (e.g. missing common_files.favorite). Client path still exercised above via unit stubs.
             Assert.True(true, $"Backend schema not ready for full gallery: {ex.Message}");
         }
+    }
+
+    [LiveBackendFact]
+    public async Task Live_Catalog_Preserves_Authoritative_Gps_For_Backend_Photos()
+    {
+        using var handle = ApiClientFactory.Create(new TcBackendOptions
+        {
+            ApiBaseUrl = DefaultBaseUrl,
+            AuthToken = Environment.GetEnvironmentVariable(TcBackendOptions.AuthTokenEnvironmentVariable) ?? string.Empty,
+            Timeout = 20,
+            RetryCount = 0,
+            Version = "1.0.0",
+            ServiceName = "MemoryKeeper",
+        });
+
+        IGalleryApiRepository repo = new GalleryApiRepository(handle.Client);
+        IGalleryPhotoCatalog catalog = new GalleryPhotoCatalog(
+            repo,
+            handle.Client,
+            NullLogger<GalleryPhotoCatalog>.Instance);
+
+        var snapshot = await catalog.QueryAsync();
+        var mapIds = snapshot.MapMarkers
+            .Select(marker => marker.FileId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        Assert.All(snapshot.Photos.Where(photo => photo.HasGps), photo =>
+            Assert.True(
+                mapIds.Contains(photo.FileId)
+                || snapshot.LocationMetadataByFileId.ContainsKey(photo.FileId),
+                "GPS photo must be represented by /map or authoritative /detail metadata."));
     }
 
 }

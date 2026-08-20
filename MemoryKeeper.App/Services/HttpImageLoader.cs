@@ -76,6 +76,67 @@ public static class HttpImageLoader
         }
     }
 
+    /// <summary>
+    /// Completes the authenticated download and decode before returning the image.
+    /// Use this for view models that must know when a remote thumbnail is ready.
+    /// </summary>
+    public static async Task<BitmapImage?> LoadAsync(
+        string? absoluteUrl,
+        ILogger? logger = null,
+        string? context = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsHttpUrl(absoluteUrl))
+        {
+            logger?.LogWarning("HttpImageLoader skipped non-HTTP URL. Context={Context}", context);
+            return null;
+        }
+
+        var downloader = _downloader;
+        if (downloader is null)
+        {
+            logger?.LogWarning("HttpImageLoader is not configured. Context={Context}", context);
+            return null;
+        }
+
+        try
+        {
+            var bytes = await downloader.GetBytesAsync(absoluteUrl!, cancellationToken);
+            var bitmap = new BitmapImage { CreateOptions = BitmapCreateOptions.None };
+            using var stream = new InMemoryRandomAccessStream();
+            using (var writer = new DataWriter(stream))
+            {
+                writer.WriteBytes(bytes);
+                await writer.StoreAsync();
+                await writer.FlushAsync();
+                writer.DetachStream();
+            }
+
+            stream.Seek(0);
+            await bitmap.SetSourceAsync(stream);
+            logger?.LogInformation("HttpImageLoader authenticated source loaded. Context={Context}", context);
+            return bitmap;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (ApiException ex)
+        {
+            logger?.LogWarning(
+                "HttpImageLoader request failed. Context={Context}, Category={Category}, StatusCode={StatusCode}",
+                context,
+                ex.Category,
+                (int)ex.StatusCode);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            logger?.LogWarning(ex, "HttpImageLoader decode failed. Context={Context}", context);
+            return null;
+        }
+    }
+
     private static async Task LoadAuthenticatedAsync(
         BitmapImage bitmap,
         BackendMediaDownloader downloader,

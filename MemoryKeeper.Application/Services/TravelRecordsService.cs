@@ -344,15 +344,19 @@ public sealed class TravelRecordsService
     private static IReadOnlyList<TravelCountrySummaryDto> OrderCountries(
         IEnumerable<TravelPlaceAggregateRaw> aggregates) =>
         aggregates
-            .Where(item => item.VisitDates.Count > 0 && !string.IsNullOrWhiteSpace(item.Country))
+            // Country is authoritative location metadata and remains useful even when
+            // Backend capture_datetime is missing. Keep the truthful visit count at 0.
+            .Where(item => !string.IsNullOrWhiteSpace(item.Country))
             .GroupBy(item => item.Country.Trim())
             .Select(group => new
             {
                 Country = group.Key,
                 VisitRecordCount = group.Sum(item => item.VisitDates.Count),
-                PlaceCount = group.Count()
+                PlaceCount = group.Count(),
+                PhotoCount = group.Sum(item => item.PhotoCount),
             })
             .OrderByDescending(item => item.VisitRecordCount)
+            .ThenByDescending(item => item.PhotoCount)
             .ThenBy(item => item.Country)
             .Select((item, index) => new TravelCountrySummaryDto
             {
@@ -377,7 +381,7 @@ public sealed class TravelRecordsService
         var homeLabel = string.IsNullOrWhiteSpace(home.Address) ? "Home" : home.Address;
 
         return aggregates
-            .Where(item => item.VisitDates.Count > 0)
+            .Where(item => PlaceIdentity.HasValidCoordinates(item.Latitude, item.Longitude))
             .Select(item =>
             {
                 var distanceKm = GeoMath.DistanceMeters(
@@ -392,7 +396,7 @@ public sealed class TravelRecordsService
                     PlaceName = item.PlaceName,
                     Country = item.Country,
                     DistanceKm = Math.Round(distanceKm, 0),
-                    Year = item.VisitDates.Max().Year,
+                    Year = item.VisitDates.Count > 0 ? item.VisitDates.Max().Year : null,
                     HomePlaceId = null,
                     HomePlaceName = homeLabel,
                     RepresentativeMediaId = item.RepresentativeMediaId,
@@ -460,7 +464,7 @@ public sealed class TravelRecordsService
         return result;
     }
 
-    private async Task<TravelPlaceSummaryDto> ToPlaceSummaryAsync(
+    private Task<TravelPlaceSummaryDto> ToPlaceSummaryAsync(
         TravelPlaceAggregateRaw item,
         int rank,
         CancellationToken cancellationToken)
@@ -469,7 +473,8 @@ public sealed class TravelRecordsService
             ? (DateTimeOffset?)null
             : new DateTimeOffset(item.VisitDates.Max());
 
-        return new TravelPlaceSummaryDto
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(new TravelPlaceSummaryDto
         {
             PlaceId = item.PlaceId,
             PlaceName = item.PlaceName,
@@ -481,7 +486,7 @@ public sealed class TravelRecordsService
             AbsoluteLibraryPath = item.AbsoluteLibraryPath,
             TopTags = [],
             Rank = rank
-        };
+        });
     }
 
     private async Task<IReadOnlyList<string>> GetTopTagsAsync(

@@ -264,16 +264,7 @@ public partial class PlaceManagementViewModel : ObservableObject
 
         try
         {
-            var apiKeySetting = await _settingRepository.GetByKeyAsync(SettingKeys.GoogleMapsApiKey);
-            var apiKey = GoogleMapsApiKeyValidator.NormalizeOrNull(apiKeySetting?.Value);
-            if (apiKey is null)
-            {
-                ShowError(
-                    "Google API Key가 없거나 형식이 올바르지 않습니다. 설정 → Google API에서 AIza… Key를 저장하세요.");
-                IsMapReady = false;
-                return;
-            }
-
+            var apiKey = await MapDisplayCredentialProvider.GetAsync(_settingRepository);
             await _mapController.InitializeAsync(apiKey);
             IsMapReady = true;
             IsMapPickMode = true;

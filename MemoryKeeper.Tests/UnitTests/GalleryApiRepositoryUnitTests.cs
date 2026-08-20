@@ -91,6 +91,36 @@ public sealed class GalleryApiRepositoryUnitTests
         Assert.Equal(ApiErrorCategory.BackendUnavailable, error.Category);
     }
 
+    [Fact]
+    public async Task Catalog_Recovers_Gps_And_Region_From_Detail_When_Map_Row_Is_Missing()
+    {
+        var handler = new StubHandler();
+        const string fileId = "22222222-2222-2222-2222-222222222222";
+        handler.Map["GET /api/common/gallery/search?service_name=MemoryKeeper&page=1&page_size=200&sort=capture_datetime_desc"] =
+            $$"""{"items":[{"file_id":"{{fileId}}","filename":"20260815_140628.jpg","thumbnail_url":"/api/common/gallery/{{fileId}}/thumbnail","preview_url":"/api/common/gallery/{{fileId}}/preview","capture_datetime":"2026-08-15T14:06:28+09:00","country":"대한민국","city":"구례군","place_name":"원기교","has_gps":true,"service_name":"MemoryKeeper"}],"page":1,"page_size":200,"total":1,"sort":"capture_datetime_desc"}""";
+        handler.Map["GET /api/common/gallery/map?service_name=MemoryKeeper"] =
+            """{"items":[],"total":0}""";
+        handler.Map[$"GET /api/common/gallery/{fileId}"] =
+            $$"""{"file_id":"{{fileId}}","filename":"20260815_140628.jpg","service_name":"MemoryKeeper","thumbnail_url":"/api/common/gallery/{{fileId}}/thumbnail","preview_url":"/api/common/gallery/{{fileId}}/preview","metadata":{"gps_lat":35.22742,"gps_lon":127.59052,"country":"대한민국","province":"전라남도","city":"구례군","district":"토지면","place_name":"원기교"},"ai_tags":[],"user_tags":[],"history_count":0}""";
+
+        using var provider = BuildProvider(handler);
+        var catalog = provider.GetRequiredService<IGalleryPhotoCatalog>();
+
+        var snapshot = await catalog.QueryAsync();
+
+        var photo = Assert.Single(snapshot.Photos);
+        Assert.Equal(fileId, photo.FileId);
+        Assert.Contains(fileId, photo.ThumbnailUrl);
+        var location = Assert.Single(snapshot.LocationMetadataByFileId).Value;
+        Assert.Equal(35.22742, location.Latitude!.Value, 5);
+        Assert.Equal(127.59052, location.Longitude!.Value, 5);
+        Assert.Equal("대한민국", location.Country);
+        Assert.Equal("전라남도", location.Province);
+        Assert.Equal("구례군", location.City);
+        Assert.Equal("토지면", location.District);
+        Assert.Equal("원기교", location.PlaceName);
+    }
+
     private static ServiceProvider BuildProvider(HttpMessageHandler handler)
     {
         var services = new ServiceCollection();
@@ -112,6 +142,7 @@ public sealed class GalleryApiRepositoryUnitTests
         services.AddHttpClient(BaseApiClient.HttpClientName)
             .ConfigurePrimaryHttpMessageHandler(() => handler);
         services.AddSingleton<IGalleryApiRepository, GalleryApiRepository>();
+        services.AddSingleton<IGalleryPhotoCatalog, GalleryPhotoCatalog>();
         return services.BuildServiceProvider();
     }
 

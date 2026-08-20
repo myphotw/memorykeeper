@@ -1,4 +1,6 @@
 using MemoryKeeper.App.Maps.Google;
+using MemoryKeeper.App.Services;
+using MemoryKeeper.Application;
 using MemoryKeeper.Application.DTOs;
 using MemoryKeeper.Application.Interfaces;
 using Microsoft.Extensions.Logging;
@@ -7,7 +9,6 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Markup;
 using Microsoft.UI.Xaml.Media;
-using SettingKeys = MemoryKeeper.Application.SettingKeys;
 
 namespace MemoryKeeper.App.Dialogs;
 
@@ -277,8 +278,8 @@ public static class MapPickSession
 
         try
         {
-            var apiKey = await settingRepository.GetByKeyAsync(SettingKeys.GoogleMapsApiKey);
-            await mapController.InitializeAsync(apiKey?.Value);
+            var apiKey = await MapDisplayCredentialProvider.GetAsync(settingRepository);
+            await mapController.InitializeAsync(apiKey);
             await mapController.EnableMapClickAsync(true);
             await mapController.SetEditablePinAsync(initialLatitude, initialLongitude, radiusBox.Value);
             status.Text = await applyAsync(initialLatitude, initialLongitude, radiusBox.Value);

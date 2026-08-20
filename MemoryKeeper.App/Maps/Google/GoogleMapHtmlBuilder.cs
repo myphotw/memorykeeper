@@ -8,15 +8,17 @@ public static class GoogleMapHtmlBuilder
     public static string Build(string? apiKey)
     {
         var normalized = GoogleMapsApiKeyValidator.NormalizeOrNull(apiKey);
+        if (normalized is null)
+        {
+            return OpenStreetMapHtmlBuilder.Build();
+        }
+
         var hasKey = normalized is not null;
         // URL query value must be percent-encoded (HtmlEncode alone breaks spaces/unicode).
         var urlKey = Uri.EscapeDataString(normalized ?? string.Empty);
         var displayKeyHint = hasKey
             ? string.Empty
-            : WebUtility.HtmlEncode(
-                string.IsNullOrWhiteSpace(apiKey)
-                    ? "API Key가 없습니다. 설정 → Google API에서 AIza… Key를 저장하세요."
-                    : "저장된 API Key 형식이 올바르지 않습니다. 설정 → Google API에서 올바른 Key(AIza…)를 저장하세요.");
+            : WebUtility.HtmlEncode("지도 서비스를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.");
 
         return $$"""
 <!DOCTYPE html>
@@ -590,7 +592,7 @@ public static class GoogleMapHtmlBuilder
     captureConsole();
     window.initMap = initMap;
     window.gm_authFailure = function () {
-      showOverlay('Google Maps API 인증에 실패했습니다. 설정 → Google API에서 Key와 Maps JavaScript API 활성화를 확인하세요. Desktop WebView는 Referrer에 https://app.memorykeeper.local/* 허용이 필요할 수 있습니다.');
+      showOverlay('지도 서비스를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.');
       post({ type: 'error', message: 'Google Maps authentication failed (gm_authFailure).' });
     };
 
@@ -603,13 +605,13 @@ public static class GoogleMapHtmlBuilder
       script.async = true;
       script.defer = true;
       script.onerror = function () {
-        showOverlay('Google Maps 스크립트를 불러오지 못했습니다. 네트워크 또는 API Key를 확인하세요.');
+        showOverlay('지도를 불러오지 못했습니다. 네트워크 연결을 확인해 주세요.');
         post({ type: 'error', message: 'Failed to load Google Maps script.' });
       };
       document.head.appendChild(script);
       setTimeout(function () {
         if (!map) {
-          showOverlay('Google Maps 초기화 시간이 초과되었습니다. API Key·Maps JavaScript API·결제 계정을 확인하세요.');
+          showOverlay('지도를 불러오는 데 시간이 오래 걸리고 있습니다. 잠시 후 다시 시도해 주세요.');
           post({ type: 'error', message: 'Google Maps initialization timed out.' });
         }
       }, 20000);

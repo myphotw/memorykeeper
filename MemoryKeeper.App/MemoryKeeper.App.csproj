@@ -25,6 +25,8 @@
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
     <!-- GenXbf Pass2 crashes locally; sanitize loose XAML after compile. -->
     <DisableXbfGeneration>true</DisableXbfGeneration>
+    <MemoryKeeperMapsCredentialFileName>MemoryKeeper.maps.key</MemoryKeeperMapsCredentialFileName>
+    <MemoryKeeperMapsCredentialIntermediate>$(IntermediateOutputPath)$(MemoryKeeperMapsCredentialFileName)</MemoryKeeperMapsCredentialIntermediate>
   </PropertyGroup>
 
   <ItemGroup>
@@ -69,6 +71,44 @@
     <Copy SourceFiles="@(_LooseXamlForPublish)"
           DestinationFiles="@(_LooseXamlForPublish->'$(PublishDir)%(RecursiveDir)%(Filename)%(Extension)')"
           SkipUnchangedFiles="true" />
+  </Target>
+
+  <!--
+    Deployment-only Google Maps JavaScript key. MSBuild imports the environment
+    variable as a property; its value is written only under obj/bin/publish and
+    is never stored in tracked appsettings or source files.
+  -->
+  <Target Name="GenerateMapsDeploymentCredential" BeforeTargets="Build">
+    <Delete Files="$(MemoryKeeperMapsCredentialIntermediate)"
+            Condition="'$(MEMORYKEEPER_GOOGLE_MAPS_JAVASCRIPT_API_KEY)' == ''" />
+    <WriteLinesToFile
+        File="$(MemoryKeeperMapsCredentialIntermediate)"
+        Lines="$(MEMORYKEEPER_GOOGLE_MAPS_JAVASCRIPT_API_KEY)"
+        Overwrite="true"
+        Encoding="UTF-8"
+        Condition="'$(MEMORYKEEPER_GOOGLE_MAPS_JAVASCRIPT_API_KEY)' != ''" />
+  </Target>
+
+  <Target Name="CopyMapsDeploymentCredentialToOutput"
+          AfterTargets="Build"
+          DependsOnTargets="GenerateMapsDeploymentCredential">
+    <Delete Files="$(OutDir)$(MemoryKeeperMapsCredentialFileName)"
+            Condition="'$(MEMORYKEEPER_GOOGLE_MAPS_JAVASCRIPT_API_KEY)' == ''" />
+    <Copy SourceFiles="$(MemoryKeeperMapsCredentialIntermediate)"
+          DestinationFiles="$(OutDir)$(MemoryKeeperMapsCredentialFileName)"
+          SkipUnchangedFiles="true"
+          Condition="'$(MEMORYKEEPER_GOOGLE_MAPS_JAVASCRIPT_API_KEY)' != ''" />
+  </Target>
+
+  <Target Name="CopyMapsDeploymentCredentialToPublish"
+          AfterTargets="Publish"
+          DependsOnTargets="GenerateMapsDeploymentCredential">
+    <Delete Files="$(PublishDir)$(MemoryKeeperMapsCredentialFileName)"
+            Condition="'$(MEMORYKEEPER_GOOGLE_MAPS_JAVASCRIPT_API_KEY)' == ''" />
+    <Copy SourceFiles="$(MemoryKeeperMapsCredentialIntermediate)"
+          DestinationFiles="$(PublishDir)$(MemoryKeeperMapsCredentialFileName)"
+          SkipUnchangedFiles="true"
+          Condition="'$(MEMORYKEEPER_GOOGLE_MAPS_JAVASCRIPT_API_KEY)' != ''" />
   </Target>
 </Project>
 

@@ -2,6 +2,10 @@ namespace MemoryKeeper.Application;
 
 public static class SettingKeys
 {
+    /// <summary>
+    /// Legacy read-only key retained so existing installations and map rendering do not fail.
+    /// New user flows must not request or write this value.
+    /// </summary>
     public const string GoogleMapsApiKey = "GoogleMaps:ApiKey";
 
     public const string PlaceDefaultRadiusMeters = "Place:DefaultRadiusMeters";
@@ -23,7 +27,7 @@ public static class SettingKeys
     public const string TravelHomeAddress = "Travel:HomeAddress";
 
     /// <summary>
-    /// Google Places Place ID for the configured home location (optional).
+    /// Provider place ID for the configured home location (optional).
     /// </summary>
     public const string TravelHomePlaceId = "Travel:HomePlaceId";
 

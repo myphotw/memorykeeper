@@ -17,21 +17,21 @@ public interface ILocationResolver
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Google Places Autocomplete suggestions for the given input.
+    /// Place/autocomplete suggestions for the given input.
     /// </summary>
     Task<IReadOnlyList<PlaceSuggestionDto>> SuggestPlacesAsync(
         string input,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Resolve a Google Place ID to coordinates and formatted address.
+    /// Resolve a provider place ID to coordinates and formatted address.
     /// </summary>
     Task<LocationResult?> ResolvePlaceIdAsync(
         string placeId,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Nearby Google Places ranked by distance from GPS (MK-042O).
+    /// Nearby places ranked by distance from GPS (MK-042O).
     /// </summary>
     Task<IReadOnlyList<NearbyPlaceCandidateDto>> SearchNearbyAsync(
         double latitude,

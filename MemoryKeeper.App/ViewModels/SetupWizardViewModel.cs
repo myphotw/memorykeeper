@@ -1,6 +1,7 @@
+using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using MemoryKeeper.App.Services;
+using MemoryKeeper.Application.DTOs;
 using MemoryKeeper.Application.Services;
 using Microsoft.Extensions.Logging;
 
@@ -9,32 +10,32 @@ namespace MemoryKeeper.App.ViewModels;
 public partial class SetupWizardViewModel : ObservableObject
 {
     private readonly SetupWizardService _setupWizardService;
-    private readonly IFolderPickerService _folderPickerService;
+    private readonly HomeLocationService _homeLocationService;
     private readonly ILogger<SetupWizardViewModel> _logger;
+    private CancellationTokenSource? _suggestCts;
+    private int _suggestVersion;
+    private bool _suppressSuggestions;
 
     [ObservableProperty]
     private int currentStep = 1;
 
     [ObservableProperty]
-    private string storageName = "Photo Library";
-
-    [ObservableProperty]
-    private string photoRoot = string.Empty;
-
-    [ObservableProperty]
     private string homeAddress = string.Empty;
 
     [ObservableProperty]
-    private string homeLatitude = string.Empty;
+    private string homeResolvedSummary = string.Empty;
 
     [ObservableProperty]
-    private string homeLongitude = string.Empty;
+    private ObservableCollection<PlaceSuggestionDto> homeSuggestions = [];
 
     [ObservableProperty]
-    private string googleMapsApiKey = string.Empty;
+    private bool hasHomeSuggestions;
 
     [ObservableProperty]
-    private string statusMessage = "MemoryKeeper 저장소 폴더를 선택하세요.";
+    private bool hasSelectedHome;
+
+    [ObservableProperty]
+    private string statusMessage = "집으로 사용할 주소나 장소를 검색하세요.";
 
     [ObservableProperty]
     private bool isBusy;
@@ -46,73 +47,66 @@ public partial class SetupWizardViewModel : ObservableObject
 
     public SetupWizardViewModel(
         SetupWizardService setupWizardService,
-        IFolderPickerService folderPickerService,
+        HomeLocationService homeLocationService,
         ILogger<SetupWizardViewModel> logger)
     {
         _setupWizardService = setupWizardService;
-        _folderPickerService = folderPickerService;
+        _homeLocationService = homeLocationService;
         _logger = logger;
     }
 
     [RelayCommand]
-    private async Task BrowsePhotoRootAsync()
+    private async Task LoadAsync()
     {
-        var path = await _folderPickerService.PickFolderAsync("MemoryKeeper 저장소 폴더 선택");
-        if (!string.IsNullOrWhiteSpace(path))
-        {
-            Directory.CreateDirectory(path);
-            PhotoRoot = path;
-        }
-    }
-
-    [RelayCommand]
-    private async Task NextAsync()
-    {
-        if (IsBusy)
-        {
-            return;
-        }
-
         try
         {
-            IsBusy = true;
-            switch (CurrentStep)
+            var home = await _homeLocationService.GetAsync();
+            if (home.IsConfigured)
             {
-                case 1:
-                    if (string.IsNullOrWhiteSpace(PhotoRoot))
-                    {
-                        StatusMessage = "MemoryKeeper 저장소 폴더를 선택하세요.";
-                        return;
-                    }
-
-                    var status = await _setupWizardService.GetStatusAsync();
-                    if (!status.HasStorage)
-                    {
-                        await _setupWizardService.CreateInitialStorageAsync(StorageName, PhotoRoot);
-                    }
-
-                    StatusMessage = "Home Location을 설정하세요. (주소 또는 좌표)";
-                    CurrentStep = 2;
-                    break;
-
-                case 2:
-                    await SaveHomeAsync();
-                    StatusMessage = "Google Maps API Key는 선택 사항입니다. 없으면 지도 기능만 비활성화됩니다.";
-                    CurrentStep = 3;
-                    break;
-
-                case 3:
-                    await _setupWizardService.SaveGoogleMapsApiKeyAsync(GoogleMapsApiKey);
-                    StatusMessage = "설정을 완료하면 Home으로 이동합니다.";
-                    CurrentStep = 4;
-                    CanFinish = true;
-                    break;
+                ApplyHome(home);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Setup wizard step {Step} failed.", CurrentStep);
-            StatusMessage = ex.Message;
+            _logger.LogWarning(ex, "Existing home location could not be loaded in setup.");
+            StatusMessage = "저장된 집 위치를 불러오지 못했습니다. 다시 검색해 주세요.";
+        }
+    }
+
+    partial void OnHomeAddressChanged(string value)
+    {
+        if (_suppressSuggestions)
+        {
+            return;
+        }
+
+        HasSelectedHome = false;
+        HomeResolvedSummary = string.Empty;
+        _ = SuggestHomePlacesAsync(value);
+    }
+
+    [RelayCommand]
+    private async Task SelectHomeSuggestionAsync(PlaceSuggestionDto? suggestion)
+    {
+        if (suggestion is null || string.IsNullOrWhiteSpace(suggestion.PlaceId) || IsBusy)
+        {
+            return;
+        }
+
+        CancelSuggestions();
+        IsBusy = true;
+        try
+        {
+            var saved = await _homeLocationService.SavePlaceSelectionAsync(suggestion.PlaceId);
+            ApplyHome(saved);
+            HomeSuggestions.Clear();
+            HasHomeSuggestions = false;
+            StatusMessage = "집 위치를 선택했습니다.";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Home place selection failed during setup.");
+            StatusMessage = "선택한 장소를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.";
         }
         finally
         {
@@ -121,43 +115,54 @@ public partial class SetupWizardViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void Back()
+    private void ChangeHome()
     {
-        if (CurrentStep <= 1 || IsBusy)
+        HasSelectedHome = false;
+        HomeResolvedSummary = string.Empty;
+        StatusMessage = "새 집 위치를 검색하세요.";
+    }
+
+    [RelayCommand]
+    private async Task NextAsync()
+    {
+        if (IsBusy || CurrentStep != 1)
         {
             return;
         }
 
-        CurrentStep--;
-        CanFinish = false;
-        StatusMessage = CurrentStep switch
+        if (!HasSelectedHome)
         {
-            1 => "MemoryKeeper 저장소 폴더를 선택하세요.",
-            2 => "Home Location을 설정하세요.",
-            3 => "Google Maps API Key (선택).",
-            _ => StatusMessage
-        };
+            StatusMessage = "검색 결과에서 집 위치를 선택하세요.";
+            return;
+        }
+
+        var status = await _setupWizardService.GetStatusAsync();
+        if (!status.HasHomeLocation)
+        {
+            StatusMessage = "집 위치를 저장하지 못했습니다. 다시 선택해 주세요.";
+            return;
+        }
+
+        CurrentStep = 2;
+        CanFinish = true;
+        StatusMessage = "준비가 끝났습니다. 바로 MemoryKeeper를 시작할 수 있습니다.";
     }
 
     [RelayCommand]
-    private Task SkipMapsAsync()
+    private void Back()
     {
-        if (CurrentStep != 3 || IsBusy)
+        if (CurrentStep == 2 && !IsBusy)
         {
-            return Task.CompletedTask;
+            CurrentStep = 1;
+            CanFinish = false;
+            StatusMessage = "선택한 집 위치를 확인하거나 변경하세요.";
         }
-
-        // Do not clear an existing API Key when skipping (MK-042I retention rule).
-        StatusMessage = "지도 API Key 설정을 건너뛰었습니다. 기존 Key가 있으면 유지됩니다.";
-        CurrentStep = 4;
-        CanFinish = true;
-        return Task.CompletedTask;
     }
 
     [RelayCommand]
     private async Task FinishAsync()
     {
-        if (IsBusy)
+        if (IsBusy || !CanFinish)
         {
             return;
         }
@@ -171,7 +176,7 @@ public partial class SetupWizardViewModel : ObservableObject
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to mark setup complete.");
-            StatusMessage = ex.Message;
+            StatusMessage = "초기 설정을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.";
         }
         finally
         {
@@ -179,45 +184,66 @@ public partial class SetupWizardViewModel : ObservableObject
         }
     }
 
-    private async Task SaveHomeAsync()
+    private async Task SuggestHomePlacesAsync(string input)
     {
-        if (!string.IsNullOrWhiteSpace(HomeAddress))
+        var version = Interlocked.Increment(ref _suggestVersion);
+        CancelSuggestions();
+        _suggestCts = new CancellationTokenSource();
+        var token = _suggestCts.Token;
+
+        try
         {
-            try
+            await Task.Delay(350, token);
+            if (version != _suggestVersion)
             {
-                await _setupWizardService.SaveHomeByAddressAsync(HomeAddress);
                 return;
             }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Address geocode failed; trying coordinates.");
-                if (!TryParseCoordinates(out var lat, out var lon))
-                {
-                    throw new InvalidOperationException(
-                        "주소 변환에 실패했습니다. Google Maps API Key를 나중에 설정하거나 위도/경도를 직접 입력하세요. " + ex.Message);
-                }
 
-                await _setupWizardService.SaveHomeByCoordinatesAsync(lat, lon, HomeAddress);
+            if (string.IsNullOrWhiteSpace(input) || input.Trim().Length < 2)
+            {
+                HomeSuggestions.Clear();
+                HasHomeSuggestions = false;
                 return;
             }
-        }
 
-        if (TryParseCoordinates(out var latitude, out var longitude))
+            var suggestions = await _homeLocationService.SuggestPlacesAsync(input.Trim(), token);
+            if (version != _suggestVersion)
+            {
+                return;
+            }
+
+            HomeSuggestions = new ObservableCollection<PlaceSuggestionDto>(suggestions);
+            HasHomeSuggestions = HomeSuggestions.Count > 0;
+            StatusMessage = HasHomeSuggestions
+                ? "검색 결과에서 집 위치를 선택하세요."
+                : "검색 결과가 없습니다. 다른 주소나 장소명으로 검색해 주세요.";
+        }
+        catch (OperationCanceledException)
         {
-            await _setupWizardService.SaveHomeByCoordinatesAsync(latitude, longitude);
-            return;
+            // Debounce cancellation is expected.
         }
-
-        throw new InvalidOperationException("Home 주소 또는 위도/경도를 입력하세요.");
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Home place suggestions failed during setup.");
+            HomeSuggestions.Clear();
+            HasHomeSuggestions = false;
+            StatusMessage = "주소 검색에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.";
+        }
     }
 
-    private bool TryParseCoordinates(out double latitude, out double longitude)
+    private void ApplyHome(HomeLocationDto home)
     {
-        latitude = 0;
-        longitude = 0;
-        return double.TryParse(HomeLatitude.Trim(), System.Globalization.NumberStyles.Float,
-                   System.Globalization.CultureInfo.InvariantCulture, out latitude)
-               && double.TryParse(HomeLongitude.Trim(), System.Globalization.NumberStyles.Float,
-                   System.Globalization.CultureInfo.InvariantCulture, out longitude);
+        _suppressSuggestions = true;
+        HomeAddress = home.Address;
+        _suppressSuggestions = false;
+        HomeResolvedSummary = string.IsNullOrWhiteSpace(home.Address) ? "저장된 집 위치" : home.Address;
+        HasSelectedHome = home.IsConfigured;
+    }
+
+    private void CancelSuggestions()
+    {
+        _suggestCts?.Cancel();
+        _suggestCts?.Dispose();
+        _suggestCts = null;
     }
 }

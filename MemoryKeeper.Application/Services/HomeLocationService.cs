@@ -88,7 +88,7 @@ public sealed class HomeLocationService
         var resolved = await _locationResolver.ResolveAddressAsync(address.Trim(), cancellationToken);
         if (resolved is null)
         {
-            throw new InvalidOperationException("주소를 좌표로 변환하지 못했습니다. API Key와 주소를 확인하세요.");
+            throw new InvalidOperationException("주소를 찾지 못했습니다. 검색어를 확인하고 다시 시도해 주세요.");
         }
 
         return await SaveCoordinatesAsync(
@@ -108,7 +108,7 @@ public sealed class HomeLocationService
         var resolved = await _locationResolver.ResolvePlaceIdAsync(placeId.Trim(), cancellationToken);
         if (resolved is null)
         {
-            throw new InvalidOperationException("선택한 장소를 확인하지 못했습니다. API Key와 Places API 설정을 확인하세요.");
+            throw new InvalidOperationException("선택한 장소를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.");
         }
 
         return await SaveCoordinatesAsync(

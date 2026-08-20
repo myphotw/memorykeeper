@@ -54,7 +54,7 @@ public sealed class PrototypeMaintenanceService : IPrototypeMaintenanceService
         return new MaintenanceResultDto
         {
             Succeeded = true,
-            Message = "전체 초기화가 완료되었습니다. (사진 원본은 유지, 설정/API Key 포함 DB 초기화)",
+            Message = "전체 초기화가 완료되었습니다. (사진 원본은 유지, 앱 설정을 포함한 DB 초기화)",
             OutputPath = DatabasePath
         };
     }
@@ -91,7 +91,7 @@ public sealed class PrototypeMaintenanceService : IPrototypeMaintenanceService
         return Task.FromResult(new MaintenanceResultDto
         {
             Succeeded = true,
-            Message = $"Thumbnail cache {deleted}개 파일을 삭제했습니다. (API Key 유지)",
+            Message = $"Thumbnail cache {deleted}개 파일을 삭제했습니다. (앱 설정 유지)",
             OutputPath = _thumbnailCachePath
         });
     }
@@ -112,7 +112,7 @@ public sealed class PrototypeMaintenanceService : IPrototypeMaintenanceService
         return new MaintenanceResultDto
         {
             Succeeded = true,
-            Message = "사진등록 데이터(Media/Place/Tag)를 초기화했습니다. 사진 원본과 Storage/설정(API Key 포함)은 유지됩니다."
+            Message = "사진등록 데이터(Media/Place/Tag)를 초기화했습니다. 사진 원본과 Storage/설정은 유지됩니다."
         };
     }
 
@@ -158,7 +158,7 @@ public sealed class PrototypeMaintenanceService : IPrototypeMaintenanceService
         return new MaintenanceResultDto
         {
             Succeeded = true,
-            Message = $"장소/여행기록을 재생성했습니다. 배정 {assigned}건. (API Key 유지)"
+            Message = $"장소/여행기록을 재생성했습니다. 배정 {assigned}건."
         };
     }
 

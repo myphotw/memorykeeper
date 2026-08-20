@@ -9,7 +9,7 @@ public interface IPrototypeMaintenanceService
     string ThumbnailCachePath { get; }
 
     /// <summary>
-    /// Full reset: deletes SQLite database and remigrates. Clears Settings including API Key.
+    /// Full reset: deletes SQLite database and remigrates. Clears Settings.
     /// Photo originals are kept.
     /// </summary>
     Task<MaintenanceResultDto> ResetDatabaseAsync(CancellationToken cancellationToken = default);
@@ -21,13 +21,13 @@ public interface IPrototypeMaintenanceService
 
     /// <summary>
     /// Clears TB_MEDIA, TB_PLACE, TB_MEDIA_TAG, TB_TAG. Storages/Settings and photo files remain.
-    /// Google API Key is preserved.
+    /// App settings are preserved.
     /// </summary>
     Task<MaintenanceResultDto> ClearImportDataAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Clears Place assignments and recreates Places from media GPS using existing assignment logic.
-    /// Visit/Travel views are derived from Media/Place. Google API Key is preserved.
+    /// Visit/Travel views are derived from Media/Place. App settings are preserved.
     /// </summary>
     Task<MaintenanceResultDto> RegeneratePlacesAsync(CancellationToken cancellationToken = default);
 

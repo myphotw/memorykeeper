@@ -70,33 +70,28 @@ public static class GalleryBackendBridge
     }
 
     public static async Task<VisitRecordQueryResult> QueryVisitRecordsAsync(
-        IGalleryApiRepository galleryApi,
-        string apiBaseUrl,
+        IGalleryPhotoCatalog catalog,
         string? keyword = null,
         int? year = null,
         string? country = null,
         CancellationToken cancellationToken = default)
     {
-        var mapTask = galleryApi.GetMapAsync(year: year, cancellationToken: cancellationToken);
-        var searchTask = galleryApi.SearchAsync(
-            year: year,
-            country: country,
-            keyword: keyword,
-            page: 1,
-            pageSize: 200,
-            cancellationToken: cancellationToken);
-
-        await Task.WhenAll(mapTask, searchTask).ConfigureAwait(false);
-        var map = await mapTask.ConfigureAwait(false);
-        var search = await searchTask.ConfigureAwait(false);
-
-        var mapPlaces = GroupMarkersToVisitPlaces(map.Items, apiBaseUrl);
-        var timelinePlaces = GroupPhotosToVisitPlaces(search.Items, apiBaseUrl, map.Items);
+        var snapshot = await catalog.QueryAsync(year, country, keyword, cancellationToken)
+            .ConfigureAwait(false);
+        // Search rows enrich map coordinates with the same country/place metadata and
+        // authenticated thumbnail URLs used by Gallery and Travel Records.
+        var enrichedPlaces = GroupPhotosToVisitPlaces(
+            snapshot.Photos,
+            snapshot.ApiBaseUrl,
+            snapshot.MapMarkers,
+            snapshot.LocationMetadataByFileId);
+        var markerFallback = GroupMarkersToVisitPlaces(snapshot.MapMarkers, snapshot.ApiBaseUrl);
+        var mapPlaces = enrichedPlaces.Count > 0 ? enrichedPlaces : markerFallback;
 
         return new VisitRecordQueryResult
         {
             AllMapPlaces = mapPlaces,
-            TimelinePlaces = timelinePlaces.Count > 0 ? timelinePlaces : mapPlaces,
+            TimelinePlaces = mapPlaces,
             Chips = string.IsNullOrWhiteSpace(keyword)
                 ? []
                 : [new MemorySearchChipDto { Label = keyword.Trim(), Kind = MemorySearchChipKind.Place }],
@@ -130,24 +125,24 @@ public static class GalleryBackendBridge
     /// </summary>
     public static async Task<HomeDashboardDto> GetHomeDashboardAsync(
         IGalleryApiRepository galleryApi,
-        string apiBaseUrl,
+        IGalleryPhotoCatalog catalog,
         CancellationToken cancellationToken = default)
     {
         var statsTask = galleryApi.GetStatisticsAsync(cancellationToken: cancellationToken);
-        var searchTask = galleryApi.SearchAsync(
-            page: 1,
-            pageSize: 48,
-            sort: "capture_datetime_desc",
-            cancellationToken: cancellationToken);
-        var mapTask = galleryApi.GetMapAsync(cancellationToken: cancellationToken);
+        var catalogTask = catalog.QueryAsync(cancellationToken: cancellationToken);
 
-        await Task.WhenAll(statsTask, searchTask, mapTask).ConfigureAwait(false);
+        await Task.WhenAll(statsTask, catalogTask).ConfigureAwait(false);
         var stats = await statsTask.ConfigureAwait(false);
-        var search = await searchTask.ConfigureAwait(false);
-        var map = await mapTask.ConfigureAwait(false);
+        var snapshot = await catalogTask.ConfigureAwait(false);
+        var photos = snapshot.Photos;
+        var apiBaseUrl = snapshot.ApiBaseUrl;
 
-        var mapPlaces = GroupMarkersToVisitPlaces(map.Items, apiBaseUrl);
-        var timelinePlaces = GroupPhotosToVisitPlaces(search.Items, apiBaseUrl, map.Items);
+        var mapPlaces = GroupMarkersToVisitPlaces(snapshot.MapMarkers, apiBaseUrl);
+        var timelinePlaces = GroupPhotosToVisitPlaces(
+            photos,
+            apiBaseUrl,
+            snapshot.MapMarkers,
+            snapshot.LocationMetadataByFileId);
 
         var placePool = timelinePlaces.Count > 0 ? timelinePlaces : mapPlaces;
         var recentVisits = placePool
@@ -168,7 +163,7 @@ public static class GalleryBackendBridge
             })
             .ToList();
 
-        var recentImports = search.Items
+        var recentImports = photos
             .Take(6)
             .Select(photo =>
             {
@@ -215,7 +210,7 @@ public static class GalleryBackendBridge
 
         if (heroes.Count == 0)
         {
-            foreach (var photo in search.Items.Take(5))
+            foreach (var photo in photos.Take(5))
             {
                 var thumb = ResolveThumbnailUrl(apiBaseUrl, photo.FileId, photo.ThumbnailUrl)
                             ?? GalleryBackendMapper.ToAbsoluteUrl(apiBaseUrl, photo.PreviewUrl);
@@ -246,7 +241,7 @@ public static class GalleryBackendBridge
         }
 
         var placeCount = mapPlaces.Count > 0 ? mapPlaces.Count : placePool.Count;
-        var lastDate = search.Items
+        var lastDate = photos
             .Select(p => p.CaptureDatetime)
             .Where(d => d.HasValue)
             .Select(d => d!.Value)
@@ -388,17 +383,30 @@ public static class GalleryBackendBridge
     public static IReadOnlyList<VisitRecordPlaceDto> GroupPhotosToVisitPlaces(
         IReadOnlyList<PhotoDto> photos,
         string apiBaseUrl,
-        IReadOnlyList<MapMarkerDto>? markers = null)
+        IReadOnlyList<MapMarkerDto>? markers = null,
+        IReadOnlyDictionary<string, GalleryPhotoLocationMetadataDto>? locationMetadataByFileId = null)
     {
-        var coordsByFileId = BuildCoordsByFileId(markers);
+        var coordsByFileId = BuildCoordsByFileId(markers, locationMetadataByFileId);
 
         return photos
             // Align with map markers: place_name only (not country|city|placeName).
-            .GroupBy(photo => PlaceIdentity.MapPlaceKey(photo.PlaceName))
+            .GroupBy(photo => PlaceIdentity.MapPlaceKey(
+                ResolvePlaceName(photo, locationMetadataByFileId)))
             .Select(group =>
             {
                 var list = group.ToList();
                 var first = list[0];
+                var country = list.Select(p => FirstNonEmpty(
+                        p.Country,
+                        LookupLocationMetadata(locationMetadataByFileId, p.FileId)?.Country))
+                    .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? string.Empty;
+                var city = list.Select(p => FirstNonEmpty(
+                        p.City,
+                        LookupLocationMetadata(locationMetadataByFileId, p.FileId)?.City,
+                        LookupLocationMetadata(locationMetadataByFileId, p.FileId)?.District))
+                    .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? string.Empty;
+                var placeName = list.Select(p => ResolvePlaceName(p, locationMetadataByFileId))
+                    .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
                 var dates = list.Select(p => p.CaptureDatetime).Where(d => d.HasValue).Select(d => d!.Value).OrderBy(d => d).ToList();
                 var years = dates.Select(d => d.Year).Distinct().OrderByDescending(y => y).ToList();
                 var rep = list.FirstOrDefault(p => p.Favorite) ?? first;
@@ -416,10 +424,10 @@ public static class GalleryBackendBridge
 
                 return new VisitRecordPlaceDto
                 {
-                    PlaceId = PlaceIdentity.MapStableId(first.PlaceName),
-                    PlaceName = PlaceIdentity.DisplayName(first.PlaceName),
-                    Country = first.Country ?? string.Empty,
-                    City = first.City ?? string.Empty,
+                    PlaceId = PlaceIdentity.MapStableId(placeName),
+                    PlaceName = PlaceIdentity.DisplayName(placeName),
+                    Country = country,
+                    City = city,
                     Latitude = resolved?.Latitude ?? 0,
                     Longitude = resolved?.Longitude ?? 0,
                     PhotoCount = list.Count,
@@ -433,7 +441,7 @@ public static class GalleryBackendBridge
                     AllPhotos = list.Select(p => ToPreview(p, apiBaseUrl)).ToList(),
                     PreviewPhotos = list.Take(8).Select(p => ToPreview(p, apiBaseUrl)).ToList(),
                     MarkerScale = 1.0,
-                    IsUnclassified = string.IsNullOrWhiteSpace(first.PlaceName),
+                    IsUnclassified = string.IsNullOrWhiteSpace(placeName),
                 };
             })
             .OrderByDescending(p => p.LastCapturedDate)
@@ -447,15 +455,11 @@ public static class GalleryBackendBridge
         PlaceIdentity.Key(country, city, placeName);
 
     private static Dictionary<string, (double Lat, double Lon)> BuildCoordsByFileId(
-        IReadOnlyList<MapMarkerDto>? markers)
+        IReadOnlyList<MapMarkerDto>? markers,
+        IReadOnlyDictionary<string, GalleryPhotoLocationMetadataDto>? locationMetadataByFileId = null)
     {
         var dict = new Dictionary<string, (double Lat, double Lon)>(StringComparer.OrdinalIgnoreCase);
-        if (markers is null)
-        {
-            return dict;
-        }
-
-        foreach (var marker in markers)
+        foreach (var marker in markers ?? [])
         {
             var fileId = marker.FileId?.Trim();
             if (string.IsNullOrWhiteSpace(fileId)
@@ -470,8 +474,44 @@ public static class GalleryBackendBridge
             }
         }
 
+        if (locationMetadataByFileId is not null)
+        {
+            foreach (var (fileId, metadata) in locationMetadataByFileId)
+            {
+                if (metadata.Latitude is double latitude
+                    && metadata.Longitude is double longitude
+                    && PlaceIdentity.HasValidCoordinates(latitude, longitude))
+                {
+                    dict.TryAdd(fileId, (latitude, longitude));
+                }
+            }
+        }
+
         return dict;
     }
+
+    private static string? ResolvePlaceName(
+        PhotoDto photo,
+        IReadOnlyDictionary<string, GalleryPhotoLocationMetadataDto>? locationMetadataByFileId) =>
+        FirstNonEmpty(
+            photo.PlaceName,
+            LookupLocationMetadata(locationMetadataByFileId, photo.FileId)?.PlaceName);
+
+    private static GalleryPhotoLocationMetadataDto? LookupLocationMetadata(
+        IReadOnlyDictionary<string, GalleryPhotoLocationMetadataDto>? locationMetadataByFileId,
+        string? fileId)
+    {
+        var key = fileId?.Trim();
+        return locationMetadataByFileId is not null
+               && !string.IsNullOrWhiteSpace(key)
+               && locationMetadataByFileId.TryGetValue(key, out var metadata)
+            ? metadata
+            : null;
+    }
+
+    private static string? FirstNonEmpty(params string?[] values) =>
+        values.Select(value => value?.Trim())
+            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
 
     private static (double Latitude, double Longitude)? LookupCoords(
         IReadOnlyDictionary<string, (double Lat, double Lon)> coordsByFileId,

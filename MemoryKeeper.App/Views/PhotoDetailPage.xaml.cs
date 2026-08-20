@@ -56,8 +56,8 @@ public sealed partial class PhotoDetailPage : Page
 
             try
             {
-                var apiKey = await _settingRepository.GetByKeyAsync(SettingKeys.GoogleMapsApiKey);
-                await _mapController.InitializeAsync(apiKey?.Value);
+                var apiKey = await MapDisplayCredentialProvider.GetAsync(_settingRepository);
+                await _mapController.InitializeAsync(apiKey);
             }
             catch
             {
@@ -447,8 +447,8 @@ public sealed partial class PhotoDetailPage : Page
 
         try
         {
-            var apiKey = await _settingRepository.GetByKeyAsync(SettingKeys.GoogleMapsApiKey);
-            await mapController.InitializeAsync(apiKey?.Value);
+            var apiKey = await MapDisplayCredentialProvider.GetAsync(_settingRepository);
+            await mapController.InitializeAsync(apiKey);
             await mapController.EnableMapClickAsync(true);
             await mapController.SetEditablePinAsync(
                 ViewModel.MapPickLatitude,

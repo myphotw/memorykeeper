@@ -84,37 +84,16 @@
                     <StackPanel Spacing="10">
                         <TextBlock Text="Home Location" Style="{StaticResource MkSectionTitleStyle}" Margin="0" />
                         <TextBlock
-                            Text="가장 멀리 여행한 장소를 계산하려면 Home 좌표가 필요합니다."
+                            Text="가장 멀리 여행한 장소를 계산하려면 집 주소를 설정해 주세요."
                             Style="{StaticResource MkCaptionTextStyle}" />
                         <TextBox
                             Style="{StaticResource MkTextBoxStyle}"
-                            Header="주소"
+                            Header="주소 또는 장소 검색"
                             Text="{Binding HomeAddressInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                         <Button
-                            Content="주소로 저장"
+                            Content="검색하여 저장"
                             Style="{StaticResource MkPrimaryButtonStyle}"
                             Command="{Binding SaveHomeByAddressCommand}"
-                            HorizontalAlignment="Left" />
-                        <Grid
-                            x:Name="HomeCoordGrid"
-                            ColumnDefinitions="*,*"
-                            ColumnSpacing="8"
-                            MaxWidth="{StaticResource MkInputMaxWidth}"
-                            HorizontalAlignment="Left">
-                            <TextBox
-                                Header="위도"
-                                Text="{Binding HomeLatitudeInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                MinHeight="40" />
-                            <TextBox
-                                Grid.Column="1"
-                                Header="경도"
-                                Text="{Binding HomeLongitudeInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                MinHeight="40" />
-                        </Grid>
-                        <Button
-                            Content="좌표로 저장"
-                            Style="{StaticResource MkSecondaryButtonStyle}"
-                            Command="{Binding SaveHomeByCoordinatesCommand}"
                             HorizontalAlignment="Left" />
                     </StackPanel>
                 </Border>
@@ -239,7 +218,7 @@
                         Visibility="{Binding HasFarthest, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}">
                         <StackPanel Spacing="4">
                             <TextBlock Text="가장 멀리 간 여행" Style="{StaticResource InsightLabelStyle}" />
-                            <TextBlock Text="Home을 설정하면 보여요" Style="{StaticResource InsightTitleStyle}" Opacity="0.55" />
+                            <TextBlock Text="{Binding FarthestEmptyMessage, Mode=OneWay}" Style="{StaticResource InsightTitleStyle}" Opacity="0.55" />
                         </StackPanel>
                     </Border>
 

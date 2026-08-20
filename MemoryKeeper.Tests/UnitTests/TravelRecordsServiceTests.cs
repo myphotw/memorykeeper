@@ -144,6 +144,85 @@ public class TravelRecordsServiceTests
         Assert.Equal(1, dashboard.MostVisitedPlace?.VisitRecordCount);
     }
 
+    [Fact]
+    public async Task GetDashboardAsync_WithConfiguredHome_IgnoresRecordsWithoutValidCoordinatesForFarthest()
+    {
+        var repo = new FixedAggregates(
+        [
+            new TravelPlaceAggregateRaw
+            {
+                PlaceId = Guid.NewGuid(),
+                PlaceName = "좌표없음",
+                Country = "대한민국",
+                Latitude = 0,
+                Longitude = 0,
+                PhotoCount = 1,
+                VisitDates = [new DateTime(2025, 1, 1)],
+            },
+        ]);
+        var homeLocation = new HomeLocationService(
+            new HomeSettingRepository(new Dictionary<string, string>
+            {
+                [SettingKeys.TravelHomeLatitude] = "37.5665",
+                [SettingKeys.TravelHomeLongitude] = "126.9780",
+                [SettingKeys.TravelHomeAddress] = "서울",
+            }),
+            new NoOpLocationResolver(),
+            NullLogger<HomeLocationService>.Instance);
+        var service = new TravelRecordsService(
+            repo,
+            new InMemoryMediaTagRepository(),
+            new InMemoryTagRepository(),
+            homeLocation,
+            NullLogger<TravelRecordsService>.Instance);
+
+        var dashboard = await service.GetDashboardAsync();
+
+        Assert.Null(dashboard.FarthestPlace);
+    }
+
+    [Fact]
+    public async Task GetDashboardAsync_OneUndatedNasPhoto_StillUsesCountryAndGpsForInsights()
+    {
+        var guryeId = Guid.NewGuid();
+        var repo = new FixedAggregates(
+        [
+            new TravelPlaceAggregateRaw
+            {
+                PlaceId = guryeId,
+                PlaceName = "원기교",
+                Country = "대한민국",
+                Latitude = 35.22742,
+                Longitude = 127.59052,
+                PhotoCount = 1,
+                VisitDates = [],
+            },
+        ]);
+        var homeLocation = new HomeLocationService(
+            new HomeSettingRepository(new Dictionary<string, string>
+            {
+                [SettingKeys.TravelHomeLatitude] = "37.495",
+                [SettingKeys.TravelHomeLongitude] = "126.875",
+                [SettingKeys.TravelHomeAddress] = "대한민국 서울특별시 구로구 구일로8길 6",
+            }),
+            new NoOpLocationResolver(),
+            NullLogger<HomeLocationService>.Instance);
+        var service = new TravelRecordsService(
+            repo,
+            new InMemoryMediaTagRepository(),
+            new InMemoryTagRepository(),
+            homeLocation,
+            NullLogger<TravelRecordsService>.Instance);
+
+        var dashboard = await service.GetDashboardAsync();
+
+        Assert.Equal("대한민국", dashboard.TopCountry?.Country);
+        Assert.Equal(0, dashboard.TopCountry?.VisitRecordCount);
+        Assert.Equal(guryeId, dashboard.FarthestPlace?.PlaceId);
+        Assert.True(dashboard.FarthestPlace?.DistanceKm > 200);
+        Assert.Null(dashboard.FarthestPlace?.Year);
+    }
+
     private sealed class FixedAggregates : ITravelRecordsRepository
     {
         private readonly IReadOnlyList<TravelPlaceAggregateRaw> _items;
