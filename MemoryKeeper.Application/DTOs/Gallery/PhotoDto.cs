@@ -23,11 +23,20 @@ public sealed class PhotoDto
     [JsonPropertyName("country")]
     public string? Country { get; init; }
 
+    [JsonPropertyName("province")]
+    public string? Province { get; init; }
+
     [JsonPropertyName("city")]
     public string? City { get; init; }
 
+    [JsonPropertyName("district")]
+    public string? District { get; init; }
+
     [JsonPropertyName("place_name")]
     public string? PlaceName { get; init; }
+
+    [JsonPropertyName("place_type")]
+    public string? PlaceType { get; init; }
 
     [JsonPropertyName("camera_model")]
     public string? CameraModel { get; init; }
@@ -43,4 +52,17 @@ public sealed class PhotoDto
 
     [JsonPropertyName("service_name")]
     public string ServiceName { get; init; } = "MemoryKeeper";
+
+    /// <summary>
+    /// Optional Backend registration timestamps. Current V1 search rows may omit both;
+    /// they preserve the former CapturedAt -&gt; ImportedAt year fallback when available.
+    /// </summary>
+    [JsonPropertyName("imported_at")]
+    public DateTimeOffset? ImportedAt { get; init; }
+
+    [JsonPropertyName("created_at")]
+    public DateTimeOffset? CreatedAt { get; init; }
+
+    [JsonPropertyName("status")]
+    public string? Status { get; init; }
 }

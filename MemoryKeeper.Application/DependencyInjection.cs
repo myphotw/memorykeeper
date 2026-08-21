@@ -12,6 +12,7 @@ public static class DependencyInjection
         services.AddSingleton<ICatalogInvalidation, CatalogInvalidation>();
         services.AddSingleton<IImportJobSessionStore, ImportJobSessionStore>();
         services.AddTransient<MediaService>();
+        services.AddTransient<GalleryHierarchyService>();
         services.AddTransient<MediaImportService>();
         services.AddTransient<UploadMonitorService>();
         services.AddTransient<BulkUploadMonitorService>();
