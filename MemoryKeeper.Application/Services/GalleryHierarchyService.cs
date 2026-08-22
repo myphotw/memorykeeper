@@ -43,8 +43,8 @@ public sealed class GalleryHierarchyService
             .OrderByDescending(item => item.Year)
             .ToList();
 
-        var recentCount = photos
-            .Count(photo => ResolveImportedAt(photo.Photo).HasValue);
+        var recentCount = photos.Count(photo =>
+            photo.RecentRank.HasValue || ResolveImportedAt(photo.Photo).HasValue);
 
         return new GallerySidebarSummaryDto
         {
@@ -213,6 +213,66 @@ public sealed class GalleryHierarchyService
         GalleryHierarchyQuery query,
         CancellationToken cancellationToken = default)
     {
+        var filtered = await QueryPhotosAsync(query, cancellationToken).ConfigureAwait(false);
+        if (query.RecentOnly)
+        {
+            return filtered
+                .OrderBy(photo => photo.RecentRank ?? int.MaxValue)
+                .ThenByDescending(photo => ResolveImportedAt(photo.Photo))
+                .Select(photo => photo.Photo)
+                .ToList();
+        }
+
+        return filtered
+            .OrderByDescending(photo => ResolveSortDate(photo.Photo))
+            .Select(photo => photo.Photo)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Projects the exact same hierarchy selection into Visit Map places. Place identity,
+    /// display name, counts, coordinates and previews therefore share one NAS-only source.
+    /// </summary>
+    public async Task<VisitRecordQueryResult> QueryVisitRecordsAsync(
+        GalleryHierarchyQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        var photos = await QueryPhotosAsync(query, cancellationToken).ConfigureAwait(false);
+        var places = photos
+            .Where(HasPlace)
+            .GroupBy(PlaceStableId)
+            .Select(group => ToVisitPlace(group.Key, group.ToList()))
+            .Concat(photos
+                .Where(photo => !HasPlace(photo))
+                .GroupBy(_ => LibraryConstants.UnclassifiedPlaceId)
+                .Select(group => ToVisitPlace(group.Key, group.ToList(), isUnclassified: true)))
+            .OrderByDescending(place => place.LastCapturedDate)
+            .ThenBy(place => place.PlaceName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var chips = string.IsNullOrWhiteSpace(query.SearchText)
+            ? Array.Empty<MemorySearchChipDto>()
+            : new[]
+            {
+                new MemorySearchChipDto
+                {
+                    Label = query.SearchText.Trim(),
+                    Kind = MemorySearchChipKind.Place,
+                },
+            };
+
+        return new VisitRecordQueryResult
+        {
+            AllMapPlaces = places,
+            TimelinePlaces = places,
+            Chips = chips,
+        };
+    }
+
+    private async Task<List<HierarchyPhoto>> QueryPhotosAsync(
+        GalleryHierarchyQuery query,
+        CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(query);
 
         IEnumerable<HierarchyPhoto> filtered = await LoadPhotosAsync(cancellationToken).ConfigureAwait(false);
@@ -227,8 +287,9 @@ public sealed class GalleryHierarchyService
         else if (query.RecentOnly)
         {
             filtered = filtered
-                .Where(photo => ResolveImportedAt(photo.Photo).HasValue)
-                .OrderByDescending(photo => ResolveImportedAt(photo.Photo))
+                .Where(photo => photo.RecentRank.HasValue || ResolveImportedAt(photo.Photo).HasValue)
+                .OrderBy(photo => photo.RecentRank ?? int.MaxValue)
+                .ThenByDescending(photo => ResolveImportedAt(photo.Photo))
                 .Take(MediaService.RecentGalleryTake);
         }
         else
@@ -273,26 +334,54 @@ public sealed class GalleryHierarchyService
             }
         }
 
+        if (query.Season is TravelSeason season)
+        {
+            var months = season switch
+            {
+                TravelSeason.Spring => new[] { 3, 4, 5 },
+                TravelSeason.Summer => new[] { 6, 7, 8 },
+                TravelSeason.Autumn => new[] { 9, 10, 11 },
+                TravelSeason.Winter => new[] { 12, 1, 2 },
+                _ => Array.Empty<int>(),
+            };
+            filtered = filtered.Where(photo =>
+            {
+                var date = ResolveSortDate(photo.Photo);
+                return date != DateTimeOffset.MinValue && months.Contains(date.Month);
+            });
+        }
+
         if (!string.IsNullOrWhiteSpace(query.SearchText))
         {
             var term = query.SearchText.Trim();
             filtered = filtered.Where(photo => MatchesSearch(photo, term));
         }
 
-        return filtered
-            .OrderByDescending(photo => ResolveSortDate(photo.Photo))
-            .Select(photo => photo.Photo)
-            .ToList();
+        return filtered.ToList();
     }
 
     private async Task<List<HierarchyPhoto>> LoadPhotosAsync(CancellationToken cancellationToken)
     {
         var snapshot = await _catalog.QueryAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var markersByFileId = snapshot.MapMarkers
+            .Where(marker => !string.IsNullOrWhiteSpace(marker.FileId))
+            .GroupBy(marker => marker.FileId.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+        var recentRankByFileId = snapshot.RecentPhotoFileIds
+            .Select((fileId, rank) => (FileId: fileId?.Trim(), Rank: rank))
+            .Where(item => !string.IsNullOrWhiteSpace(item.FileId))
+            .GroupBy(item => item.FileId!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Min(item => item.Rank), StringComparer.OrdinalIgnoreCase);
         var result = new List<HierarchyPhoto>();
 
         foreach (var photo in snapshot.Photos)
         {
+            if (IsDeleted(photo))
+            {
+                continue;
+            }
+
             var fileId = photo.FileId?.Trim();
             if (!string.IsNullOrWhiteSpace(fileId) && !seen.Add(fileId))
             {
@@ -302,7 +391,31 @@ public sealed class GalleryHierarchyService
             snapshot.LocationMetadataByFileId.TryGetValue(
                 fileId ?? string.Empty,
                 out var metadata);
-            result.Add(new HierarchyPhoto(photo, metadata));
+            markersByFileId.TryGetValue(fileId ?? string.Empty, out var marker);
+            recentRankByFileId.TryGetValue(fileId ?? string.Empty, out var recentRank);
+            var registeredPlaceId = photo.MemorykeeperPlaceId
+                                    ?? metadata?.MemorykeeperPlaceId
+                                    ?? marker?.MemorykeeperPlaceId;
+            snapshot.RegisteredPlacesById.TryGetValue(
+                registeredPlaceId ?? Guid.Empty,
+                out var registeredPlace);
+            var latitude = marker is not null
+                           && PlaceIdentity.HasValidCoordinates(marker.Latitude, marker.Longitude)
+                ? marker.Latitude
+                : photo.GpsLatitude ?? metadata?.Latitude;
+            var longitude = marker is not null
+                            && PlaceIdentity.HasValidCoordinates(marker.Latitude, marker.Longitude)
+                ? marker.Longitude
+                : photo.GpsLongitude ?? metadata?.Longitude;
+            result.Add(new HierarchyPhoto(
+                photo,
+                metadata,
+                marker,
+                registeredPlace,
+                latitude,
+                longitude,
+                snapshot.ApiBaseUrl,
+                recentRankByFileId.ContainsKey(fileId ?? string.Empty) ? recentRank : null));
         }
 
         _logger.LogDebug("Gallery hierarchy loaded {PhotoCount} NAS photos", result.Count);
@@ -310,30 +423,51 @@ public sealed class GalleryHierarchyService
     }
 
     private static bool HasPlace(HierarchyPhoto photo) =>
-        !string.IsNullOrWhiteSpace(RawPlaceName(photo));
+        RegisteredPlaceId(photo).HasValue || !string.IsNullOrWhiteSpace(RawPlaceName(photo));
 
     private static bool IsPending(HierarchyPhoto photo) =>
-        string.Equals(photo.Photo.Status?.Trim(), "pending", StringComparison.OrdinalIgnoreCase);
+        !RegisteredPlaceId(photo).HasValue;
+
+    private static bool IsDeleted(PhotoDto photo) =>
+        string.Equals(photo.Status?.Trim(), "deleted", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(photo.Status?.Trim(), "tombstone", StringComparison.OrdinalIgnoreCase);
 
     private static string CountryLabel(HierarchyPhoto photo) =>
-        ToCountryLabel(FirstNotEmpty(photo.Photo.Country, photo.Metadata?.Country));
+        ToCountryLabel(FirstNotEmpty(
+            photo.Photo.Country,
+            photo.Metadata?.Country,
+            photo.Marker?.Country,
+            photo.RegisteredPlace?.Country));
 
     private static string CityLabel(HierarchyPhoto photo)
     {
-        var rawCity = FirstNotEmpty(photo.Photo.City, photo.Metadata?.City);
-        if (ContainsHangul(rawCity))
+        var region = FirstNotEmpty(
+            photo.Photo.City,
+            photo.Metadata?.City,
+            photo.Marker?.City,
+            photo.Photo.Province,
+            photo.Metadata?.Province,
+            photo.Marker?.Province,
+            photo.RegisteredPlace?.City,
+            photo.RegisteredPlace?.Province);
+        if (ContainsHangul(region))
         {
-            // Preserve Backend administrative labels such as "구례군" verbatim.
+            // Preserve Backend administrative labels such as "구례군" and "서울특별시" verbatim.
             // PlaceNormalizer remains the fallback for aliases/non-Korean values.
-            return rawCity;
+            return region;
+        }
+
+        if (!string.IsNullOrWhiteSpace(region))
+        {
+            return ToCityLabel(region);
         }
 
         var rawPlaceName = RawPlaceName(photo);
         var transientPlace = new Place
         {
             Country = CountryLabel(photo),
-            Province = FirstNotEmpty(photo.Photo.Province, photo.Metadata?.Province),
-            City = rawCity,
+            Province = photo.RegisteredPlace?.Province ?? string.Empty,
+            City = photo.RegisteredPlace?.City ?? string.Empty,
             DisplayName = rawPlaceName,
             CanonicalName = rawPlaceName,
         };
@@ -342,7 +476,11 @@ public sealed class GalleryHierarchyService
 
     private static string PlaceDisplayName(HierarchyPhoto photo)
     {
-        var raw = RawPlaceName(photo);
+        var raw = FirstNotEmpty(
+            photo.Photo.PlaceDisplayName,
+            photo.Metadata?.PlaceDisplayName,
+            photo.Marker?.PlaceDisplayName,
+            RawPlaceName(photo));
         if (string.IsNullOrWhiteSpace(raw))
         {
             return UnclassifiedTitle;
@@ -353,19 +491,30 @@ public sealed class GalleryHierarchyService
             DisplayName = raw,
             CanonicalName = raw,
             Country = CountryLabel(photo),
-            Province = FirstNotEmpty(photo.Photo.Province, photo.Metadata?.Province),
-            City = FirstNotEmpty(photo.Photo.City, photo.Metadata?.City),
+            Province = FirstNotEmpty(photo.Photo.Province, photo.Metadata?.Province, photo.Marker?.Province),
+            City = FirstNotEmpty(photo.Photo.City, photo.Metadata?.City, photo.Marker?.City),
         });
     }
 
     private static Guid PlaceStableId(HierarchyPhoto photo) =>
-        PlaceIdentity.StableId(
+        RegisteredPlaceId(photo) ?? PlaceIdentity.StableId(
             CountryLabel(photo),
             CityLabel(photo),
             PlaceDisplayName(photo));
 
+    private static Guid? RegisteredPlaceId(HierarchyPhoto photo) =>
+        photo.Photo.MemorykeeperPlaceId
+        ?? photo.Metadata?.MemorykeeperPlaceId
+        ?? photo.Marker?.MemorykeeperPlaceId;
+
     private static string RawPlaceName(HierarchyPhoto photo) =>
-        FirstNotEmpty(photo.Photo.PlaceName, photo.Metadata?.PlaceName);
+        FirstNotEmpty(
+            photo.Photo.PlaceName,
+            photo.Photo.GeocodedPlaceName,
+            photo.Metadata?.PlaceName,
+            photo.Metadata?.GeocodedPlaceName,
+            photo.Marker?.PlaceName,
+            photo.Marker?.GeocodedPlaceName);
 
     private static bool MatchesSearch(HierarchyPhoto photo, string term)
     {
@@ -381,6 +530,12 @@ public sealed class GalleryHierarchyService
             photo.Metadata?.City,
             photo.Photo.District,
             photo.Metadata?.District,
+            photo.RegisteredPlace?.Country,
+            photo.RegisteredPlace?.Province,
+            photo.RegisteredPlace?.City,
+            photo.RegisteredPlace?.District,
+            photo.Photo.PlaceCanonicalName,
+            photo.Metadata?.PlaceCanonicalName,
             RawPlaceName(photo),
             PlaceDisplayName(photo),
             CityLabel(photo),
@@ -401,6 +556,116 @@ public sealed class GalleryHierarchyService
 
     private static DateTimeOffset ResolveSortDate(PhotoDto photo) =>
         photo.CaptureDatetime ?? ResolveImportedAt(photo) ?? DateTimeOffset.MinValue;
+
+    private static VisitRecordPlaceDto ToVisitPlace(
+        Guid placeId,
+        IReadOnlyList<HierarchyPhoto> photos,
+        bool isUnclassified = false)
+    {
+        var first = photos
+            .OrderByDescending(photo => string.IsNullOrWhiteSpace(photo.Photo.Country) ? 0 : 1)
+            .ThenByDescending(photo => string.IsNullOrWhiteSpace(photo.Photo.City) ? 0 : 1)
+            .ThenByDescending(photo => string.IsNullOrWhiteSpace(photo.Photo.PlaceDisplayName) ? 0 : 1)
+            .First();
+        var representative = photos.FirstOrDefault(photo => photo.Photo.Favorite) ?? first;
+        var dates = photos
+            .Select(photo => ResolveSortDate(photo.Photo))
+            .Where(date => date != DateTimeOffset.MinValue)
+            .OrderBy(date => date)
+            .ToList();
+        var coordinates = photos
+            .Where(photo => photo.Latitude is double latitude
+                            && photo.Longitude is double longitude
+                            && PlaceIdentity.HasValidCoordinates(latitude, longitude))
+            .Select(photo => (photo.Latitude!.Value, photo.Longitude!.Value))
+            .ToList();
+        var representativeCoordinates = representative.Latitude is double repLatitude
+                                        && representative.Longitude is double repLongitude
+            ? (repLatitude, repLongitude)
+            : ((double Latitude, double Longitude)?)null;
+        var resolvedCoordinates = PlaceIdentity.ResolveCoordinates(representativeCoordinates, coordinates);
+        var previews = photos
+            .OrderByDescending(photo => ResolveSortDate(photo.Photo))
+            .Select(ToVisitPreview)
+            .ToList();
+        var visitCount = dates.Select(date => date.ToLocalTime().Date).Distinct().Count();
+
+        return new VisitRecordPlaceDto
+        {
+            PlaceId = placeId,
+            PlaceName = isUnclassified ? UnclassifiedTitle : PlaceDisplayName(first),
+            Country = CountryLabel(first),
+            City = CityLabel(first),
+            Latitude = resolvedCoordinates?.Latitude ?? 0d,
+            Longitude = resolvedCoordinates?.Longitude ?? 0d,
+            PhotoCount = photos.Count,
+            VisitRecordCount = visitCount,
+            FavoriteCount = photos.Count(photo => photo.Photo.Favorite),
+            RepresentativeMediaId = ToMediaId(representative.Photo.FileId),
+            RepresentativeAbsolutePath = ResolveThumbnailUrl(representative),
+            FirstCapturedDate = dates.Count > 0 ? dates[0] : null,
+            LastCapturedDate = dates.Count > 0 ? dates[^1] : null,
+            CaptureYears = photos
+                .Select(photo => ResolveYear(photo.Photo))
+                .Where(year => year.HasValue)
+                .Select(year => year!.Value)
+                .Distinct()
+                .OrderByDescending(year => year)
+                .ToList(),
+            AllPhotos = previews,
+            PreviewPhotos = previews.Take(8).ToList(),
+            MarkerScale = VisitRecordPlaceScoping.CalculateMarkerScale(visitCount, photos.Count),
+            IsUnclassified = isUnclassified,
+        };
+    }
+
+    private static VisitRecordPreviewPhotoDto ToVisitPreview(HierarchyPhoto photo)
+    {
+        var thumbnail = ResolveThumbnailUrl(photo) ?? string.Empty;
+        return new VisitRecordPreviewPhotoDto
+        {
+            MediaId = BackendFileIdCodec.ToGuid(photo.Photo.FileId),
+            BackendFileId = photo.Photo.FileId,
+            FileName = photo.Photo.Filename,
+            ThumbnailUrl = thumbnail,
+            AbsoluteLibraryPath = thumbnail,
+            IsFavorite = photo.Photo.Favorite,
+            CapturedAt = ResolveSortDate(photo.Photo) is var captured && captured != DateTimeOffset.MinValue
+                ? captured
+                : null,
+            CaptureYear = ResolveYear(photo.Photo) ?? 0,
+        };
+    }
+
+    private static Guid? ToMediaId(string? fileId)
+    {
+        var value = BackendFileIdCodec.ToGuid(fileId);
+        return value == Guid.Empty ? null : value;
+    }
+
+    private static string? ResolveThumbnailUrl(HierarchyPhoto photo)
+    {
+        var raw = FirstNotEmpty(photo.Photo.ThumbnailUrl, photo.Photo.PreviewUrl);
+        if (Uri.TryCreate(raw, UriKind.Absolute, out var absolute))
+        {
+            return absolute.ToString();
+        }
+
+        var relative = !string.IsNullOrWhiteSpace(raw)
+            ? raw
+            : $"/api/common/gallery/{Uri.EscapeDataString(photo.Photo.FileId)}/thumbnail";
+        if (!Uri.TryCreate(EnsureTrailingSlash(photo.ApiBaseUrl), UriKind.Absolute, out var baseUri))
+        {
+            return relative;
+        }
+
+        return new Uri(baseUri, relative.TrimStart('/')).ToString();
+    }
+
+    private static string EnsureTrailingSlash(string value) =>
+        string.IsNullOrWhiteSpace(value)
+            ? string.Empty
+            : value.TrimEnd('/') + "/";
 
     private static string ToCountryLabel(string? value)
     {
@@ -449,5 +714,11 @@ public sealed class GalleryHierarchyService
 
     private sealed record HierarchyPhoto(
         PhotoDto Photo,
-        GalleryPhotoLocationMetadataDto? Metadata);
+        GalleryPhotoLocationMetadataDto? Metadata,
+        MapMarkerDto? Marker,
+        GalleryRegisteredPlaceGeographyDto? RegisteredPlace,
+        double? Latitude,
+        double? Longitude,
+        string ApiBaseUrl,
+        int? RecentRank);
 }

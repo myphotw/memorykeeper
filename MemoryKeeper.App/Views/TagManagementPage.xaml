@@ -52,15 +52,22 @@
                     Content="목록 상단 고정"
                     IsChecked="{Binding IsPinned, Mode=TwoWay}" />
                 <TextBlock
-                    Text="이름 변경과 삭제가 가능합니다. 병합은 추후 지원합니다."
+                    Text="태그 목록과 사진 연결은 NAS의 MemoryKeeper 데이터를 사용합니다."
                     Opacity="0.75"
                     TextWrapping="Wrap" />
+
+                <ComboBox
+                    Header="병합 대상"
+                    ItemsSource="{Binding Tags, Mode=OneWay}"
+                    SelectedItem="{Binding MergeTargetTag, Mode=TwoWay}"
+                    DisplayMemberPath="Name" />
 
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <Button Content="새로 작성" Command="{Binding ClearFormCommand}" />
                     <Button Content="추가" Style="{StaticResource AccentButtonStyle}" Command="{Binding CreateCommand}" />
                     <Button Content="이름 변경" Command="{Binding RenameCommand}" />
                     <Button Content="고정 저장" Command="{Binding SavePinnedCommand}" />
+                    <Button Content="병합" Click="Merge_OnClick" />
                     <Button Content="삭제" Click="Delete_OnClick" />
                     <Button Content="새로고침" Command="{Binding LoadCommand}" />
                 </StackPanel>

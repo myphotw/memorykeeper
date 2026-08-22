@@ -17,6 +17,8 @@ public sealed partial class GalleryPage : Page
 
     public event EventHandler? OpenImportRequested;
 
+    public event EventHandler? OpenPendingRequested;
+
     public GalleryViewModel ViewModel { get; }
 
     public GalleryPage(GalleryViewModel viewModel)
@@ -358,6 +360,12 @@ public sealed partial class GalleryPage : Page
     {
         if (sender is FrameworkElement { Tag: GalleryTreeNode node } && !node.IsSeparator)
         {
+            if (node.Kind == GalleryTreeNodeKind.Pending)
+            {
+                OpenPendingRequested?.Invoke(this, EventArgs.Empty);
+                return;
+            }
+
             ViewModel.SelectTreeNodeCommand.Execute(node);
         }
     }

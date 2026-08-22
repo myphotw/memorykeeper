@@ -1,5 +1,6 @@
 using MemoryKeeper.Application.DTOs.Gallery;
 using MemoryKeeper.Application.Interfaces;
+using MemoryKeeper.Application.Services;
 using MemoryKeeper.Infrastructure.Repositories.Api;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -12,6 +13,7 @@ public sealed class GalleryTravelRecordsRepositoryTests
     {
         var firstId = Guid.NewGuid().ToString();
         var secondId = Guid.NewGuid().ToString();
+        var placeId = Guid.NewGuid();
         var snapshot = new GalleryPhotoCatalogSnapshot
         {
             ApiBaseUrl = "https://backend.example",
@@ -23,6 +25,8 @@ public sealed class GalleryTravelRecordsRepositoryTests
                     Filename = "first.jpg",
                     PlaceName = "경복궁",
                     Country = null,
+                    MemorykeeperPlaceId = placeId,
+                    PlaceDisplayName = "경복궁",
                     CaptureDatetime = new DateTimeOffset(2025, 5, 1, 10, 0, 0, TimeSpan.Zero),
                 },
                 new PhotoDto
@@ -31,6 +35,8 @@ public sealed class GalleryTravelRecordsRepositoryTests
                     Filename = "second.jpg",
                     PlaceName = "경복궁",
                     Country = "대한민국",
+                    MemorykeeperPlaceId = placeId,
+                    PlaceDisplayName = "경복궁",
                     ThumbnailUrl = $"/api/common/gallery/{secondId}/thumbnail",
                     Favorite = true,
                     CaptureDatetime = new DateTimeOffset(2025, 5, 2, 10, 0, 0, TimeSpan.Zero),
@@ -47,9 +53,7 @@ public sealed class GalleryTravelRecordsRepositoryTests
                 },
             ],
         };
-        var repository = new GalleryTravelRecordsRepository(
-            new FixedCatalog(snapshot),
-            NullLogger<GalleryTravelRecordsRepository>.Instance);
+        var repository = CreateRepository(snapshot);
 
         var result = await repository.GetPlaceAggregatesAsync();
 
@@ -98,9 +102,7 @@ public sealed class GalleryTravelRecordsRepositoryTests
                 },
             },
         };
-        var repository = new GalleryTravelRecordsRepository(
-            new FixedCatalog(snapshot),
-            NullLogger<GalleryTravelRecordsRepository>.Instance);
+        var repository = CreateRepository(snapshot);
 
         var place = Assert.Single(await repository.GetPlaceAggregatesAsync());
 
@@ -121,5 +123,15 @@ public sealed class GalleryTravelRecordsRepositoryTests
             string? country = null,
             string? keyword = null,
             CancellationToken cancellationToken = default) => Task.FromResult(_snapshot);
+    }
+
+    private static GalleryTravelRecordsRepository CreateRepository(GalleryPhotoCatalogSnapshot snapshot)
+    {
+        var hierarchy = new GalleryHierarchyService(
+            new FixedCatalog(snapshot),
+            NullLogger<GalleryHierarchyService>.Instance);
+        return new GalleryTravelRecordsRepository(
+            hierarchy,
+            NullLogger<GalleryTravelRecordsRepository>.Instance);
     }
 }

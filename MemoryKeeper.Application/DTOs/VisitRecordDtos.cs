@@ -43,7 +43,7 @@ public sealed record VisitRecordPlaceDto
 
     public double MarkerScale { get; init; } = 1.0;
 
-    /// <summary>True for the synthetic 미분류 bucket (no map marker).</summary>
+    /// <summary>True for the synthetic 미분류 bucket. GPS availability alone controls marker visibility.</summary>
     public bool IsUnclassified { get; init; }
 }
 

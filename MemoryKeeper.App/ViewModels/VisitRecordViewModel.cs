@@ -24,7 +24,8 @@ public enum VisitRecordSortMode
 
 public partial class VisitRecordViewModel : ObservableObject
 {
-    private readonly IGalleryPhotoCatalog _galleryPhotoCatalog;
+    private readonly GalleryHierarchyService _hierarchyService;
+    private readonly RecentSearchQueryService _recentSearchQueries;
     private readonly PhotoDetailService _photoDetailService;
     private readonly IThumbnailService _thumbnailService;
     private readonly ISettingRepository _settingRepository;
@@ -70,6 +71,15 @@ public partial class VisitRecordViewModel : ObservableObject
     private ObservableCollection<VisitRecordYearGroup> yearGroups = [];
 
     [ObservableProperty]
+    private ObservableCollection<GalleryTreeNode> treeRoots = [];
+
+    [ObservableProperty]
+    private ObservableCollection<GalleryTreeNode> visibleTreeNodes = [];
+
+    [ObservableProperty]
+    private GalleryTreeNode? selectedHierarchyNode;
+
+    [ObservableProperty]
     private int? selectedYear;
 
     [ObservableProperty]
@@ -103,7 +113,8 @@ public partial class VisitRecordViewModel : ObservableObject
     public event EventHandler? BackRequested;
 
     public VisitRecordViewModel(
-        IGalleryPhotoCatalog galleryPhotoCatalog,
+        GalleryHierarchyService hierarchyService,
+        RecentSearchQueryService recentSearchQueries,
         PhotoDetailService photoDetailService,
         IThumbnailService thumbnailService,
         ISettingRepository settingRepository,
@@ -112,7 +123,8 @@ public partial class VisitRecordViewModel : ObservableObject
         IPlaceEditorSeedState placeEditorSeedState,
         ILogger<VisitRecordViewModel> logger)
     {
-        _galleryPhotoCatalog = galleryPhotoCatalog;
+        _hierarchyService = hierarchyService;
+        _recentSearchQueries = recentSearchQueries;
         _photoDetailService = photoDetailService;
         _thumbnailService = thumbnailService;
         _settingRepository = settingRepository;
@@ -364,7 +376,11 @@ public partial class VisitRecordViewModel : ObservableObject
         }
     }
 
-    partial void OnSortModeChanged(VisitRecordSortMode value) => RebuildYearGroups();
+    partial void OnSortModeChanged(VisitRecordSortMode value)
+    {
+        RebuildYearGroups();
+        SortHierarchyPlaceNodes();
+    }
 
     partial void OnSelectedYearChanged(int? value) => RefreshYearSelectionChrome();
 
@@ -391,33 +407,36 @@ public partial class VisitRecordViewModel : ObservableObject
             IsSuggestionOpen = false;
             IsRecentOpen = false;
 
-            VisitRecordQueryResult query;
+            GalleryHierarchyQuery hierarchyQuery;
             if (_placeFocusState.PendingSeason is TravelSeason season)
             {
                 _placeFocusState.PendingSeason = null;
                 _placeFocusState.PendingCountry = null;
                 SearchText = string.Empty;
-                query = await GalleryBackendBridge.QueryVisitRecordsAsync(
-                    _galleryPhotoCatalog,
-                    keyword: season.ToString());
+                hierarchyQuery = new GalleryHierarchyQuery { Season = season };
             }
             else if (!string.IsNullOrWhiteSpace(_placeFocusState.PendingCountry))
             {
                 var country = _placeFocusState.PendingCountry;
                 _placeFocusState.PendingCountry = null;
                 SearchText = string.Empty;
-                query = await GalleryBackendBridge.QueryVisitRecordsAsync(
-                    _galleryPhotoCatalog,
-                    country: country);
+                hierarchyQuery = new GalleryHierarchyQuery { Country = country };
             }
             else
             {
-                query = await GalleryBackendBridge.QueryVisitRecordsAsync(
-                    _galleryPhotoCatalog,
-                    keyword: string.IsNullOrWhiteSpace(SearchText) ? null : SearchText.Trim());
+                hierarchyQuery = new GalleryHierarchyQuery
+                {
+                    SearchText = string.IsNullOrWhiteSpace(SearchText) ? null : SearchText.Trim(),
+                };
             }
 
+            var query = await _hierarchyService.QueryVisitRecordsAsync(hierarchyQuery);
             ApplyQuery(query);
+            await RebuildHierarchyTreeAsync();
+            if (!string.IsNullOrWhiteSpace(hierarchyQuery.SearchText))
+            {
+                await _recentSearchQueries.AddAsync(hierarchyQuery.SearchText);
+            }
             await RefreshRecentQueriesAsync();
         });
     }
@@ -468,21 +487,70 @@ public partial class VisitRecordViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void ExpandAll()
+    private async Task ExpandAllAsync()
     {
-        foreach (var group in YearGroups.Where(g => !g.IsAll))
+        foreach (var root in TreeRoots)
         {
-            group.IsExpanded = true;
+            await ExpandRecursivelyAsync(root);
         }
+
+        RebuildVisibleTree();
     }
 
     [RelayCommand]
     private void CollapseAll()
     {
-        foreach (var group in YearGroups.Where(g => !g.IsAll))
+        foreach (var root in TreeRoots)
         {
-            group.IsExpanded = false;
+            CollapseRecursively(root);
         }
+
+        RebuildVisibleTree();
+    }
+
+    [RelayCommand]
+    private async Task ToggleHierarchyNodeAsync(GalleryTreeNode? node)
+    {
+        if (node is null || !node.CanExpand)
+        {
+            return;
+        }
+
+        if (!node.IsExpanded)
+        {
+            await EnsureHierarchyChildrenAsync(node);
+        }
+
+        node.IsExpanded = !node.IsExpanded;
+        RebuildVisibleTree();
+    }
+
+    [RelayCommand]
+    private async Task SelectHierarchyNodeAsync(GalleryTreeNode? node)
+    {
+        if (node is null || node.IsSeparator)
+        {
+            return;
+        }
+
+        foreach (var visible in VisibleTreeNodes)
+        {
+            visible.IsSelected = ReferenceEquals(visible, node);
+        }
+
+        SelectedHierarchyNode = node;
+        SelectedYear = node.Year;
+        if (node.CanExpand && !node.IsExpanded)
+        {
+            await EnsureHierarchyChildrenAsync(node);
+            node.IsExpanded = true;
+            RebuildVisibleTree();
+        }
+
+        var query = node.BuildQuery(SearchText);
+        var result = await _hierarchyService.QueryVisitRecordsAsync(query);
+        ApplyQuery(result);
+        await SyncMapAsync();
     }
 
     [RelayCommand]
@@ -719,7 +787,7 @@ public partial class VisitRecordViewModel : ObservableObject
             query.Chips.Select(chip => new SearchChipItem(chip)));
 
         RebuildYearGroups();
-        HasNoResults = _timelineItems.Count == 0;
+        HasNoResults = !VisitRecordPlaceScoping.HasAnyPhotos(query.TimelinePlaces);
 
         ApplyPendingFocusCore(clearWhenMissing: true, consumeFocusState: !_activationOwnsFocus);
 
@@ -734,6 +802,217 @@ public partial class VisitRecordViewModel : ObservableObject
             _ = SyncMapAsync();
         }
         // Thumbnails load lazily on marker/place selection only (no map-entry preload).
+    }
+
+    private async Task RebuildHierarchyTreeAsync()
+    {
+        var summary = await _hierarchyService.GetSidebarSummaryAsync();
+        var roots = new List<GalleryTreeNode>
+        {
+            new()
+            {
+                Kind = GalleryTreeNodeKind.All,
+                Title = "전체",
+                Count = summary.TotalCount,
+                Depth = 0,
+                CanExpand = false,
+                IsSelected = true,
+            },
+        };
+        roots.AddRange(summary.Years.Select(year => new GalleryTreeNode
+        {
+            Kind = GalleryTreeNodeKind.Year,
+            Year = year.Year,
+            Title = year.Year.ToString(),
+            Count = year.Count,
+            Depth = 0,
+            CanExpand = true,
+        }));
+
+        TreeRoots = new ObservableCollection<GalleryTreeNode>(roots);
+        SelectedHierarchyNode = TreeRoots[0];
+        RebuildVisibleTree();
+    }
+
+    private async Task EnsureHierarchyChildrenAsync(GalleryTreeNode node)
+    {
+        if (node.ChildrenLoaded || !node.CanExpand)
+        {
+            return;
+        }
+
+        node.IsBusy = true;
+        try
+        {
+            node.Children.Clear();
+            switch (node.Kind)
+            {
+                case GalleryTreeNodeKind.Year when node.Year is int year:
+                    foreach (var country in await _hierarchyService.GetCountriesAsync(year))
+                    {
+                        node.Children.Add(new GalleryTreeNode
+                        {
+                            Kind = country.IsUnclassified
+                                ? GalleryTreeNodeKind.Unclassified
+                                : GalleryTreeNodeKind.Country,
+                            Year = year,
+                            Country = country.Title,
+                            Title = country.Title,
+                            Count = country.Count,
+                            Depth = node.Depth + 1,
+                            CanExpand = !country.IsUnclassified,
+                        });
+                    }
+
+                    break;
+                case GalleryTreeNodeKind.Country
+                    when node.Year is int year && !string.IsNullOrWhiteSpace(node.Country):
+                    foreach (var city in await _hierarchyService.GetCitiesAsync(year, node.Country))
+                    {
+                        node.Children.Add(new GalleryTreeNode
+                        {
+                            Kind = GalleryTreeNodeKind.City,
+                            Year = year,
+                            Country = node.Country,
+                            City = city.Title,
+                            Title = city.Title,
+                            Count = city.Count,
+                            Depth = node.Depth + 1,
+                            CanExpand = true,
+                        });
+                    }
+
+                    break;
+                case GalleryTreeNodeKind.City
+                    when node.Year is int year
+                         && !string.IsNullOrWhiteSpace(node.Country)
+                         && !string.IsNullOrWhiteSpace(node.City):
+                    foreach (var place in await _hierarchyService.GetPlacesAsync(year, node.Country, node.City))
+                    {
+                        node.Children.Add(new GalleryTreeNode
+                        {
+                            Kind = GalleryTreeNodeKind.Place,
+                            Year = year,
+                            Country = node.Country,
+                            City = node.City,
+                            PlaceId = place.PlaceId,
+                            PlaceType = place.PlaceType,
+                            Title = place.Title,
+                            Count = place.Count,
+                            Depth = node.Depth + 1,
+                            CanExpand = false,
+                        });
+                    }
+
+                    SortPlaceChildren(node);
+                    break;
+            }
+
+            node.ChildrenLoaded = true;
+        }
+        finally
+        {
+            node.IsBusy = false;
+        }
+    }
+
+    private async Task ExpandRecursivelyAsync(GalleryTreeNode node)
+    {
+        if (!node.CanExpand)
+        {
+            return;
+        }
+
+        await EnsureHierarchyChildrenAsync(node);
+        node.IsExpanded = true;
+        foreach (var child in node.Children)
+        {
+            await ExpandRecursivelyAsync(child);
+        }
+    }
+
+    private static void CollapseRecursively(GalleryTreeNode node)
+    {
+        node.IsExpanded = false;
+        foreach (var child in node.Children)
+        {
+            CollapseRecursively(child);
+        }
+    }
+
+    private void RebuildVisibleTree()
+    {
+        var visible = new List<GalleryTreeNode>();
+        foreach (var root in TreeRoots)
+        {
+            AppendVisible(root, visible);
+        }
+
+        VisibleTreeNodes = new ObservableCollection<GalleryTreeNode>(visible);
+    }
+
+    private static void AppendVisible(GalleryTreeNode node, ICollection<GalleryTreeNode> visible)
+    {
+        visible.Add(node);
+        if (!node.IsExpanded)
+        {
+            return;
+        }
+
+        foreach (var child in node.Children)
+        {
+            AppendVisible(child, visible);
+        }
+    }
+
+    private void SortHierarchyPlaceNodes()
+    {
+        foreach (var root in TreeRoots)
+        {
+            SortHierarchyPlaceNodes(root);
+        }
+
+        RebuildVisibleTree();
+    }
+
+    private void SortHierarchyPlaceNodes(GalleryTreeNode node)
+    {
+        SortPlaceChildren(node);
+        foreach (var child in node.Children)
+        {
+            SortHierarchyPlaceNodes(child);
+        }
+    }
+
+    private void SortPlaceChildren(GalleryTreeNode node)
+    {
+        if (node.Children.Count == 0
+            || node.Children.Any(child => child.Kind != GalleryTreeNodeKind.Place))
+        {
+            return;
+        }
+
+        var itemsById = _allMapItems.ToDictionary(item => item.PlaceId);
+        IEnumerable<GalleryTreeNode> ordered = SortMode switch
+        {
+            VisitRecordSortMode.Name => node.Children.OrderBy(child => child.Title, StringComparer.OrdinalIgnoreCase),
+            VisitRecordSortMode.VisitCount => node.Children
+                .OrderByDescending(child => child.PlaceId is Guid id && itemsById.TryGetValue(id, out var item)
+                    ? item.VisitRecordCount
+                    : 0)
+                .ThenBy(child => child.Title, StringComparer.OrdinalIgnoreCase),
+            _ => node.Children
+                .OrderByDescending(child => child.PlaceId is Guid id && itemsById.TryGetValue(id, out var item)
+                    ? item.Place.LastCapturedDate
+                    : null)
+                .ThenBy(child => child.Title, StringComparer.OrdinalIgnoreCase),
+        };
+        var sorted = ordered.ToList();
+        node.Children.Clear();
+        foreach (var child in sorted)
+        {
+            node.Children.Add(child);
+        }
     }
 
     /// <summary>
@@ -995,32 +1274,22 @@ public partial class VisitRecordViewModel : ObservableObject
                 return;
             }
 
-            // Re-read filter under the lock so concurrent loads cannot overwrite a year selection.
-            IReadOnlyList<VisitRecordPlaceItem> markerItems;
-            if (SelectedYear is int year)
-            {
-                var yearGroup = YearGroups.FirstOrDefault(g => !g.IsAll && g.Year == year);
-                markerItems = yearGroup is not null
-                    ? yearGroup.Places.Where(item => !item.IsUnclassified).ToList()
-                    : Array.Empty<VisitRecordPlaceItem>();
-            }
-            else
-            {
-                markerItems = _allMapItems.Where(item => !item.IsUnclassified).ToList();
-            }
+            // _allMapItems is already projected from the selected GalleryHierarchyQuery.
+            var markerItems = _allMapItems
+                .Where(item => VisitRecordPlaceScoping.CanDisplayMarker(item.Place))
+                .ToList();
 
             var markers = markerItems
-                .Where(item => PlaceIdentity.HasValidCoordinates(item.Latitude, item.Longitude))
                 .Select(item => new MapMarker(
                 item.PlaceId,
                 item.PlaceName,
                 item.Latitude,
                 item.Longitude,
                 Info: $"{item.PlaceName}<br/>방문 {item.VisitRecordCount}회 · 사진 {item.PhotoCount}장",
-                State: MapMarkerVisualState.Matched,
+                State: item.IsUnclassified ? MapMarkerVisualState.Default : MapMarkerVisualState.Matched,
                 Scale: item.MarkerScale,
                 IsFavorite: item.HasFavorite,
-                IsMatched: true)).ToList();
+                IsMatched: !item.IsUnclassified)).ToList();
 
             // Replace markers entirely (clear + add). Never highlight a subset of a full set.
             await _mapController.SetMarkersAsync(markers);
@@ -1030,14 +1299,9 @@ public partial class VisitRecordViewModel : ObservableObject
                 return;
             }
 
-            if (SelectedYear is int selectedYear)
-            {
-                StatusMessage = $"{selectedYear}년 장소 {markers.Count}곳을 지도에 표시합니다.";
-            }
-            else
-            {
-                StatusMessage = $"전체 장소 {markers.Count}곳을 지도에 표시합니다.";
-            }
+            StatusMessage = SelectedHierarchyNode is { } selectedNode
+                ? $"{selectedNode.Title} · 장소 {markers.Count}곳 · 사진 {selectedNode.Count}장"
+                : $"전체 장소 {markers.Count}곳을 지도에 표시합니다.";
 
             if (fitBounds && markers.Count > 0)
             {
@@ -1273,10 +1537,9 @@ public partial class VisitRecordViewModel : ObservableObject
         }
     }
 
-    private Task RefreshRecentQueriesAsync()
+    private async Task RefreshRecentQueriesAsync()
     {
-        RecentQueries = [];
-        return Task.CompletedTask;
+        RecentQueries = new ObservableCollection<string>(await _recentSearchQueries.GetAsync());
     }
 
     private void OnMapReady(object? sender, EventArgs e)

@@ -2,6 +2,7 @@ using MemoryKeeper.Application;
 using MemoryKeeper.Application.DTOs;
 using MemoryKeeper.Application.DTOs.Gallery;
 using MemoryKeeper.Application.Interfaces;
+using MemoryKeeper.Application.Services;
 
 namespace MemoryKeeper.App.Services;
 
@@ -126,25 +127,22 @@ public static class GalleryBackendBridge
     public static async Task<HomeDashboardDto> GetHomeDashboardAsync(
         IGalleryApiRepository galleryApi,
         IGalleryPhotoCatalog catalog,
+        GalleryHierarchyService hierarchyService,
         CancellationToken cancellationToken = default)
     {
         var statsTask = galleryApi.GetStatisticsAsync(cancellationToken: cancellationToken);
         var catalogTask = catalog.QueryAsync(cancellationToken: cancellationToken);
+        var visitsTask = hierarchyService.QueryVisitRecordsAsync(
+            new GalleryHierarchyQuery(), cancellationToken);
 
-        await Task.WhenAll(statsTask, catalogTask).ConfigureAwait(false);
+        await Task.WhenAll(statsTask, catalogTask, visitsTask).ConfigureAwait(false);
         var stats = await statsTask.ConfigureAwait(false);
         var snapshot = await catalogTask.ConfigureAwait(false);
+        var sharedVisits = await visitsTask.ConfigureAwait(false);
         var photos = snapshot.Photos;
         var apiBaseUrl = snapshot.ApiBaseUrl;
 
-        var mapPlaces = GroupMarkersToVisitPlaces(snapshot.MapMarkers, apiBaseUrl);
-        var timelinePlaces = GroupPhotosToVisitPlaces(
-            photos,
-            apiBaseUrl,
-            snapshot.MapMarkers,
-            snapshot.LocationMetadataByFileId);
-
-        var placePool = timelinePlaces.Count > 0 ? timelinePlaces : mapPlaces;
+        var placePool = sharedVisits.AllMapPlaces;
         var recentVisits = placePool
             .Where(p => !p.IsUnclassified)
             .OrderByDescending(p => p.LastCapturedDate ?? DateTimeOffset.MinValue)
@@ -163,25 +161,65 @@ public static class GalleryBackendBridge
             })
             .ToList();
 
-        var recentImports = photos
+        var photosById = photos
+            .Where(photo => !string.IsNullOrWhiteSpace(photo.FileId))
+            .GroupBy(photo => photo.FileId.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+        var recentPhotos = snapshot.RecentPhotoFileIds
+            .Where(photosById.ContainsKey)
+            .Select(fileId => photosById[fileId])
             .Take(6)
-            .Select(photo =>
+            .ToList();
+        var recentImports = recentPhotos
+            .Select(photo => ToDashboardPhoto(photo, apiBaseUrl))
+            .Where(photo => photo.MediaId != Guid.Empty)
+            .ToList();
+        var favorites = photos
+            .Where(photo => photo.Favorite)
+            .OrderByDescending(photo => photo.CaptureDatetime)
+            .Take(6)
+            .Select(photo => ToDashboardPhoto(photo, apiBaseUrl))
+            .Where(photo => photo.MediaId != Guid.Empty)
+            .ToList();
+        var pendingPhotos = photos
+            .Where(photo => !photo.MemorykeeperPlaceId.HasValue)
+            .ToList();
+        var representativePending = recentPhotos.FirstOrDefault(pendingPhotos.Contains)
+                                    ?? pendingPhotos.OrderByDescending(photo => photo.CaptureDatetime).FirstOrDefault();
+        var pendingSummary = new PendingSummaryDto
+        {
+            Total = pendingPhotos.Count,
+            NoGps = pendingPhotos.Count(photo => !photo.HasGps),
+            HasGps = pendingPhotos.Count(photo => photo.HasGps),
+            UnknownDate = pendingPhotos.Count(photo => !photo.CaptureDatetime.HasValue),
+            RepresentativeMediaId = representativePending is null
+                ? null
+                : GalleryBackendMapper.ParseFileId(representativePending.FileId),
+            RepresentativeAbsoluteLibraryPath = representativePending is null
+                ? null
+                : ResolveThumbnailUrl(apiBaseUrl, representativePending.FileId, representativePending.ThumbnailUrl)
+                  ?? GalleryBackendMapper.ToAbsoluteUrl(apiBaseUrl, representativePending.PreviewUrl),
+            LatestImportedAt = representativePending?.ImportedAt ?? representativePending?.CreatedAt,
+        };
+        var today = DateTimeOffset.Now;
+        var todayMemories = photos
+            .Where(photo => photo.CaptureDatetime is DateTimeOffset captured
+                            && captured.ToLocalTime().Month == today.Month
+                            && captured.ToLocalTime().Day == today.Day
+                            && captured.ToLocalTime().Year < today.Year)
+            .OrderByDescending(photo => photo.CaptureDatetime)
+            .Take(8)
+            .Select(photo => new TodayMemoryPhotoDto
             {
-                var thumb = ResolveThumbnailUrl(apiBaseUrl, photo.FileId, photo.ThumbnailUrl)
-                            ?? GalleryBackendMapper.ToAbsoluteUrl(apiBaseUrl, photo.PreviewUrl);
-                var mediaId = GalleryBackendMapper.ParseFileId(photo.FileId);
-                return new DashboardPhotoDto
-                {
-                    MediaId = mediaId,
-                    AbsoluteLibraryPath = thumb ?? string.Empty,
-                    FileName = photo.Filename,
-                    IsFavorite = photo.Favorite,
-                    PlaceName = photo.PlaceName,
-                    Country = photo.Country,
-                    CapturedAt = photo.CaptureDatetime,
-                };
+                MediaId = GalleryBackendMapper.ParseFileId(photo.FileId),
+                PlaceId = photo.MemorykeeperPlaceId,
+                PlaceName = FirstNonEmpty(photo.PlaceDisplayName, photo.PlaceName) ?? string.Empty,
+                AbsoluteLibraryPath = ResolveThumbnailUrl(apiBaseUrl, photo.FileId, photo.ThumbnailUrl)
+                                      ?? GalleryBackendMapper.ToAbsoluteUrl(apiBaseUrl, photo.PreviewUrl)
+                                      ?? string.Empty,
+                YearsAgo = today.Year - photo.CaptureDatetime!.Value.ToLocalTime().Year,
             })
-            .Where(p => p.MediaId != Guid.Empty)
+            .Where(photo => photo.MediaId != Guid.Empty)
             .ToList();
 
         var heroes = new List<HeroMemoryDto>();
@@ -240,7 +278,7 @@ public static class GalleryBackendBridge
             }
         }
 
-        var placeCount = mapPlaces.Count > 0 ? mapPlaces.Count : placePool.Count;
+        var placeCount = placePool.Count;
         var lastDate = photos
             .Select(p => p.CaptureDatetime)
             .Where(d => d.HasValue)
@@ -253,18 +291,39 @@ public static class GalleryBackendBridge
             HeroMemories = heroes,
             RecentVisits = recentVisits,
             RecentImports = recentImports,
-            Statistics = MapStatistics(stats, placeCount, lastDate),
-            PendingSummary = new PendingSummaryDto(),
-            TodayMemories = [],
-            Favorites = [],
+            Statistics = MapStatistics(
+                stats,
+                placeCount,
+                lastDate,
+                photos.Count(photo => photo.Favorite)),
+            PendingSummary = pendingSummary,
+            TodayMemories = todayMemories,
+            Favorites = favorites,
             RecentQueries = [],
+        };
+    }
+
+    private static DashboardPhotoDto ToDashboardPhoto(PhotoDto photo, string apiBaseUrl)
+    {
+        var thumb = ResolveThumbnailUrl(apiBaseUrl, photo.FileId, photo.ThumbnailUrl)
+                    ?? GalleryBackendMapper.ToAbsoluteUrl(apiBaseUrl, photo.PreviewUrl);
+        return new DashboardPhotoDto
+        {
+            MediaId = GalleryBackendMapper.ParseFileId(photo.FileId),
+            AbsoluteLibraryPath = thumb ?? string.Empty,
+            FileName = photo.Filename,
+            IsFavorite = photo.Favorite,
+            PlaceName = FirstNonEmpty(photo.PlaceDisplayName, photo.PlaceName),
+            Country = photo.Country,
+            CapturedAt = photo.CaptureDatetime,
         };
     }
 
     private static DashboardStatisticsDto MapStatistics(
         Application.DTOs.Gallery.StatisticsDto stats,
         int placeCount,
-        DateTimeOffset lastUpdated = default)
+        DateTimeOffset lastUpdated = default,
+        int favoriteCount = 0)
     {
         var byYear = stats.ByYear
             .OrderBy(x => x.Name)
@@ -287,7 +346,7 @@ public static class GalleryBackendBridge
             GpsCount = stats.GpsCount,
             CountryCount = stats.ByCountry.Count,
             VisitRecordCount = stats.GpsCount,
-            FavoriteCount = 0,
+            FavoriteCount = favoriteCount,
             TagCount = stats.AiTagCount,
             CountrySummary = countrySummary,
             LastUpdatedText = lastUpdated == default

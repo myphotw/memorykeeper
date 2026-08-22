@@ -124,6 +124,26 @@ public sealed class BackendConnectionTests
         Assert.Equal(ApiErrorCategory.Dns, dns.Category);
     }
 
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized, "NAS 연결 인증 정보를 확인하세요.")]
+    [InlineData(HttpStatusCode.NotFound, "사진을 찾을 수 없습니다.")]
+    [InlineData(HttpStatusCode.Conflict, "다른 곳에서 정보가 변경되었습니다. 최신 정보를 다시 불러온 뒤 다시 시도하세요.")]
+    [InlineData(HttpStatusCode.UnprocessableEntity, "입력한 정보를 확인하세요.")]
+    [InlineData(HttpStatusCode.ServiceUnavailable, "NAS 서비스에 연결할 수 없습니다. 잠시 후 다시 시도하세요.")]
+    public void ApiFailures_MapToUiSafeMessages(HttpStatusCode statusCode, string expected)
+    {
+        var exception = new ApiException(
+            statusCode,
+            "internal route/revision message",
+            "{\"detail\":{\"code\":\"REVISION_CONFLICT\",\"current_revision\":9}}");
+
+        var actual = ApiErrorClassifier.ToUserMessage(exception, "사진을 찾을 수 없습니다.");
+
+        Assert.Equal(expected, actual);
+        Assert.DoesNotContain("revision", actual, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("REVISION_CONFLICT", exception.DetailCode);
+    }
+
     private static ServiceProvider BuildProvider(
         HttpMessageHandler handler,
         string baseUrl = "https://backend.test:8443")

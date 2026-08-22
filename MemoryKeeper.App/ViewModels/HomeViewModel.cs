@@ -18,6 +18,7 @@ public partial class HomeViewModel : ObservableObject
 
     private readonly IGalleryApiRepository _galleryApiRepository;
     private readonly IGalleryPhotoCatalog _galleryPhotoCatalog;
+    private readonly GalleryHierarchyService _galleryHierarchyService;
     private readonly IThumbnailService _thumbnailService;
     private readonly IPlaceFocusState _placeFocusState;
     private readonly IPhotoNavigationState _photoNavigationState;
@@ -162,6 +163,7 @@ public partial class HomeViewModel : ObservableObject
     public HomeViewModel(
         IGalleryApiRepository galleryApiRepository,
         IGalleryPhotoCatalog galleryPhotoCatalog,
+        GalleryHierarchyService galleryHierarchyService,
         IThumbnailService thumbnailService,
         IPlaceFocusState placeFocusState,
         IPhotoNavigationState photoNavigationState,
@@ -170,6 +172,7 @@ public partial class HomeViewModel : ObservableObject
     {
         _galleryApiRepository = galleryApiRepository;
         _galleryPhotoCatalog = galleryPhotoCatalog;
+        _galleryHierarchyService = galleryHierarchyService;
         _thumbnailService = thumbnailService;
         _placeFocusState = placeFocusState;
         _photoNavigationState = photoNavigationState;
@@ -211,6 +214,7 @@ public partial class HomeViewModel : ObservableObject
                 var dashboard = await GalleryBackendBridge.GetHomeDashboardAsync(
                     _galleryApiRepository,
                     _galleryPhotoCatalog,
+                    _galleryHierarchyService,
                     token);
                 ApplyDashboard(dashboard);
                 StatusMessage = "추억을 불러왔습니다.";

@@ -19,7 +19,7 @@ public sealed class GalleryApiRepositoryUnitTests
     {
         var handler = new StubHandler();
         handler.Map["GET /api/common/gallery?page=1&page_size=20&sort=capture_datetime_desc&service_name=MemoryKeeper"] =
-            """{"items":[{"file_id":"11111111-1111-1111-1111-111111111111","filename":"a.jpg","preview_url":"/p","thumbnail_url":"/t","capture_datetime":"2024-01-02T03:04:05Z","country":"Korea","city":"Seoul","place_name":"Namsan","camera_model":"X","favorite":true,"has_gps":true,"has_ai_tag":false,"service_name":"MemoryKeeper"}],"page":1,"page_size":20,"total":1,"sort":"capture_datetime_desc"}""";
+            """{"items":[{"file_id":"11111111-1111-1111-1111-111111111111","filename":"a.jpg","preview_url":"/p","thumbnail_url":"/t","capture_datetime":"2024-01-02T03:04:05Z","country":"Korea","city":"Seoul","place_name":"Namsan","camera_model":"X","favorite":true,"memo":"trip","metadata_revision":5,"incomplete":true,"place_revision":2,"has_gps":true,"has_ai_tag":false,"service_name":"MemoryKeeper"}],"page":1,"page_size":20,"total":1,"sort":"capture_datetime_desc"}""";
         handler.Map["GET /api/common/gallery/map?service_name=MemoryKeeper"] =
             """{"items":[{"file_id":"11111111-1111-1111-1111-111111111111","latitude":37.5,"longitude":127.0,"place_name":"Namsan","thumbnail":"/t","year":2024,"service_name":"MemoryKeeper"}],"total":1}""";
         handler.Map["GET /api/common/gallery/timeline?service_name=MemoryKeeper"] =
@@ -27,7 +27,7 @@ public sealed class GalleryApiRepositoryUnitTests
         handler.Map["GET /api/common/gallery/statistics?service_name=MemoryKeeper"] =
             """{"total_photos":3,"gps_count":2,"ai_tag_count":1,"by_camera":[{"name":"X","count":3}],"by_country":[{"name":"Korea","count":3}],"by_year":[{"name":"2024","count":3}],"by_service":[{"name":"MemoryKeeper","count":3}]}""";
         handler.Map["GET /api/common/gallery/11111111-1111-1111-1111-111111111111"] =
-            """{"file_id":"11111111-1111-1111-1111-111111111111","filename":"a.jpg","extension":"jpg","mime_type":"image/jpeg","file_size":10,"width":100,"height":200,"favorite":false,"service_name":"MemoryKeeper","storage_path":"/o","preview_url":"/p","thumbnail_url":"/t","original_url":"/o","metadata":{"iso":100},"ai_tags":[],"user_tags":[],"history_count":0}""";
+            """{"file_id":"11111111-1111-1111-1111-111111111111","filename":"a.jpg","extension":"jpg","mime_type":"image/jpeg","file_size":10,"width":100,"height":200,"favorite":true,"memo":"가족 여행","metadata_revision":5,"incomplete":false,"place_revision":9,"service_name":"MemoryKeeper","storage_path":"/o","preview_url":"/p","thumbnail_url":"/t","original_url":"/o","metadata":{"iso":100},"ai_tags":[{"tag":"사람","source":"AI","tag_type":"AI"}],"user_tags":[{"tag":"가족","source":"USER","tag_type":"USER","tag_id":42}],"history_count":0}""";
 
         using var provider = BuildProvider(handler);
         var repo = provider.GetRequiredService<IGalleryApiRepository>();
@@ -37,6 +37,9 @@ public sealed class GalleryApiRepositoryUnitTests
         Assert.Single(photos.Items);
         Assert.Equal("a.jpg", photos.Items[0].Filename);
         Assert.Equal("Korea", photos.Items[0].Country);
+        Assert.Equal(5, photos.Items[0].MetadataRevision);
+        Assert.Equal(2, photos.Items[0].PlaceRevision);
+        Assert.True(photos.Items[0].Incomplete);
 
         var map = await repo.GetMapAsync();
         Assert.Equal(1, map.Total);
@@ -54,6 +57,11 @@ public sealed class GalleryApiRepositoryUnitTests
         var detail = await repo.GetPhotoAsync(Guid.Parse("11111111-1111-1111-1111-111111111111"));
         Assert.Equal("a.jpg", detail.Filename);
         Assert.Equal(100, detail.Width);
+        Assert.Equal("가족 여행", detail.Memo);
+        Assert.Equal(5, detail.MetadataRevision);
+        Assert.Equal(9, detail.PlaceRevision);
+        Assert.Equal(42, Assert.Single(detail.UserTags).TagId);
+        Assert.Single(detail.AiTags);
         Assert.All(handler.AuthorizationHeaders, header =>
         {
             Assert.Equal("Bearer", header?.Scheme);
@@ -96,10 +104,13 @@ public sealed class GalleryApiRepositoryUnitTests
     {
         var handler = new StubHandler();
         const string fileId = "22222222-2222-2222-2222-222222222222";
+        const string placeId = "33333333-3333-3333-3333-333333333333";
         handler.Map["GET /api/common/gallery/search?service_name=MemoryKeeper&page=1&page_size=200&sort=capture_datetime_desc"] =
-            $$"""{"items":[{"file_id":"{{fileId}}","filename":"20260815_140628.jpg","thumbnail_url":"/api/common/gallery/{{fileId}}/thumbnail","preview_url":"/api/common/gallery/{{fileId}}/preview","capture_datetime":"2026-08-15T14:06:28+09:00","country":"대한민국","city":"구례군","place_name":"원기교","has_gps":true,"service_name":"MemoryKeeper"}],"page":1,"page_size":200,"total":1,"sort":"capture_datetime_desc"}""";
+            $$"""{"items":[{"file_id":"{{fileId}}","filename":"20260815_140628.jpg","thumbnail_url":"/api/common/gallery/{{fileId}}/thumbnail","preview_url":"/api/common/gallery/{{fileId}}/preview","capture_datetime":"2026-08-15T14:06:28+09:00","country":"대한민국","city":"구례군","place_name":"원기교","memorykeeper_place_id":"{{placeId}}","place_display_name":"피아골","has_gps":true,"service_name":"MemoryKeeper"}],"page":1,"page_size":200,"total":1,"sort":"capture_datetime_desc"}""";
         handler.Map["GET /api/common/gallery/map?service_name=MemoryKeeper"] =
             """{"items":[],"total":0}""";
+        handler.Map["GET /api/memorykeeper/places?limit=500&offset=0"] =
+            $$"""{"items":[{"id":"{{placeId}}","display_name":"피아골","country":"대한민국","province":"전라남도","city":"구례군","district":"토지면","latitude":35.22742,"longitude":127.59052,"radius_m":100,"active":true,"favorite":false,"revision":1}],"total":1,"limit":500,"offset":0}""";
         handler.Map[$"GET /api/common/gallery/{fileId}"] =
             $$"""{"file_id":"{{fileId}}","filename":"20260815_140628.jpg","service_name":"MemoryKeeper","thumbnail_url":"/api/common/gallery/{{fileId}}/thumbnail","preview_url":"/api/common/gallery/{{fileId}}/preview","metadata":{"gps_lat":35.22742,"gps_lon":127.59052,"country":"대한민국","province":"전라남도","city":"구례군","district":"토지면","place_name":"원기교"},"ai_tags":[],"user_tags":[],"history_count":0}""";
 
@@ -119,6 +130,10 @@ public sealed class GalleryApiRepositoryUnitTests
         Assert.Equal("구례군", location.City);
         Assert.Equal("토지면", location.District);
         Assert.Equal("원기교", location.PlaceName);
+        var registeredPlace = Assert.Single(snapshot.RegisteredPlacesById).Value;
+        Assert.Equal("대한민국", registeredPlace.Country);
+        Assert.Equal("전라남도", registeredPlace.Province);
+        Assert.Equal("구례군", registeredPlace.City);
     }
 
     private static ServiceProvider BuildProvider(HttpMessageHandler handler)
@@ -142,6 +157,7 @@ public sealed class GalleryApiRepositoryUnitTests
         services.AddHttpClient(BaseApiClient.HttpClientName)
             .ConfigurePrimaryHttpMessageHandler(() => handler);
         services.AddSingleton<IGalleryApiRepository, GalleryApiRepository>();
+        services.AddSingleton<IMemoryKeeperPlaceApiRepository, MemoryKeeperPlaceApiRepository>();
         services.AddSingleton<IGalleryPhotoCatalog, GalleryPhotoCatalog>();
         return services.BuildServiceProvider();
     }

@@ -713,29 +713,7 @@ public partial class GalleryViewModel : ObservableObject
     }
 
     private GalleryHierarchyQuery BuildQuery(GalleryTreeNode node) =>
-        new()
-        {
-            SearchText = IsPlaceBrowseMode
-                ? null
-                : (string.IsNullOrWhiteSpace(SearchText) ? null : SearchText.Trim()),
-            FavoritesOnly = node.Kind == GalleryTreeNodeKind.Favorites,
-            RecentOnly = node.Kind == GalleryTreeNodeKind.Recent,
-            PendingOnly = node.Kind == GalleryTreeNodeKind.Pending,
-            Year = node.Kind is GalleryTreeNodeKind.All or GalleryTreeNodeKind.Favorites
-                or GalleryTreeNodeKind.Recent or GalleryTreeNodeKind.Pending or GalleryTreeNodeKind.PlaceBrowse
-                ? null
-                : node.Year,
-            Country = node.Kind is GalleryTreeNodeKind.Country or GalleryTreeNodeKind.City or GalleryTreeNodeKind.Place
-                ? node.Country
-                : null,
-            City = node.Kind is GalleryTreeNodeKind.City or GalleryTreeNodeKind.Place
-                ? node.City
-                : null,
-            PlaceId = node.Kind is GalleryTreeNodeKind.Place or GalleryTreeNodeKind.PlaceBrowse or GalleryTreeNodeKind.PlaceYear
-                ? node.PlaceId
-                : null,
-            UnclassifiedOnly = node.Kind == GalleryTreeNodeKind.Unclassified
-        };
+        node.BuildQuery(IsPlaceBrowseMode ? null : SearchText);
 
     private string BuildBreadcrumb(GalleryTreeNode node)
     {

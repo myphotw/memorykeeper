@@ -1,6 +1,8 @@
 using MemoryKeeper.App.Models;
 using MemoryKeeper.App.Services;
+using MemoryKeeper.Application.DTOs;
 using MemoryKeeper.Application.Services;
+using MemoryKeeper.Infrastructure.Services.Api;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
@@ -12,7 +14,8 @@ namespace MemoryKeeper.App.ViewModels;
 
 public partial class FavoritesViewModel : ObservableObject
 {
-    private readonly MediaService _mediaService;
+    private readonly GalleryHierarchyService _hierarchyService;
+    private readonly BaseApiClient _apiClient;
     private readonly IThumbnailService _thumbnailService;
     private readonly IPhotoNavigationState _photoNavigationState;
     private readonly ILogger<FavoritesViewModel> _logger;
@@ -31,12 +34,14 @@ public partial class FavoritesViewModel : ObservableObject
     public event EventHandler? BackRequested;
 
     public FavoritesViewModel(
-        MediaService mediaService,
+        GalleryHierarchyService hierarchyService,
+        BaseApiClient apiClient,
         IThumbnailService thumbnailService,
         IPhotoNavigationState photoNavigationState,
         ILogger<FavoritesViewModel> logger)
     {
-        _mediaService = mediaService;
+        _hierarchyService = hierarchyService;
+        _apiClient = apiClient;
         _thumbnailService = thumbnailService;
         _photoNavigationState = photoNavigationState;
         _logger = logger;
@@ -57,11 +62,15 @@ public partial class FavoritesViewModel : ObservableObject
         IsBusy = true;
         try
         {
-            var favorites = await _mediaService.GetFavoritesGalleryAsync();
-            var galleryItems = favorites.Select(item => new GalleryItem(item)).ToList();
+            var favorites = await _hierarchyService.QueryAsync(
+                new GalleryHierarchyQuery { FavoritesOnly = true });
+            var galleryItems = favorites
+                .Select(photo => new GalleryItem(
+                    GalleryBackendMapper.ToGalleryMedia(photo, _apiClient.ApiBaseUrl)))
+                .ToList();
             Items = new ObservableCollection<GalleryItem>(galleryItems);
             StatusMessage = galleryItems.Count == 0
-                ? "즐겨찾기한 사진이 없습니다. Photo Detail에서 ★로 추가하세요."
+                ? "즐겨찾기한 사진이 없습니다."
                 : $"즐겨찾기 {galleryItems.Count}장";
             _ = LoadThumbnailsAsync(galleryItems);
         }
@@ -101,10 +110,26 @@ public partial class FavoritesViewModel : ObservableObject
                 item.IsThumbnailLoading = true;
                 try
                 {
+                    var remoteUrl = item.Media.ThumbnailUrl
+                                    ?? item.Media.PreviewUrl
+                                    ?? item.AbsoluteLibraryPath;
+                    if (HttpImageLoader.IsHttpUrl(remoteUrl))
+                    {
+                        var image = await HttpImageLoader.LoadAsync(
+                            remoteUrl,
+                            _logger,
+                            $"favorites:{item.MediaId}",
+                            token);
+                        await EnqueueAsync(() =>
+                        {
+                            item.ThumbnailImage = image;
+                            item.HasThumbnail = image is not null;
+                        });
+                        continue;
+                    }
+
                     var path = await _thumbnailService.GetOrCreateThumbnailAsync(
-                        item.MediaId,
-                        item.AbsoluteLibraryPath,
-                        token);
+                        item.MediaId, item.AbsoluteLibraryPath, token);
                     if (string.IsNullOrWhiteSpace(path))
                     {
                         item.HasThumbnail = false;

@@ -19,6 +19,7 @@ public sealed partial class MainWindow : Window
     private readonly IResponsiveLayoutService _responsiveLayout;
     private readonly INavigationService _navigation;
     private readonly ICatalogInvalidation _catalogInvalidation;
+    private readonly BackendChangeMonitorService _backendChangeMonitor;
     private readonly Dictionary<string, Page> _pageCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _loadedPages = new(StringComparer.OrdinalIgnoreCase);
     private HomeViewModel? _homeViewModel;
@@ -54,7 +55,8 @@ public sealed partial class MainWindow : Window
         IPlaceFocusState placeFocusState,
         IResponsiveLayoutService responsiveLayout,
         INavigationService navigation,
-        ICatalogInvalidation catalogInvalidation)
+        ICatalogInvalidation catalogInvalidation,
+        BackendChangeMonitorService backendChangeMonitor)
     {
         ViewModel = viewModel;
         _serviceProvider = serviceProvider;
@@ -64,6 +66,7 @@ public sealed partial class MainWindow : Window
         _responsiveLayout = responsiveLayout;
         _navigation = navigation;
         _catalogInvalidation = catalogInvalidation;
+        _backendChangeMonitor = backendChangeMonitor;
         InitializeComponent();
         if (Content is FrameworkElement root)
         {
@@ -82,6 +85,24 @@ public sealed partial class MainWindow : Window
             Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread());
         _photoNavigationState.OpenRequested += OnPhotoOpenRequested;
         Activated += OnActivated;
+        Activated += OnBackendChangesActivated;
+    }
+
+    private async void OnBackendChangesActivated(object sender, WindowActivatedEventArgs args)
+    {
+        if (args.WindowActivationState == WindowActivationState.Deactivated)
+        {
+            return;
+        }
+
+        try
+        {
+            await _backendChangeMonitor.CheckForChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Backend change check failed: {ex.Message}");
+        }
     }
 
     private void Root_OnSizeChanged(object sender, SizeChangedEventArgs e) =>
@@ -720,6 +741,7 @@ public sealed partial class MainWindow : Window
             _galleryViewModel = page.ViewModel;
             _galleryViewModel.BackRequested += OnShellBackRequested;
             page.OpenImportRequested += OnGalleryOpenImportRequested;
+            page.OpenPendingRequested += OnGalleryOpenPendingRequested;
             ContentFrame.Content = page;
             if (ShouldReload("gallery", CatalogSurface.Gallery))
             {
@@ -772,7 +794,7 @@ public sealed partial class MainWindow : Window
         _favoritesViewModel = page.ViewModel;
         _favoritesViewModel.BackRequested += OnShellBackRequested;
         ContentFrame.Content = page;
-        if (ShouldReload("favorites"))
+        if (ShouldReload("favorites", CatalogSurface.Favorites))
         {
             MarkLoaded("favorites");
             _ = page.ViewModel.LoadCommand.ExecuteAsync(null);
@@ -962,6 +984,9 @@ public sealed partial class MainWindow : Window
     private void OnGalleryOpenImportRequested(object? sender, EventArgs e) =>
         SelectNavigationItem("import");
 
+    private void OnGalleryOpenPendingRequested(object? sender, EventArgs e) =>
+        SelectNavigationItem("pending");
+
     private void OnTravelOpenDetailRequested(object? sender, EventArgs e) =>
         SelectNavigationItem("travel-detail");
 
@@ -1023,6 +1048,7 @@ public sealed partial class MainWindow : Window
         if (_galleryPage is not null)
         {
             _galleryPage.OpenImportRequested -= OnGalleryOpenImportRequested;
+            _galleryPage.OpenPendingRequested -= OnGalleryOpenPendingRequested;
             _galleryPage = null;
         }
 

@@ -122,8 +122,9 @@ public sealed class TcBackendLocationResolver : ILocationResolver
         {
             DisplayName = displayName,
             Country = value.Country ?? string.Empty,
-            Province = FirstNotEmpty(value.District, value.Province),
+            Province = value.Province ?? string.Empty,
             City = value.City ?? string.Empty,
+            District = value.District ?? string.Empty,
             Address = string.IsNullOrWhiteSpace(value.DisplayName) ? displayName : value.DisplayName,
             Latitude = value.Latitude,
             Longitude = value.Longitude,

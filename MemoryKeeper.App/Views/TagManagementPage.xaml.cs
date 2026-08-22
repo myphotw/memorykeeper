@@ -38,4 +38,33 @@ public sealed partial class TagManagementPage : Page
             await ViewModel.DeleteCommand.ExecuteAsync(null);
         }
     }
+
+    private async void Merge_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.SelectedTag is null || ViewModel.MergeTargetTag is null)
+        {
+            ViewModel.StatusMessage = "병합할 원본 태그와 대상 태그를 선택하세요.";
+            return;
+        }
+
+        if (ViewModel.SelectedTag.Id == ViewModel.MergeTargetTag.Id)
+        {
+            ViewModel.StatusMessage = "서로 다른 태그를 선택하세요.";
+            return;
+        }
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = "태그 병합",
+            Content = $"'{ViewModel.SelectedTag.Name}'을(를) '{ViewModel.MergeTargetTag.Name}'에 병합할까요?",
+            PrimaryButtonText = "병합",
+            CloseButtonText = "취소",
+            DefaultButton = ContentDialogButton.Close,
+        };
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+        {
+            await ViewModel.MergeCommand.ExecuteAsync(null);
+        }
+    }
 }

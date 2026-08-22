@@ -84,6 +84,7 @@ public sealed class GalleryApiRepositorySmokeTests
         IGalleryApiRepository repo = new GalleryApiRepository(handle.Client);
         IGalleryPhotoCatalog catalog = new GalleryPhotoCatalog(
             repo,
+            new MemoryKeeperPlaceApiRepository(handle.Client),
             handle.Client,
             NullLogger<GalleryPhotoCatalog>.Instance);
 

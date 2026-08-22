@@ -10,6 +10,8 @@ public sealed record LocationResult
 
     public string City { get; init; } = string.Empty;
 
+    public string District { get; init; } = string.Empty;
+
     public string Address { get; init; } = string.Empty;
 
     public string PostalCode { get; init; } = string.Empty;

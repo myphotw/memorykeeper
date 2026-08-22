@@ -16,8 +16,8 @@ namespace MemoryKeeper.App.ViewModels;
 
 public partial class PlaceManagementViewModel : ObservableObject
 {
-    private readonly PlaceService _placeService;
-    private readonly PendingMemoryService _pendingMemoryService;
+    private readonly MemoryKeeperPlaceService _placeService;
+    private readonly IGalleryApiRepository _galleryApiRepository;
     private readonly ILocationResolver _locationResolver;
     private readonly ISettingRepository _settingRepository;
     private readonly IPlaceEditorSeedState _seedState;
@@ -137,15 +137,15 @@ public partial class PlaceManagementViewModel : ObservableObject
     public event EventHandler? BackRequested;
 
     public PlaceManagementViewModel(
-        PlaceService placeService,
-        PendingMemoryService pendingMemoryService,
+        MemoryKeeperPlaceService placeService,
+        IGalleryApiRepository galleryApiRepository,
         ILocationResolver locationResolver,
         ISettingRepository settingRepository,
         IPlaceEditorSeedState seedState,
         ILogger<PlaceManagementViewModel> logger)
     {
         _placeService = placeService;
-        _pendingMemoryService = pendingMemoryService;
+        _galleryApiRepository = galleryApiRepository;
         _locationResolver = locationResolver;
         _settingRepository = settingRepository;
         _seedState = seedState;
@@ -374,7 +374,7 @@ public partial class PlaceManagementViewModel : ObservableObject
 
         await RunBusyAsync(async () =>
         {
-            var updated = await _placeService.SetPlaceFavoriteAsync(SelectedPlace.Id, !SelectedPlace.IsFavorite);
+            var updated = await _placeService.SetPlaceFavoriteAsync(SelectedPlace, !SelectedPlace.IsFavorite);
             ShowSuccess(updated.IsFavorite
                 ? $"'{updated.DisplayName}'을(를) 즐겨찾기에 추가했습니다."
                 : $"'{updated.DisplayName}' 즐겨찾기를 해제했습니다.");
@@ -405,6 +405,7 @@ public partial class PlaceManagementViewModel : ObservableObject
             var confirmed = await PlaceOverlapPrompt.ConfirmIfNeededAsync(
                 HostXamlRoot,
                 _placeService,
+                request.DisplayName,
                 request.Latitude,
                 request.Longitude,
                 request.Radius ?? PlaceCategoryDefaults.GetRecommendedRadius(request.Category));
@@ -420,6 +421,7 @@ public partial class PlaceManagementViewModel : ObservableObject
                 Country = request.Country,
                 Province = request.Province,
                 City = request.City,
+                District = request.District,
                 Address = request.Address,
                 PostalCode = request.PostalCode,
                 GooglePlaceId = request.GooglePlaceId,
@@ -450,41 +452,36 @@ public partial class PlaceManagementViewModel : ObservableObject
         CancelMapPointApply();
         await RunBusyAsync(async () =>
         {
-            var request = BuildUpdateRequest(SelectedPlace.Id);
-            var confirmed = await PlaceOverlapPrompt.ConfirmIfNeededAsync(
-                HostXamlRoot,
-                _placeService,
-                request.Latitude,
-                request.Longitude,
-                request.Radius,
-                excludePlaceId: request.Id);
-            if (!confirmed)
+            var original = SelectedPlace;
+            var request = BuildUpdateRequest(original.Id);
+            var operation = await _placeService.UpdateWithRadiusImpactAsync(
+                original,
+                request,
+                (impact, token) => PlaceOverlapPrompt.ConfirmImpactIfNeededAsync(
+                    HostXamlRoot,
+                    request.DisplayName,
+                    impact,
+                    token));
+            if (operation.Cancelled)
             {
                 StatusMessage = "장소 수정이 취소되었습니다.";
                 return;
             }
 
-            var updated = await _placeService.UpdatePlaceAsync(new UpdatePlaceRequest
-            {
-                Id = request.Id,
-                DisplayName = request.DisplayName,
-                Country = request.Country,
-                Province = request.Province,
-                City = request.City,
-                Address = request.Address,
-                PostalCode = request.PostalCode,
-                GooglePlaceId = request.GooglePlaceId,
-                Category = request.Category,
-                Latitude = request.Latitude,
-                Longitude = request.Longitude,
-                Radius = request.Radius,
-                IsActive = request.IsActive,
-                IsFavorite = request.IsFavorite,
-                ReclassifyMedia = false
-            });
+            var updated = operation.UpdatedPlace
+                ?? throw new InvalidOperationException("장소 수정 결과가 비어 있습니다.");
             var assigned = await AssignSeedMediaAsync(updated.Id);
-            var reclass = await _placeService.ReclassifyMediaAsync(updated.Id, reassignFromOtherPlaces: true);
-            ShowSuccess(BuildSaveSuccessMessage(updated.DisplayName, assigned, reclass, isCreate: false));
+            var message = BuildSaveSuccessMessage(
+                updated.DisplayName,
+                assigned,
+                operation.Reclassification,
+                isCreate: false);
+            if (operation.ReclassificationSkippedBecauseInactive)
+            {
+                message += " · 비활성 장소의 기존 사진 연결은 유지됩니다.";
+            }
+
+            ShowSuccess(message);
             await ReloadAndSelectAsync(updated.Id);
         });
     }
@@ -523,14 +520,15 @@ public partial class PlaceManagementViewModel : ObservableObject
         var mediaIds = _seedMediaIds.ToList();
         _seedMediaIds.Clear();
 
-        var result = await _pendingMemoryService.AssignPlaceAsync(new AssignMediaPlaceRequest
+        var assigned = 0;
+        foreach (var mediaId in mediaIds)
         {
-            PlaceId = placeId,
-            MediaIds = mediaIds
-        });
+            var detail = await _galleryApiRepository.GetPhotoAsync(mediaId);
+            await _placeService.AssignFilePlaceAsync(mediaId, placeId, detail.PlaceRevision);
+            assigned++;
+        }
 
-        await _placeService.TouchUsageAsync(placeId);
-        return result.UpdatedCount;
+        return assigned;
     }
 
     [RelayCommand]
@@ -544,7 +542,7 @@ public partial class PlaceManagementViewModel : ObservableObject
 
         await RunBusyAsync(async () =>
         {
-            var updated = await _placeService.SetPlaceActiveAsync(SelectedPlace.Id, !SelectedPlace.IsActive);
+            var updated = await _placeService.SetPlaceActiveAsync(SelectedPlace, !SelectedPlace.IsActive);
             ShowSuccess(updated.IsActive
                 ? $"장소 '{updated.DisplayName}'을(를) 활성화했습니다."
                 : $"장소 '{updated.DisplayName}'을(를) 비활성화했습니다.");
@@ -601,6 +599,7 @@ public partial class PlaceManagementViewModel : ObservableObject
             Country = Country,
             Province = Province,
             City = City,
+            District = string.Empty,
             Address = Address,
             PostalCode = PostalCode,
             GooglePlaceId = string.IsNullOrWhiteSpace(GooglePlaceId) ? null : GooglePlaceId,
@@ -616,10 +615,13 @@ public partial class PlaceManagementViewModel : ObservableObject
         new()
         {
             Id = id,
+            Revision = SelectedPlace?.Revision ?? 0,
             DisplayName = DisplayName,
+            CanonicalName = SelectedPlace?.CanonicalName,
             Country = Country,
             Province = Province,
             City = City,
+            District = SelectedPlace?.District ?? string.Empty,
             Address = Address,
             PostalCode = PostalCode,
             GooglePlaceId = string.IsNullOrWhiteSpace(GooglePlaceId) ? null : GooglePlaceId,
@@ -931,14 +933,19 @@ public partial class PlaceManagementViewModel : ObservableObject
                 return;
             }
 
-            var count = await _placeService.CountMediaInRadiusAsync(lat, lng, radius, token);
+            var impact = await _placeService.GetRadiusImpactAsync(
+                lat,
+                lng,
+                radius,
+                SelectedPlace?.Id,
+                token);
             if (version != _photoCountVersion)
             {
                 return;
             }
 
-            IncludedPhotoCount = count;
-            IncludedPhotoCountText = $"포함 사진 {count}장";
+            IncludedPhotoCount = impact.MatchedFileCount;
+            IncludedPhotoCountText = $"포함 사진 {impact.MatchedFileCount}장";
         }
         catch (OperationCanceledException)
         {

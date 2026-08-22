@@ -27,7 +27,7 @@ public static class GalleryBackendMapper
             FileName = photo.Filename,
             AbsoluteLibraryPath = preview ?? thumb ?? string.Empty,
             CapturedAt = photo.CaptureDatetime,
-            PlaceId = null,
+            PlaceId = photo.MemorykeeperPlaceId,
             MediaType = MediaType.Photo,
             IsFavorite = photo.Favorite,
             ThumbnailUrl = thumb,
@@ -44,6 +44,14 @@ public static class GalleryBackendMapper
         double? lat = GetDouble(metadata, "gps_lat");
         double? lon = GetDouble(metadata, "gps_lon");
         var mediaId = ParseFileId(detail.FileId);
+        var rawPlaceName = FirstNotEmpty(
+            detail.GeocodedPlaceName,
+            GetString(metadata, "geocoded_place_name"),
+            GetString(metadata, "place_name"));
+        var displayPlaceName = FirstNotEmpty(
+            detail.PlaceDisplayName,
+            GetString(metadata, "place_display_name"),
+            rawPlaceName);
 
         return new PhotoDetailDto
         {
@@ -61,11 +69,22 @@ public static class GalleryBackendMapper
             Country = GetString(metadata, "country") ?? string.Empty,
             Province = GetString(metadata, "province") ?? string.Empty,
             City = GetString(metadata, "city") ?? string.Empty,
-            Address = GetString(metadata, "district") ?? string.Empty,
+            District = GetString(metadata, "district") ?? string.Empty,
+            Address = rawPlaceName,
             Latitude = lat,
             Longitude = lon,
-            PlaceId = null,
-            PlaceName = GetString(metadata, "place_name") ?? string.Empty,
+            PlaceId = detail.MemorykeeperPlaceId ?? GetGuid(metadata, "memorykeeper_place_id"),
+            PlaceName = displayPlaceName,
+            GeocodedPlaceName = rawPlaceName,
+            CanonicalName = FirstNotEmpty(
+                detail.PlaceCanonicalName,
+                GetString(metadata, "place_canonical_name")),
+            PlaceMatchSource = detail.PlaceMatchSource ?? GetString(metadata, "place_match_source"),
+            PlaceMatchDistanceM = detail.PlaceMatchDistanceM ?? GetDouble(metadata, "place_match_distance_m"),
+            PlaceRevision = detail.PlaceRevision > 0
+                ? detail.PlaceRevision
+                : GetInt(metadata, "place_revision") ?? 0,
+            MetadataRevision = detail.MetadataRevision,
             HasGps = lat is not null && lon is not null,
             IsFavorite = detail.Favorite,
             Width = detail.Width ?? GetInt(metadata, "image_width"),
@@ -78,7 +97,7 @@ public static class GalleryBackendMapper
             FNumber = GetString(metadata, "f_number"),
             FocalLength = GetString(metadata, "focal_length"),
             FileSizeBytes = detail.FileSize,
-            Memo = string.Empty,
+            Memo = detail.Memo ?? string.Empty,
             Tags = MapTags(detail),
             RelatedPhotos = [],
         };
@@ -116,13 +135,31 @@ public static class GalleryBackendMapper
     private static IReadOnlyList<TagDto> MapTags(GalleryPhotoDetailDto detail)
     {
         return detail.UserTags
-            .Concat(detail.AiTags)
-            .Select(tag => new TagDto
-            {
-                Id = Guid.NewGuid(),
-                Name = tag.Tag,
-            })
+            .Select(tag => MapTag(tag, TagSource.User))
+            .Concat(detail.AiTags.Select(tag => MapTag(tag, TagSource.Ai)))
             .ToList();
+    }
+
+    private static TagDto MapTag(MemoryKeeper.Application.DTOs.Gallery.GalleryTagDto tag, TagSource source)
+    {
+        var bytes = new byte[16];
+        if (tag.TagId is int backendId)
+        {
+            BitConverter.GetBytes(backendId).CopyTo(bytes, 0);
+        }
+        else
+        {
+            BitConverter.GetBytes(StringComparer.OrdinalIgnoreCase.GetHashCode(tag.Tag)).CopyTo(bytes, 0);
+        }
+
+        return new TagDto
+            {
+                Id = new Guid(bytes),
+                BackendId = tag.TagId,
+                Name = tag.Tag,
+                Source = source,
+                IsAssigned = true,
+            };
     }
 
     private static string? GetString(Dictionary<string, JsonElement> metadata, string key)
@@ -165,6 +202,12 @@ public static class GalleryBackendMapper
             _ => null,
         };
     }
+
+    private static Guid? GetGuid(Dictionary<string, JsonElement> metadata, string key) =>
+        Guid.TryParse(GetString(metadata, key), out var value) ? value : null;
+
+    private static string FirstNotEmpty(params string?[] values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? string.Empty;
 
     private static DateTimeOffset? GetDate(Dictionary<string, JsonElement> metadata, string key)
     {

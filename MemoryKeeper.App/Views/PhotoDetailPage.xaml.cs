@@ -13,6 +13,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Markup;
 using Windows.System;
+using System.Globalization;
 
 namespace MemoryKeeper.App.Views;
 
@@ -40,6 +41,7 @@ public sealed partial class PhotoDetailPage : Page
         ViewModel.OpenPlaceRegistrationRequested += OnOpenPlaceRegistrationRequested;
         ViewModel.OpenTagManagerRequested += OnOpenTagManagerRequested;
         ViewModel.OpenMemoEditorRequested += OnOpenMemoEditorRequested;
+        ViewModel.OpenRawLocationEditorRequested += OnOpenRawLocationEditorRequested;
         ViewModel.OpenMapPickRequested += OnOpenMapPickRequested;
         ViewModel.ToastRequested += OnToastRequested;
     }
@@ -78,6 +80,7 @@ public sealed partial class PhotoDetailPage : Page
         ViewModel.OpenPlaceRegistrationRequested -= OnOpenPlaceRegistrationRequested;
         ViewModel.OpenTagManagerRequested -= OnOpenTagManagerRequested;
         ViewModel.OpenMemoEditorRequested -= OnOpenMemoEditorRequested;
+        ViewModel.OpenRawLocationEditorRequested -= OnOpenRawLocationEditorRequested;
         ViewModel.OpenMapPickRequested -= OnOpenMapPickRequested;
         ViewModel.ToastRequested -= OnToastRequested;
         ViewModel.DetachMap();
@@ -238,6 +241,9 @@ public sealed partial class PhotoDetailPage : Page
     private async void OnOpenMemoEditorRequested(object? sender, EventArgs e) =>
         await ShowMemoDialogAsync();
 
+    private async void OnOpenRawLocationEditorRequested(object? sender, EventArgs e) =>
+        await ShowRawLocationDialogAsync();
+
     private async void OnOpenMapPickRequested(object? sender, EventArgs e) =>
         await ShowMapPickDialogAsync();
 
@@ -271,6 +277,97 @@ public sealed partial class PhotoDetailPage : Page
             await ViewModel.SaveMemoCommand.ExecuteAsync(null);
         }
     }
+
+    private async Task ShowRawLocationDialogAsync()
+    {
+        var latitude = new TextBox { Header = "GPS 위도", Text = ViewModel.Latitude?.ToString(CultureInfo.InvariantCulture) ?? string.Empty };
+        var longitude = new TextBox { Header = "GPS 경도", Text = ViewModel.Longitude?.ToString(CultureInfo.InvariantCulture) ?? string.Empty };
+        var country = new TextBox { Header = "국가", Text = CleanDisplayValue(ViewModel.Country) };
+        var province = new TextBox { Header = "시/도", Text = CleanDisplayValue(ViewModel.Province) };
+        var city = new TextBox { Header = "시/군/구", Text = CleanDisplayValue(ViewModel.City) };
+        var district = new TextBox { Header = "세부 지역", Text = CleanDisplayValue(ViewModel.District) };
+        var placeName = new TextBox { Header = "원본 주소/장소명", Text = ViewModel.Address, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap };
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = "원본 GPS·주소 수정",
+            PrimaryButtonText = "저장",
+            CloseButtonText = "취소",
+            DefaultButton = ContentDialogButton.Primary,
+            Content = new ScrollViewer
+            {
+                MaxHeight = 520,
+                Content = new StackPanel
+                {
+                    Spacing = 8,
+                    MinWidth = 380,
+                    Children =
+                    {
+                        new TextBlock
+                        {
+                            Text = "사진의 원본 위치 정보입니다. 대표 추억 장소 지정과는 별도로 저장됩니다.",
+                            TextWrapping = TextWrapping.Wrap,
+                            Opacity = 0.8,
+                        },
+                        latitude, longitude, country, province, city, district, placeName,
+                    },
+                },
+            },
+        };
+
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+        {
+            return;
+        }
+
+        if (!TryNullableDouble(latitude.Text, out var lat)
+            || !TryNullableDouble(longitude.Text, out var lon))
+        {
+            await UserFeedback.ShowInfoAsync(XamlRoot, "위치 정보", "GPS 좌표를 숫자로 입력하세요.");
+            return;
+        }
+
+        await ViewModel.SaveRawLocationAsync(
+            lat, lon, country.Text, province.Text, city.Text, district.Text, placeName.Text);
+    }
+
+    private async void DeleteFromMemoryKeeper_OnClick(object sender, RoutedEventArgs e)
+    {
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = "사진 삭제",
+            Content = "이 사진을 MemoryKeeper에서 삭제할까요?",
+            PrimaryButtonText = "삭제",
+            CloseButtonText = "취소",
+            DefaultButton = ContentDialogButton.Close,
+        };
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+        {
+            await ViewModel.DeleteFromLibraryCommand.ExecuteAsync(null);
+        }
+    }
+
+    private static bool TryNullableDouble(string? value, out double? result)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            result = null;
+            return true;
+        }
+
+        if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+            || double.TryParse(value, NumberStyles.Float, CultureInfo.CurrentCulture, out parsed))
+        {
+            result = parsed;
+            return true;
+        }
+
+        result = null;
+        return false;
+    }
+
+    private static string CleanDisplayValue(string value) => value == "-" ? string.Empty : value;
 
     private async Task ShowTagDialogAsync()
     {

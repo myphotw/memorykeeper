@@ -56,4 +56,10 @@ public static class VisitRecordPlaceScoping
         var scale = 0.6 + Math.Log10(score + 1) * 0.45;
         return Math.Clamp(scale, 0.6, 1.7);
     }
+
+    public static bool HasAnyPhotos(IEnumerable<VisitRecordPlaceDto> places) =>
+        places.Any(place => place.PhotoCount > 0 || place.AllPhotos.Count > 0);
+
+    public static bool CanDisplayMarker(VisitRecordPlaceDto place) =>
+        PlaceIdentity.HasValidCoordinates(place.Latitude, place.Longitude);
 }

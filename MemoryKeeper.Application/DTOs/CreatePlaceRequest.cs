@@ -10,6 +10,8 @@ public sealed class CreatePlaceRequest
 
     public string City { get; init; } = string.Empty;
 
+    public string District { get; init; } = string.Empty;
+
     public string Address { get; init; } = string.Empty;
 
     public string PostalCode { get; init; } = string.Empty;
@@ -44,17 +46,40 @@ public sealed class CreatePlaceRequest
     public bool ReassignFromOtherPlaces { get; init; }
 }
 
+/// <summary>
+/// Raw photo geography used only to complete missing registered-place metadata.
+/// It never mutates the photo's own GPS or address fields.
+/// </summary>
+public sealed record PlaceGeographyFallback
+{
+    public string Country { get; init; } = string.Empty;
+
+    public string Province { get; init; } = string.Empty;
+
+    public string City { get; init; } = string.Empty;
+
+    public string District { get; init; } = string.Empty;
+
+    public string Address { get; init; } = string.Empty;
+}
+
 public sealed class UpdatePlaceRequest
 {
     public required Guid Id { get; init; }
 
+    public int Revision { get; init; }
+
     public required string DisplayName { get; init; }
+
+    public string? CanonicalName { get; init; }
 
     public string Country { get; init; } = string.Empty;
 
     public string Province { get; init; } = string.Empty;
 
     public string City { get; init; } = string.Empty;
+
+    public string District { get; init; } = string.Empty;
 
     public string Address { get; init; } = string.Empty;
 

@@ -30,6 +30,12 @@ public partial class PendingMemoryMediaItem : ObservableObject
 
     public string StatusSummaryText => $"{GpsStatusText} · {PlaceStatusText}";
 
+    public string GeographyText => Media.GeographyText;
+
+    public string SuggestedPlaceText => string.IsNullOrWhiteSpace(Media.SuggestedPlaceName)
+        ? string.Empty
+        : $"추천 장소: {Media.SuggestedPlaceName}";
+
     [ObservableProperty]
     private bool isIncluded;
 

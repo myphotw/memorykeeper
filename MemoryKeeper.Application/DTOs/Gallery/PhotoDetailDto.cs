@@ -30,11 +30,41 @@ public sealed class PhotoDetailDto
     [JsonPropertyName("favorite")]
     public bool Favorite { get; init; }
 
+    [JsonPropertyName("memo")]
+    public string? Memo { get; init; }
+
+    [JsonPropertyName("metadata_revision")]
+    public int MetadataRevision { get; init; }
+
+    [JsonPropertyName("incomplete")]
+    public bool Incomplete { get; init; }
+
     [JsonPropertyName("service_name")]
     public string ServiceName { get; init; } = "MemoryKeeper";
 
     [JsonPropertyName("storage_path")]
     public string? StoragePath { get; init; }
+
+    [JsonPropertyName("memorykeeper_place_id")]
+    public Guid? MemorykeeperPlaceId { get; init; }
+
+    [JsonPropertyName("place_display_name")]
+    public string? PlaceDisplayName { get; init; }
+
+    [JsonPropertyName("place_canonical_name")]
+    public string? PlaceCanonicalName { get; init; }
+
+    [JsonPropertyName("geocoded_place_name")]
+    public string? GeocodedPlaceName { get; init; }
+
+    [JsonPropertyName("place_match_source")]
+    public string? PlaceMatchSource { get; init; }
+
+    [JsonPropertyName("place_match_distance_m")]
+    public double? PlaceMatchDistanceM { get; init; }
+
+    [JsonPropertyName("place_revision")]
+    public int PlaceRevision { get; init; }
 
     [JsonPropertyName("preview_url")]
     public string? PreviewUrl { get; init; }
@@ -77,4 +107,7 @@ public sealed class GalleryTagDto
 
     [JsonPropertyName("confidence")]
     public double? Confidence { get; init; }
+
+    [JsonPropertyName("tag_id")]
+    public int? TagId { get; init; }
 }

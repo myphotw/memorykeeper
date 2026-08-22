@@ -46,6 +46,8 @@ public sealed class PhotoDetailDto
 
     public string City { get; init; } = string.Empty;
 
+    public string District { get; init; } = string.Empty;
+
     public string Address { get; init; } = string.Empty;
 
     public double? Latitude { get; init; }
@@ -55,6 +57,17 @@ public sealed class PhotoDetailDto
     public Guid? PlaceId { get; init; }
 
     public string PlaceName { get; init; } = string.Empty;
+
+    /// <summary>Unmodified reverse-geocoded address/name from source metadata.</summary>
+    public string GeocodedPlaceName { get; init; } = string.Empty;
+
+    public string? PlaceMatchSource { get; init; }
+
+    public double? PlaceMatchDistanceM { get; init; }
+
+    public int PlaceRevision { get; init; }
+
+    public int MetadataRevision { get; init; }
 
     public string? CanonicalName { get; init; }
 

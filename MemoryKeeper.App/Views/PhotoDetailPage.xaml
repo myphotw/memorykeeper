@@ -119,7 +119,8 @@
                                     <Border Padding="10,4" CornerRadius="12" Background="{Binding ColorBrush}">
                                         <StackPanel Orientation="Horizontal" Spacing="6">
                                             <TextBlock Text="{Binding Name}" Foreground="White" FontSize="12" />
-                                            <Button Content="×" Padding="4,0" MinWidth="24" FontSize="12" Click="RemoveTag_OnClick" Tag="{Binding}" IsEnabled="{Binding DataContext.CanEditPhoto, ElementName=Root}" />
+                                            <TextBlock Text="{Binding SourceText}" Foreground="White" Opacity="0.75" FontSize="10" />
+                                            <Button Content="×" Padding="4,0" MinWidth="24" FontSize="12" Click="RemoveTag_OnClick" Tag="{Binding}" IsEnabled="{Binding CanRemove}" />
                                         </StackPanel>
                                     </Border>
                                 </DataTemplate>
@@ -198,20 +199,22 @@
                     <Button
                         Content="📍 위치정보 추가/수정"
                         Command="{Binding OpenPlaceRegistrationCommand}"
-                        IsEnabled="{Binding CanEditPhoto, Mode=OneWay}"
+                        IsEnabled="{Binding CanEditPlace, Mode=OneWay}"
                         Style="{StaticResource AccentButtonStyle}"
                         Visibility="{Binding EmphasizePlaceRegistration, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
                     <Button
                         Content="📍 위치정보 추가/수정"
                         Command="{Binding OpenPlaceRegistrationCommand}"
-                        IsEnabled="{Binding CanEditPhoto, Mode=OneWay}"
+                        IsEnabled="{Binding CanEditPlace, Mode=OneWay}"
                         Visibility="{Binding EmphasizePlaceRegistration, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}" />
                     <Button Content="🏷 태그관리" Command="{Binding OpenTagManagerCommand}" IsEnabled="{Binding CanEditPhoto, Mode=OneWay}" />
                     <Button Content="{Binding FavoriteButtonText, Mode=OneWay}" Command="{Binding ToggleFavoriteCommand}" IsEnabled="{Binding CanEditPhoto, Mode=OneWay}" />
                     <Button Content="📝 메모수정" Command="{Binding OpenMemoEditorCommand}" IsEnabled="{Binding CanEditPhoto, Mode=OneWay}" />
+                    <Button Content="🧭 원본 GPS·주소" Command="{Binding OpenRawLocationEditorCommand}" IsEnabled="{Binding IsBackendOnlyMedia, Mode=OneWay}" />
                     <Button Content="🌍 지도보기" Command="{Binding OpenOnMapCommand}" />
                     <Button Content="📂 원본열기" Command="{Binding OpenOriginalCommand}" />
                     <Button Content="폴더 열기" Command="{Binding OpenFileLocationCommand}" />
+                    <Button Content="삭제" Click="DeleteFromMemoryKeeper_OnClick" />
                 </StackPanel>
             </ScrollViewer>
         </Border>

@@ -9,7 +9,9 @@ public enum CatalogSurface
     Home = 4,
     Gallery = 8,
     Travel = 16,
-    AllRelated = Visits | Pending | Home | Gallery | Travel
+    Favorites = 32,
+    Tags = 64,
+    AllRelated = Visits | Pending | Home | Gallery | Travel | Favorites
 }
 
 /// <summary>

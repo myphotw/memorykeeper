@@ -6,6 +6,9 @@ public sealed class TagDto
 {
     public Guid Id { get; init; }
 
+    /// <summary>Canonical tc-backend tag id. Null only for legacy/local or Vision-only tags.</summary>
+    public int? BackendId { get; init; }
+
     public string Name { get; init; } = string.Empty;
 
     public string Color { get; init; } = string.Empty;
@@ -17,6 +20,8 @@ public sealed class TagDto
     public bool IsPinned { get; init; }
 
     public bool IsAssigned { get; init; }
+
+    public int Revision { get; init; }
 }
 
 public sealed class CreateTagRequest

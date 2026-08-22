@@ -40,4 +40,7 @@ public sealed class GalleryHierarchyQuery
     public bool RecentOnly { get; init; }
 
     public bool PendingOnly { get; init; }
+
+    /// <summary>Optional Visit Map season filter, applied to the same NAS hierarchy rows.</summary>
+    public TravelSeason? Season { get; init; }
 }

@@ -56,6 +56,12 @@ public sealed class BaseApiClient
         CancellationToken cancellationToken = default) =>
         SendAsync<T>(HttpMethod.Put, path, CreateJsonContent(body), ownsContent: true, cancellationToken);
 
+    public Task<ApiResponse<T>> PatchAsync<T>(
+        string path,
+        object? body,
+        CancellationToken cancellationToken = default) =>
+        SendAsync<T>(HttpMethod.Patch, path, CreateJsonContent(body), ownsContent: true, cancellationToken);
+
     public Task<ApiResponse<T>> DeleteAsync<T>(string path, CancellationToken cancellationToken = default) =>
         SendAsync<T>(HttpMethod.Delete, path, content: null, ownsContent: false, cancellationToken);
 

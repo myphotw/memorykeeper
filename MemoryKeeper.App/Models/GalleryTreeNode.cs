@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using MemoryKeeper.Application;
+using MemoryKeeper.Application.DTOs;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Microsoft.UI.Xaml;
 
@@ -99,6 +100,29 @@ public partial class GalleryTreeNode : ObservableObject
         GalleryTreeNodeKind.Recent => "recent",
         GalleryTreeNodeKind.Pending => "pending",
         _ => Title
+    };
+
+    /// <summary>Shared Gallery/Visit Map filter contract for this hierarchy node.</summary>
+    public GalleryHierarchyQuery BuildQuery(string? searchText = null) => new()
+    {
+        SearchText = string.IsNullOrWhiteSpace(searchText) ? null : searchText.Trim(),
+        FavoritesOnly = Kind == GalleryTreeNodeKind.Favorites,
+        RecentOnly = Kind == GalleryTreeNodeKind.Recent,
+        PendingOnly = Kind == GalleryTreeNodeKind.Pending,
+        Year = Kind is GalleryTreeNodeKind.All or GalleryTreeNodeKind.Favorites
+            or GalleryTreeNodeKind.Recent or GalleryTreeNodeKind.Pending or GalleryTreeNodeKind.PlaceBrowse
+            ? null
+            : Year,
+        Country = Kind is GalleryTreeNodeKind.Country or GalleryTreeNodeKind.City or GalleryTreeNodeKind.Place
+            ? Country
+            : null,
+        City = Kind is GalleryTreeNodeKind.City or GalleryTreeNodeKind.Place
+            ? City
+            : null,
+        PlaceId = Kind is GalleryTreeNodeKind.Place or GalleryTreeNodeKind.PlaceBrowse or GalleryTreeNodeKind.PlaceYear
+            ? PlaceId
+            : null,
+        UnclassifiedOnly = Kind == GalleryTreeNodeKind.Unclassified,
     };
 
     partial void OnIsExpandedChanged(bool value) => OnPropertyChanged(nameof(ExpandGlyph));

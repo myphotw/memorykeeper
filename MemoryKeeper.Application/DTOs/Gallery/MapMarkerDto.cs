@@ -17,6 +17,39 @@ public sealed class MapMarkerDto
     [JsonPropertyName("place_name")]
     public string? PlaceName { get; init; }
 
+    [JsonPropertyName("memorykeeper_place_id")]
+    public Guid? MemorykeeperPlaceId { get; init; }
+
+    [JsonPropertyName("place_display_name")]
+    public string? PlaceDisplayName { get; init; }
+
+    [JsonPropertyName("place_canonical_name")]
+    public string? PlaceCanonicalName { get; init; }
+
+    [JsonPropertyName("geocoded_place_name")]
+    public string? GeocodedPlaceName { get; init; }
+
+    [JsonPropertyName("place_match_source")]
+    public string? PlaceMatchSource { get; init; }
+
+    [JsonPropertyName("place_match_distance_m")]
+    public double? PlaceMatchDistanceM { get; init; }
+
+    [JsonPropertyName("place_revision")]
+    public int PlaceRevision { get; init; }
+
+    [JsonPropertyName("country")]
+    public string? Country { get; init; }
+
+    [JsonPropertyName("province")]
+    public string? Province { get; init; }
+
+    [JsonPropertyName("city")]
+    public string? City { get; init; }
+
+    [JsonPropertyName("district")]
+    public string? District { get; init; }
+
     [JsonPropertyName("thumbnail")]
     public string? Thumbnail { get; init; }
 

@@ -105,8 +105,9 @@
                     <ListView.ItemTemplate>
                         <DataTemplate>
                             <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" Padding="0,4">
-                                <Border Width="40" Height="40" CornerRadius="4">
-                                    <Image Stretch="UniformToFill" Source="{Binding ThumbnailImage, Mode=OneWay}" />
+                                <Border Width="40" Height="40" CornerRadius="4"
+                                        Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}">
+                                    <Image Stretch="Uniform" Source="{Binding ThumbnailImage, Mode=OneWay}" />
                                 </Border>
                                 <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
                                     <TextBlock Text="{Binding FileName}" FontWeight="SemiBold" FontSize="12" TextTrimming="CharacterEllipsis" />
@@ -176,6 +177,7 @@
                                         IsChecked="{Binding IsIncluded, Mode=TwoWay}" />
                                     <Border
                                         Grid.Row="1"
+                                        MinHeight="72"
                                         Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}"
                                         CornerRadius="4"
                                         Tapped="PendingMedia_OnTapped"
@@ -187,7 +189,7 @@
                                                 IsActive="{Binding IsThumbnailLoading, Mode=OneWay}"
                                                 Visibility="{Binding IsThumbnailLoading, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
                                             <Image
-                                                Stretch="UniformToFill"
+                                                Stretch="Uniform"
                                                 Source="{Binding ThumbnailImage, Mode=OneWay}" />
                                             <Border
                                                 HorizontalAlignment="Left"
@@ -215,6 +217,16 @@
                                             Text="{Binding StatusSummaryText}"
                                             FontSize="11"
                                             Opacity="0.9" />
+                                        <TextBlock
+                                            Text="{Binding GeographyText}"
+                                            FontSize="11"
+                                            Opacity="0.75"
+                                            TextWrapping="Wrap" />
+                                        <TextBlock
+                                            Text="{Binding SuggestedPlaceText}"
+                                            FontSize="11"
+                                            Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                                            TextWrapping="Wrap" />
                                     </StackPanel>
                                     <Button
                                         Grid.Row="3"

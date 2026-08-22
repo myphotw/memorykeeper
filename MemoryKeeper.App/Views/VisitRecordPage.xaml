@@ -141,111 +141,38 @@
                 <ListView
                     x:Name="TimelineList"
                     Grid.Row="1"
-                    ItemsSource="{Binding YearGroups, Mode=OneWay}"
+                    ItemsSource="{Binding VisibleTreeNodes, Mode=OneWay}"
                     SelectionMode="None"
                     Visibility="{Binding HasNoResults, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}">
                     <ListView.ItemTemplate>
                         <DataTemplate>
-                            <StackPanel Spacing="6" Margin="0,0,0,12">
-                                <Grid ColumnDefinitions="Auto,*">
-                                    <Button
-                                        Grid.Column="0"
-                                        Background="Transparent"
-                                        BorderThickness="0"
-                                        Padding="4,6"
-                                        VerticalAlignment="Center"
-                                        Click="YearGroupArrow_OnClick"
-                                        Tag="{Binding}"
-                                        Visibility="{Binding IsAll, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}">
-                                        <TextBlock
-                                            Text="{Binding ExpandGlyph, Mode=OneWay}"
-                                            FontWeight="SemiBold"
-                                            FontSize="14"
-                                            Foreground="{ThemeResource MkBrushTextSecondary}" />
-                                    </Button>
-                                    <Button
-                                        Grid.Column="1"
-                                        Style="{StaticResource YearTitleButtonStyle}"
-                                        Click="YearGroupTitle_OnClick"
-                                        PointerEntered="YearTitle_OnPointerEntered"
-                                        PointerExited="YearTitle_OnPointerExited"
-                                        Tag="{Binding}">
-                                        <StackPanel Orientation="Horizontal" Spacing="8">
-                                            <TextBlock
-                                                Text="{Binding YearTitle}"
-                                                Style="{StaticResource MkSectionTitleStyle}"
-                                                FontSize="18"
-                                                Margin="0"
-                                                Foreground="{ThemeResource MkBrushPrimary}"
-                                                Visibility="{Binding IsSelected, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
-                                            <TextBlock
-                                                Text="{Binding YearTitle}"
-                                                Style="{StaticResource MkSectionTitleStyle}"
-                                                FontSize="18"
-                                                Margin="0"
-                                                Visibility="{Binding IsSelected, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}" />
-                                            <TextBlock
-                                                Style="{StaticResource MkMetaTextStyle}"
-                                                VerticalAlignment="Center">
-                                                <Run Text="(" /><Run Text="{Binding CountSummary}" /><Run Text=")" />
-                                            </TextBlock>
-                                        </StackPanel>
-                                    </Button>
-                                </Grid>
-
-                                <ItemsControl
-                                    ItemsSource="{Binding Places}"
-                                    Visibility="{Binding IsExpanded, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Border
-                                                Style="{StaticResource PlaceRowCardStyle}"
-                                                BorderThickness="{Binding SelectionBorderThickness, Mode=OneWay}"
-                                                BorderBrush="{ThemeResource MkBrushPrimary}"
-                                                PointerEntered="PlaceItem_OnPointerEntered"
-                                                PointerExited="PlaceItem_OnPointerExited"
-                                                Tapped="PlaceItem_OnTapped"
-                                                RightTapped="PlaceItem_OnRightTapped"
-                                                Tag="{Binding}">
-                                                <Border.ContextFlyout>
-                                                    <MenuFlyout>
-                                                        <MenuFlyoutItem Text="사진 보기" Click="ContextOpenPhoto_OnClick" Tag="{Binding}" />
-                                                        <MenuFlyoutItem Text="대표사진 변경" Click="ContextChangeRep_OnClick" Tag="{Binding}" />
-                                                        <MenuFlyoutItem Text="즐겨찾기" Click="ContextFavorite_OnClick" Tag="{Binding}" />
-                                                        <MenuFlyoutItem Text="태그 수정" Click="ContextEditTags_OnClick" Tag="{Binding}" />
-                                                        <MenuFlyoutItem Text="장소 수정" Click="ContextEditPlace_OnClick" Tag="{Binding}" />
-                                                        <MenuFlyoutSeparator />
-                                                        <MenuFlyoutItem Text="삭제" Click="ContextDelete_OnClick" Tag="{Binding}" />
-                                                    </MenuFlyout>
-                                                </Border.ContextFlyout>
-                                                <Grid ColumnDefinitions="56,*" ColumnSpacing="10">
-                                                    <Border Width="56" Height="56" Style="{StaticResource MkThumbnailBorderStyle}">
-                                                        <Image Style="{StaticResource MkImageStyle}" Source="{Binding ThumbnailImage, Mode=OneWay}" />
-                                                    </Border>
-                                                    <StackPanel Grid.Column="1" Spacing="2">
-                                                        <StackPanel Orientation="Horizontal" Spacing="6">
-                                                            <TextBlock Text="{Binding PlaceName}" Style="{StaticResource MkPlaceNameStyle}" FontSize="15" />
-                                                            <TextBlock
-                                                                Text="★"
-                                                                Foreground="{ThemeResource MkBrushAccentGold}"
-                                                                Visibility="{Binding HasFavorite, Converter={StaticResource BoolToVisibilityConverter}}" />
-                                                        </StackPanel>
-                                                        <TextBlock
-                                                            Text="{Binding TagSummary}"
-                                                            Style="{StaticResource MkMetaTextStyle}"
-                                                            Visibility="{Binding HasTags, Converter={StaticResource BoolToVisibilityConverter}}" />
-                                                        <TextBlock Style="{StaticResource MkMetaTextStyle}">
-                                                            <Run Text="사진 " /><Run Text="{Binding PhotoCount}" />
-                                                            <Run Text=" · 방문 " /><Run Text="{Binding VisitRecordCount}" /><Run Text="회" />
-                                                        </TextBlock>
-                                                        <TextBlock Text="{Binding DateRangeText}" Style="{StaticResource MkMetaTextStyle}" Opacity="0.75" />
-                                                    </StackPanel>
-                                                </Grid>
-                                            </Border>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </StackPanel>
+                            <Grid Margin="{Binding IndentMargin, Mode=OneWay}" ColumnDefinitions="Auto,*" ColumnSpacing="2">
+                                <Button
+                                    Grid.Column="0"
+                                    Content="{Binding ExpandGlyph, Mode=OneWay}"
+                                    Padding="4,2"
+                                    MinWidth="24"
+                                    Style="{StaticResource YearTitleButtonStyle}"
+                                    Click="HierarchyExpand_OnClick"
+                                    Tag="{Binding}"
+                                    Visibility="{Binding CanExpand, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                <Button
+                                    Grid.Column="1"
+                                    Style="{StaticResource YearTitleButtonStyle}"
+                                    Content="{Binding DisplayLabel, Mode=OneWay}"
+                                    Click="HierarchyNode_OnClick"
+                                    Tag="{Binding}"
+                                    Foreground="{ThemeResource MkBrushPrimary}"
+                                    FontWeight="SemiBold"
+                                    Visibility="{Binding IsSelected, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                <Button
+                                    Grid.Column="1"
+                                    Style="{StaticResource YearTitleButtonStyle}"
+                                    Content="{Binding DisplayLabel, Mode=OneWay}"
+                                    Click="HierarchyNode_OnClick"
+                                    Tag="{Binding}"
+                                    Visibility="{Binding IsSelected, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}" />
+                            </Grid>
                         </DataTemplate>
                     </ListView.ItemTemplate>
                 </ListView>

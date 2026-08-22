@@ -8,6 +8,7 @@ using MemoryKeeper.Application;
 using MemoryKeeper.Application.DTOs;
 using MemoryKeeper.Application.Interfaces;
 using MemoryKeeper.Application.Services;
+using MemoryKeeper.Infrastructure.Services.Api;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
@@ -17,10 +18,9 @@ namespace MemoryKeeper.App.ViewModels;
 
 public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrationDialogViewModel
 {
-    private readonly PendingMemoryService _pendingMemoryService;
-    private readonly PlaceService _placeService;
-    private readonly PlacePickerService _placePickerService;
-    private readonly PhotoDetailService _photoDetailService;
+    private readonly MemoryKeeperWriteService _pendingMemoryService;
+    private readonly MemoryKeeperPlaceService _placeService;
+    private readonly IGalleryApiRepository _galleryApiRepository;
     private readonly ILocationResolver _locationResolver;
     private readonly IThumbnailService _thumbnailService;
     private readonly IPhotoNavigationState _photoNavigationState;
@@ -170,10 +170,9 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
     public event EventHandler? BackRequested;
 
     public PendingMemoryViewModel(
-        PendingMemoryService pendingMemoryService,
-        PlaceService placeService,
-        PlacePickerService placePickerService,
-        PhotoDetailService photoDetailService,
+        MemoryKeeperWriteService pendingMemoryService,
+        MemoryKeeperPlaceService placeService,
+        IGalleryApiRepository galleryApiRepository,
         ILocationResolver locationResolver,
         IThumbnailService thumbnailService,
         IPhotoNavigationState photoNavigationState,
@@ -181,8 +180,7 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
     {
         _pendingMemoryService = pendingMemoryService;
         _placeService = placeService;
-        _placePickerService = placePickerService;
-        _photoDetailService = photoDetailService;
+        _galleryApiRepository = galleryApiRepository;
         _locationResolver = locationResolver;
         _thumbnailService = thumbnailService;
         _photoNavigationState = photoNavigationState;
@@ -366,7 +364,10 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
             var favorited = 0;
             foreach (var mediaId in mediaIds)
             {
-                if (await _photoDetailService.ToggleFavoriteAsync(mediaId))
+                var detail = await _galleryApiRepository.GetPhotoAsync(mediaId);
+                var updated = await _pendingMemoryService.SetFavoriteAsync(
+                    mediaId, !detail.Favorite, detail.MetadataRevision);
+                if (updated.Favorite)
                 {
                     favorited++;
                 }
@@ -467,7 +468,14 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
 
     public async Task SearchExistingPlacesAsync()
     {
-        var results = await _placePickerService.SearchAsync(ExistingPlaceSearchText);
+        var query = ExistingPlaceSearchText.Trim();
+        var results = (await _placeService.GetPlaceListAsync())
+            .Where(place => place.IsActive)
+            .Where(place => string.IsNullOrWhiteSpace(query)
+                            || PlaceMatches(place, query))
+            .OrderBy(place => place.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .Select(ToPickerItem)
+            .ToList();
         FilteredExistingPlaces = new ObservableCollection<PlacePickerItemDto>(results);
         PlaceDialogStatus = string.IsNullOrWhiteSpace(ExistingPlaceSearchText)
             ? "기존 장소 목록"
@@ -559,7 +567,7 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
         NotifyPlacePreviewChanged();
     }
 
-    private async Task<PlaceDto> CreatePlaceFromMapPickAsync()
+    private async Task<PlaceDto> CreatePlaceFromMapPickAsync(PlaceGeographyFallback geographyFallback)
     {
         LocationResult? resolved = null;
         try
@@ -580,9 +588,10 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
             DisplayName = normalized?.DisplayName
                 ?? $"지도 선택 {MapPickLatitude:F4},{MapPickLongitude:F4}",
             CanonicalName = normalized?.CanonicalName,
-            Country = normalized?.Country ?? string.Empty,
-            Province = normalized?.Province ?? string.Empty,
-            City = normalized?.City ?? string.Empty,
+            Country = PlaceNormalizer.NormalizeCountry(resolved?.Country),
+            Province = PlaceNormalizer.NormalizeRegion(resolved?.Province),
+            City = PlaceNormalizer.NormalizePlace(resolved?.City),
+            District = resolved?.District ?? string.Empty,
             Address = resolved?.Address ?? string.Empty,
             PostalCode = resolved?.PostalCode ?? string.Empty,
             GooglePlaceId = resolved?.PlaceId,
@@ -591,12 +600,13 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
             Longitude = MapPickLongitude,
             Radius = MapPickRadiusMeters,
             IsActive = true
-        });
+        }, geographyFallback);
     }
 
     public async Task TogglePlaceFavoriteAsync(PlacePickerItemDto place)
     {
-        var updated = await _placeService.SetPlaceFavoriteAsync(place.Id, !place.IsFavorite);
+        var current = await _placeService.GetPlaceAsync(place.Id);
+        var updated = await _placeService.SetPlaceFavoriteAsync(current, !place.IsFavorite);
         await LoadPlacePickerDataAsync();
         PlaceDialogStatus = updated.IsFavorite
             ? $"'{updated.DisplayName}'을(를) 즐겨찾기에 추가했습니다."
@@ -605,12 +615,145 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
 
     private async Task LoadPlacePickerDataAsync()
     {
-        var pickerData = await _placePickerService.LoadAsync();
-        RecentPlaces = new ObservableCollection<PlacePickerItemDto>(pickerData.RecentPlaces);
-        FavoritePlaces = new ObservableCollection<PlacePickerItemDto>(pickerData.FavoritePlaces);
-        PlaceHierarchy = new ObservableCollection<PlacePickerCountryNode>(pickerData.Hierarchy);
+        var places = (await _placeService.GetPlaceListAsync())
+            .Where(place => place.IsActive)
+            .OrderBy(place => place.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        RecentPlaces = new ObservableCollection<PlacePickerItemDto>(
+            places.Where(place => place.LastUsedAt.HasValue || place.UsageCount > 0)
+                .OrderByDescending(place => place.LastUsedAt)
+                .ThenByDescending(place => place.UpdatedAt)
+                .Take(5)
+                .Select(ToPickerItem));
+        FavoritePlaces = new ObservableCollection<PlacePickerItemDto>(
+            places.Where(place => place.IsFavorite).Select(ToPickerItem));
+        PlaceHierarchy = new ObservableCollection<PlacePickerCountryNode>(BuildPlaceHierarchy(places));
         FilteredExistingPlaces = [];
     }
+
+    private async Task<PlaceDto> CreateNasPlaceFromProviderAsync(
+        string providerPlaceId,
+        string? fallbackName,
+        string? fallbackType,
+        double? seedLatitude,
+        double? seedLongitude,
+        PlaceGeographyFallback geographyFallback)
+    {
+        LocationResult? resolved = null;
+        try
+        {
+            resolved = await _locationResolver.ResolvePlaceIdAsync(providerPlaceId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Provider place detail lookup failed. ProviderPlaceId={ProviderPlaceId}", providerPlaceId);
+        }
+
+        var latitude = resolved?.Latitude ?? seedLatitude;
+        var longitude = resolved?.Longitude ?? seedLongitude;
+        var normalized = resolved is null ? null : PlaceNormalizer.Normalize(resolved);
+        if (latitude is double lat && longitude is double lon)
+        {
+            var matched = await _placeService.MatchPlaceAsync(
+                lat, lon, providerPlaceId, normalized?.CanonicalName);
+            if (matched is not null)
+            {
+                return matched;
+            }
+        }
+
+        if (latitude is null || longitude is null)
+        {
+            throw new InvalidOperationException("선택한 장소의 좌표를 확인할 수 없습니다.");
+        }
+
+        return await _placeService.CreatePlaceAsync(new CreatePlaceRequest
+        {
+            DisplayName = normalized?.DisplayName ?? fallbackName ?? "새 장소",
+            CanonicalName = normalized?.CanonicalName ?? fallbackName,
+            Address = resolved?.Address ?? string.Empty,
+            PostalCode = resolved?.PostalCode ?? string.Empty,
+            Country = PlaceNormalizer.NormalizeCountry(resolved?.Country),
+            Province = PlaceNormalizer.NormalizeRegion(resolved?.Province),
+            City = PlaceNormalizer.NormalizePlace(resolved?.City),
+            District = resolved?.District ?? string.Empty,
+            Latitude = latitude.Value,
+            Longitude = longitude.Value,
+            Radius = MapPickRadiusMeters,
+            GooglePlaceId = providerPlaceId,
+            Category = resolved?.PlaceType ?? fallbackType,
+            IsActive = true,
+        }, geographyFallback);
+    }
+
+    private PlaceGeographyFallback BuildRawGeographyFallback(IReadOnlyCollection<Guid> mediaIds)
+    {
+        var selectedIds = mediaIds.ToHashSet();
+        var photo = ActiveMediaItems
+            .Where(item => selectedIds.Contains(item.MediaId))
+            .Select(item => item.Media)
+            .OrderByDescending(item => new[]
+            {
+                item.Country,
+                item.Province,
+                item.City,
+                item.District,
+                item.RawPlaceName,
+            }.Count(value => !string.IsNullOrWhiteSpace(value)))
+            .FirstOrDefault();
+        return new PlaceGeographyFallback
+        {
+            Country = photo?.Country?.Trim() ?? string.Empty,
+            Province = photo?.Province?.Trim() ?? string.Empty,
+            City = photo?.City?.Trim() ?? string.Empty,
+            District = photo?.District?.Trim() ?? string.Empty,
+            Address = photo?.RawPlaceName?.Trim() ?? string.Empty,
+        };
+    }
+
+    private static PlacePickerItemDto ToPickerItem(PlaceDto place) => new()
+    {
+        Id = place.Id,
+        DisplayName = place.DisplayName,
+        Country = place.Country,
+        City = place.City,
+        CanonicalName = place.CanonicalName,
+        IsFavorite = place.IsFavorite,
+    };
+
+    private static IReadOnlyList<PlacePickerCountryNode> BuildPlaceHierarchy(IReadOnlyList<PlaceDto> places) =>
+        places
+            .GroupBy(place => string.IsNullOrWhiteSpace(place.Country) ? "기타" : place.Country.Trim())
+            .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(country => new PlacePickerCountryNode
+            {
+                Title = country.Key,
+                Regions = country
+                    .GroupBy(place => string.IsNullOrWhiteSpace(place.City) ? "기타" : place.City.Trim())
+                    .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
+                    .Select(region => new PlacePickerRegionNode
+                    {
+                        Title = region.Key,
+                        Places = region.Select(ToPickerItem)
+                            .OrderBy(place => place.DisplayName, StringComparer.OrdinalIgnoreCase)
+                            .ToList(),
+                    })
+                    .ToList(),
+            })
+            .ToList();
+
+    private static bool PlaceMatches(PlaceDto place, string query) =>
+        new[]
+        {
+            place.DisplayName,
+            place.CanonicalName,
+            place.Country,
+            place.Province,
+            place.City,
+            place.District,
+            place.Address,
+        }.Any(value => !string.IsNullOrWhiteSpace(value)
+                       && value.Contains(query, StringComparison.OrdinalIgnoreCase));
 
     public async Task SearchPlaceSuggestionsAsync()
     {
@@ -803,6 +946,7 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
         var overlapOk = await PlaceOverlapPrompt.ConfirmIfNeededAsync(
             HostXamlRoot,
             _placeService,
+            SelectedLocation.DisplayName,
             previewLat,
             previewLng,
             previewRadius,
@@ -844,6 +988,7 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
 
         IsPlaceDialogBusy = true;
         PlaceDialogStatus = "장소를 등록하는 중...";
+        var geographyFallback = BuildRawGeographyFallback(mediaIds);
 
         try
         {
@@ -862,16 +1007,17 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
                     seedLongitude = SelectedNearbyCandidate.Longitude;
                 }
 
-                place = await _placeService.CreateOrGetFromGooglePlaceAsync(
+                place = await CreateNasPlaceFromProviderAsync(
                     googlePlaceId,
                     fallbackName,
                     fallbackType,
                     seedLatitude,
-                    seedLongitude);
+                    seedLongitude,
+                    geographyFallback);
             }
             else if (HasMapPickSelection)
             {
-                place = await CreatePlaceFromMapPickAsync();
+                place = await CreatePlaceFromMapPickAsync(geographyFallback);
             }
             else
             {
@@ -885,7 +1031,6 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
                 MediaIds = mediaIds
             });
 
-            await _placeService.TouchUsageAsync(place.Id);
             var reclass = await _placeService.ReclassifyMediaAsync(place.Id, reassignFromOtherPlaces: true);
 
             StatusMessage = "장소가 등록되었습니다.";
@@ -894,6 +1039,21 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
                 : $"장소 '{place.DisplayName}'에 {result.UpdatedCount}장을 연결했습니다.";
             await LoadCoreAsync();
             return true;
+        }
+        catch (ApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Conflict)
+        {
+            _logger.LogWarning(ex, "Pending place assignment revision conflict.");
+            await LoadCoreAsync();
+            PlaceDialogStatus = "다른 곳에서 사진 정보가 변경되었습니다. 최신 정보를 다시 불러왔습니다.";
+            StatusMessage = PlaceDialogStatus;
+            return false;
+        }
+        catch (ApiException ex)
+        {
+            _logger.LogWarning(ex, "Confirm pending place registration API request failed.");
+            PlaceDialogStatus = ApiErrorClassifier.ToUserMessage(ex, "사진 또는 장소를 찾을 수 없습니다.");
+            StatusMessage = PlaceDialogStatus;
+            return false;
         }
         catch (Exception ex)
         {
@@ -933,8 +1093,6 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
                 PlaceId = place.Id,
                 MediaIds = mediaIds
             });
-
-            await _placeService.TouchUsageAsync(place.Id);
 
             StatusMessage = "장소가 등록되었습니다.";
             _ = result;
@@ -1073,6 +1231,19 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
 
                 try
                 {
+                    if (Uri.TryCreate(item.AbsoluteLibraryPath, UriKind.Absolute, out var remote)
+                        && remote.Scheme is "http" or "https")
+                    {
+                        await EnqueueAsync(() =>
+                        {
+                            item.ThumbnailImage = HttpImageLoader.TryCreate(
+                                item.AbsoluteLibraryPath,
+                                _logger,
+                                context: $"Pending:{item.MediaId:N}");
+                        });
+                        continue;
+                    }
+
                     var path = await _thumbnailService.GetOrCreateThumbnailAsync(
                         item.MediaId,
                         item.AbsoluteLibraryPath,
@@ -1153,6 +1324,17 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
         {
             IsBusy = true;
             await action();
+        }
+        catch (ApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Conflict)
+        {
+            _logger.LogWarning(ex, "Pending operation revision conflict.");
+            await LoadCoreAsync();
+            StatusMessage = "다른 곳에서 사진 정보가 변경되었습니다. 최신 정보를 다시 불러왔습니다.";
+        }
+        catch (ApiException ex)
+        {
+            _logger.LogWarning(ex, "Pending memory API operation failed.");
+            StatusMessage = ApiErrorClassifier.ToUserMessage(ex, "요청한 사진 또는 장소를 찾을 수 없습니다.");
         }
         catch (Exception ex)
         {

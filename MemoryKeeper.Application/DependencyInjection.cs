@@ -10,15 +10,19 @@ public static class DependencyInjection
     public static IServiceCollection AddApplicationServices(this IServiceCollection services)
     {
         services.AddSingleton<ICatalogInvalidation, CatalogInvalidation>();
+        services.AddSingleton<BackendChangeMonitorService>();
         services.AddSingleton<IImportJobSessionStore, ImportJobSessionStore>();
         services.AddTransient<MediaService>();
         services.AddTransient<GalleryHierarchyService>();
+        services.AddTransient<RecentSearchQueryService>();
         services.AddTransient<MediaImportService>();
         services.AddTransient<UploadMonitorService>();
         services.AddTransient<BulkUploadMonitorService>();
         services.AddTransient<StorageService>();
         services.AddTransient<PlaceAssignmentService>();
         services.AddTransient<PlaceService>();
+        services.AddTransient<MemoryKeeperPlaceService>();
+        services.AddTransient<MemoryKeeperWriteService>();
         services.AddTransient<PlacePickerService>();
         services.AddTransient<VisitRecordService>();
         services.AddTransient<MemoryGroupingService>();

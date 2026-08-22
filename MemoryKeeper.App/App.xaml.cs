@@ -222,6 +222,9 @@ public partial class App : Microsoft.UI.Xaml.Application
                 services.AddSingleton<IGalleryPhotoCatalog, GalleryPhotoCatalog>();
                 services.AddSingleton<IUploadApiRepository, UploadApiRepository>();
                 services.AddSingleton<IUploadJobApiRepository, UploadJobApiRepository>();
+                services.AddSingleton<IMemoryKeeperPlaceApiRepository, MemoryKeeperPlaceApiRepository>();
+                services.AddSingleton<IMemoryKeeperWriteApiRepository, MemoryKeeperWriteApiRepository>();
+                services.AddSingleton<IBackendChangeFeed, BackendChangeFeedRepository>();
                 services.AddMemoryKeeperDatabase(DatabaseDirectory);
 
                 services.AddSingleton<IFolderPickerService, FolderPickerService>();

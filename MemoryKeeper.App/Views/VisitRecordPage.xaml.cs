@@ -393,6 +393,22 @@ public sealed partial class VisitRecordPage : Page
         }
     }
 
+    private async void HierarchyExpand_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: GalleryTreeNode node })
+        {
+            await ViewModel.ToggleHierarchyNodeCommand.ExecuteAsync(node);
+        }
+    }
+
+    private async void HierarchyNode_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: GalleryTreeNode node })
+        {
+            await ViewModel.SelectHierarchyNodeCommand.ExecuteAsync(node);
+        }
+    }
+
     private void YearGroupArrow_OnClick(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement { Tag: VisitRecordYearGroup group })

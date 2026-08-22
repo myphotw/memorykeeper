@@ -12,6 +12,8 @@ public sealed class PlaceDto
 
     public string City { get; init; } = string.Empty;
 
+    public string District { get; init; } = string.Empty;
+
     public string Address { get; init; } = string.Empty;
 
     public string PostalCode { get; init; } = string.Empty;
@@ -34,6 +36,13 @@ public sealed class PlaceDto
     public bool IsFavorite { get; init; }
 
     public int UsageCount { get; init; }
+
+    /// <summary>Optimistic concurrency revision from tc-backend.</summary>
+    public int Revision { get; init; }
+
+    public DateTimeOffset? CreatedAt { get; init; }
+
+    public DateTimeOffset? UpdatedAt { get; init; }
 
     public DateTime? LastUsedAt { get; init; }
 
