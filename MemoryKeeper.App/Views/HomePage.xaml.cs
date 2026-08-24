@@ -55,11 +55,11 @@ public sealed partial class HomePage : Page
         if (wide)
         {
             HeroCard.Height = 320;
-            HeroLayoutGrid.ColumnDefinitions[0].Width = GridLength.Auto;
-            HeroLayoutGrid.ColumnDefinitions[1].Width = new GridLength(1, GridUnitType.Star);
+            HeroLayoutGrid.ColumnDefinitions[0].Width = new GridLength(3, GridUnitType.Star);
+            HeroLayoutGrid.ColumnDefinitions[1].Width = new GridLength(4, GridUnitType.Star);
             HeroLayoutGrid.RowDefinitions[0].Height = new GridLength(1, GridUnitType.Star);
             HeroLayoutGrid.RowDefinitions[1].Height = new GridLength(0);
-            HeroImageFrame.Width = 360;
+            HeroImageFrame.Width = double.NaN;
             HeroImageFrame.Height = 270;
             Grid.SetRow(HeroImageFrame, 0);
             Grid.SetColumn(HeroImageFrame, 0);

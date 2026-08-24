@@ -23,7 +23,10 @@ public sealed class HomePageRegressionTests
         var viewModel = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "ViewModels", "HomeViewModel.cs"));
 
         Assert.Contains("x:Name=\"HeroImageFrame\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Width=\"360\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Width=\"360\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("<ColumnDefinition Width=\"3*\" />", xaml, StringComparison.Ordinal);
+        Assert.Contains("<ColumnDefinition Width=\"4*\" />", xaml, StringComparison.Ordinal);
+        Assert.Contains("HeroImageFrame.Width = double.NaN", codeBehind, StringComparison.Ordinal);
         Assert.Contains("Height=\"270\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"HeroImageFront\"", xaml, StringComparison.Ordinal);
         var heroImageStart = xaml.IndexOf("x:Name=\"HeroImageFront\"", StringComparison.Ordinal);

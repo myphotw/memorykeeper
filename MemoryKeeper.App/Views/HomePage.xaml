@@ -80,10 +80,13 @@
             x:Name="MainScroll"
             VerticalScrollBarVisibility="Auto"
             HorizontalScrollBarVisibility="Disabled"
+            HorizontalContentAlignment="Center"
             Padding="0">
             <Grid
                 x:Name="MainContent"
                 Style="{StaticResource MkStandardPageContainerStyle}"
+                HorizontalAlignment="Center"
+                Width="{Binding ViewportWidth, ElementName=MainScroll, Mode=OneWay}"
                 RowSpacing="22">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
@@ -107,8 +110,8 @@
                     Tapped="HeroCard_OnTapped">
                     <Grid x:Name="HeroLayoutGrid" ColumnSpacing="24" RowSpacing="18">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="3*" />
+                            <ColumnDefinition Width="4*" />
                         </Grid.ColumnDefinitions>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="*" />
@@ -117,10 +120,10 @@
 
                         <Border
                             x:Name="HeroImageFrame"
-                            Width="360"
                             Height="270"
                             CornerRadius="14"
                             Background="#E5E5EA"
+                            HorizontalAlignment="Stretch"
                             VerticalAlignment="Center">
                             <Grid>
                                 <Image x:Name="HeroImageBack" Stretch="Uniform" Opacity="0" />
