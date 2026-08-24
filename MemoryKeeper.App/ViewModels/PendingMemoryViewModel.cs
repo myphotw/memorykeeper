@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using MemoryKeeper.App.Models;
@@ -652,6 +653,19 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
         var latitude = resolved?.Latitude ?? seedLatitude;
         var longitude = resolved?.Longitude ?? seedLongitude;
         var normalized = resolved is null ? null : PlaceNormalizer.Normalize(resolved);
+        if (resolved is not null)
+        {
+            SelectedLocation = PlaceLocationPreview.FromLocationResult(
+                resolved with
+                {
+                    DisplayName = normalized!.DisplayName,
+                    Country = normalized.Country,
+                    Province = normalized.Province,
+                    City = normalized.City,
+                },
+                MapPickRadiusMeters,
+                SelectedNearbyCandidate is null ? PlaceLocationSource.Google : PlaceLocationSource.Nearby);
+        }
         if (latitude is double lat && longitude is double lon)
         {
             var matched = await _placeService.MatchPlaceAsync(
@@ -1030,6 +1044,9 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
                 PlaceId = place.Id,
                 MediaIds = mediaIds
             });
+            await SupplementRawLocationsAsync(
+                mediaIds,
+                BuildRawLocationSource(place, SelectedLocation));
 
             var reclass = await _placeService.ReclassifyMediaAsync(place.Id, reassignFromOtherPlaces: true);
 
@@ -1093,12 +1110,82 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
                 PlaceId = place.Id,
                 MediaIds = mediaIds
             });
+            await SupplementRawLocationsAsync(
+                mediaIds,
+                PlaceLocationPreview.FromPlaceDto(place, PlaceLocationSource.Existing));
 
             StatusMessage = "장소가 등록되었습니다.";
             _ = result;
             await LoadCoreAsync();
         });
     }
+
+    private async Task SupplementRawLocationsAsync(
+        IReadOnlyCollection<Guid> mediaIds,
+        PlaceLocationPreview selectedLocation)
+    {
+        foreach (var mediaId in mediaIds)
+        {
+            var detail = await _galleryApiRepository.GetPhotoAsync(mediaId);
+            var latitude = GetMetadataDouble(detail.Metadata, "gps_lat");
+            var longitude = GetMetadataDouble(detail.Metadata, "gps_lon");
+            await _pendingMemoryService.SupplementRawLocationFromPlaceAsync(
+                mediaId,
+                detail.MetadataRevision,
+                latitude,
+                longitude,
+                selectedLocation);
+        }
+    }
+
+    private static PlaceLocationPreview BuildRawLocationSource(
+        PlaceDto place,
+        PlaceLocationPreview selection)
+    {
+        var placeLocation = PlaceLocationPreview.FromPlaceDto(place, selection.Source);
+        return new PlaceLocationPreview
+        {
+            PlaceId = place.Id,
+            GooglePlaceId = FirstNotBlank(selection.GooglePlaceId, place.GooglePlaceId),
+            DisplayName = FirstNotBlank(selection.DisplayName, place.DisplayName) ?? place.DisplayName,
+            Country = FirstNotBlank(selection.Country, place.Country) ?? string.Empty,
+            Province = FirstNotBlank(selection.Province, place.Province) ?? string.Empty,
+            City = FirstNotBlank(selection.City, place.City) ?? string.Empty,
+            District = FirstNotBlank(selection.District, place.District) ?? string.Empty,
+            Address = FirstNotBlank(selection.Address, place.Address) ?? string.Empty,
+            Latitude = selection.Latitude ?? placeLocation.Latitude,
+            Longitude = selection.Longitude ?? placeLocation.Longitude,
+            RadiusMeters = selection.RadiusMeters > 0 ? selection.RadiusMeters : placeLocation.RadiusMeters,
+            Source = selection.Source,
+        };
+    }
+
+    private static double? GetMetadataDouble(
+        IReadOnlyDictionary<string, JsonElement> metadata,
+        string key)
+    {
+        if (!metadata.TryGetValue(key, out var value))
+        {
+            return null;
+        }
+
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var number))
+        {
+            return number;
+        }
+
+        return value.ValueKind == JsonValueKind.String
+               && double.TryParse(
+                   value.GetString(),
+                   System.Globalization.NumberStyles.Float,
+                   System.Globalization.CultureInfo.InvariantCulture,
+                   out number)
+            ? number
+            : null;
+    }
+
+    private static string? FirstNotBlank(params string?[] values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim();
 
     private async Task LoadCoreAsync()
     {

@@ -58,6 +58,73 @@ public sealed class MemoryKeeperWriteServiceTests
     }
 
     [Fact]
+    public async Task ExplicitPlaceSupplement_PreservesExistingExifGps_AndPatchesProviderGeography()
+    {
+        var repository = new FakeRepository { MetadataRevision = 4, PlaceRevision = 12 };
+        var service = new MemoryKeeperWriteService(repository, new CatalogInvalidation());
+
+        var response = await service.SupplementRawLocationFromPlaceAsync(
+            MediaId,
+            expectedRevision: 4,
+            currentLatitude: 37.501,
+            currentLongitude: 127.002,
+            new PlaceLocationPreview
+            {
+                DisplayName = "서울숲",
+                Country = "대한민국",
+                Province = "서울특별시",
+                City = "성동구",
+                District = "성수동1가",
+                Address = "서울특별시 성동구 뚝섬로 273",
+                Latitude = 37.544,
+                Longitude = 127.037,
+                Source = PlaceLocationSource.Google,
+            });
+
+        var request = Assert.Single(repository.MetadataRequests);
+        Assert.DoesNotContain("gps_lat", request.ChangedFields);
+        Assert.DoesNotContain("gps_lon", request.ChangedFields);
+        Assert.Null(request.GpsLat);
+        Assert.Null(request.GpsLon);
+        Assert.Equal("대한민국", request.Country);
+        Assert.Equal("서울특별시", request.Province);
+        Assert.Equal("성동구", request.City);
+        Assert.Equal("성수동1가", request.District);
+        Assert.Equal("서울특별시 성동구 뚝섬로 273", request.PlaceName);
+        Assert.Equal(4, request.ExpectedRevision);
+        Assert.Equal(12, response!.PlaceRevision);
+    }
+
+    [Fact]
+    public async Task ExplicitPlaceSupplement_FillsProviderGpsOnlyWhenRawGpsIsMissing()
+    {
+        var repository = new FakeRepository { MetadataRevision = 7, PlaceRevision = 3 };
+        var service = new MemoryKeeperWriteService(repository, new CatalogInvalidation());
+
+        await service.SupplementRawLocationFromPlaceAsync(
+            MediaId,
+            expectedRevision: 7,
+            currentLatitude: null,
+            currentLongitude: null,
+            new PlaceLocationPreview
+            {
+                DisplayName = "부산역",
+                Latitude = 35.115,
+                Longitude = 129.041,
+                Source = PlaceLocationSource.Existing,
+            });
+
+        var request = Assert.Single(repository.MetadataRequests);
+        Assert.Contains("gps_lat", request.ChangedFields);
+        Assert.Contains("gps_lon", request.ChangedFields);
+        Assert.Equal(35.115, request.GpsLat);
+        Assert.Equal(129.041, request.GpsLon);
+        Assert.Equal("부산역", request.PlaceName);
+        Assert.Equal(7, request.ExpectedRevision);
+        Assert.Equal(3, repository.PlaceRevision);
+    }
+
+    [Fact]
     public async Task PendingWithRawGpsRemainsPending_AndBatchAssignUsesLoadedPlaceRevision()
     {
         var repository = new FakeRepository

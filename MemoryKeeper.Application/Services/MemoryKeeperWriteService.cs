@@ -115,6 +115,73 @@ public sealed class MemoryKeeperWriteService
         return response;
     }
 
+    /// <summary>
+    /// Supplements raw geography after an explicit place selection. Existing photo GPS is never
+    /// replaced with the registered place center; the center is used only when GPS is entirely absent.
+    /// Provider/place geography is patched independently from the semantic place revision.
+    /// </summary>
+    public async Task<MemoryKeeperFileMetadataPatchResponse?> SupplementRawLocationFromPlaceAsync(
+        Guid mediaId,
+        int expectedRevision,
+        double? currentLatitude,
+        double? currentLongitude,
+        PlaceLocationPreview selectedLocation,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(selectedLocation);
+
+        var changedFields = new HashSet<string>(StringComparer.Ordinal);
+        double? latitude = null;
+        double? longitude = null;
+        if (currentLatitude is null
+            && currentLongitude is null
+            && selectedLocation.HasCoordinates)
+        {
+            latitude = selectedLocation.Latitude;
+            longitude = selectedLocation.Longitude;
+            changedFields.Add("gps_lat");
+            changedFields.Add("gps_lon");
+        }
+
+        var country = AddSupplement(changedFields, "country", selectedLocation.Country);
+        var province = AddSupplement(changedFields, "province", selectedLocation.Province);
+        var city = AddSupplement(changedFields, "city", selectedLocation.City);
+        var district = AddSupplement(changedFields, "district", selectedLocation.District);
+        var placeName = AddSupplement(
+            changedFields,
+            "place_name",
+            FirstNotBlank(selectedLocation.Address, selectedLocation.DisplayName));
+
+        if (changedFields.Count == 0)
+        {
+            return null;
+        }
+
+        ValidateLength(country, 100, "국가");
+        ValidateLength(province, 100, "시/도");
+        ValidateLength(city, 100, "시/군/구");
+        ValidateLength(district, 100, "세부 지역");
+        ValidateLength(placeName, 200, "원본 주소/장소명");
+
+        var response = await _repository.PatchMetadataAsync(
+            FileId(mediaId),
+            new MemoryKeeperFileMetadataPatchRequest
+            {
+                ExpectedRevision = expectedRevision,
+                GpsLat = latitude,
+                GpsLon = longitude,
+                Country = country,
+                Province = province,
+                City = city,
+                District = district,
+                PlaceName = placeName,
+                ChangedFields = changedFields,
+            },
+            cancellationToken).ConfigureAwait(false);
+        _invalidation.Invalidate();
+        return response;
+    }
+
     public async Task<MemoryKeeperDeleteResultDto> DeleteFileAsync(
         Guid mediaId,
         CancellationToken cancellationToken = default)
@@ -336,6 +403,20 @@ public sealed class MemoryKeeperWriteService
 
     private static string? NullIfBlank(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static string? AddSupplement(ISet<string> fields, string field, string? value)
+    {
+        var normalized = NullIfBlank(value);
+        if (normalized is not null)
+        {
+            fields.Add(field);
+        }
+
+        return normalized;
+    }
+
+    private static string? FirstNotBlank(params string?[] values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
 
     private static void ValidateLength(string? value, int maxLength, string fieldName)
     {

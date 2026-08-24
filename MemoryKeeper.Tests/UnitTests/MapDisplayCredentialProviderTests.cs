@@ -46,6 +46,30 @@ public sealed class MapDisplayCredentialProviderTests
         }
     }
 
+    [Fact]
+    public async Task Ignored_Development_LocalEnv_Is_Read_Without_User_Setting()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"memorykeeper-map-test-{Guid.NewGuid():N}");
+        var configDirectory = Path.Combine(directory, "config");
+        Directory.CreateDirectory(configDirectory);
+        try
+        {
+            const string developmentKey = "AIzaDevelopmentCredentialForUnitTest12345";
+            await File.WriteAllTextAsync(
+                Path.Combine(configDirectory, MapDisplayCredentialProvider.DevelopmentConfigurationFileName),
+                $"# local only{Environment.NewLine}{MapDisplayCredentialProvider.EnvironmentVariable}='{developmentKey}'");
+
+            var resolved = MapDisplayCredentialProvider.ReadDevelopmentCredential(
+                Path.Combine(directory, "bin", "x64", "Debug"));
+
+            Assert.Equal(developmentKey, resolved);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     private sealed class FixedSettings : ISettingRepository
     {
         private readonly string? _legacyKey;

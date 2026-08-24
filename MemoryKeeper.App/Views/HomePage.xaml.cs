@@ -15,6 +15,8 @@ public sealed partial class HomePage : Page
 {
     private readonly IResponsiveLayoutService _responsiveLayout;
     private bool _heroImagePrimed;
+    private Storyboard? _heroStoryboard;
+    private long _heroVisualVersion;
 
     public HomeViewModel ViewModel { get; }
 
@@ -49,10 +51,21 @@ public sealed partial class HomePage : Page
     private void ApplyDesktopLayout()
     {
         var wide = ActualWidth >= 960;
-        HeroCard.Height = ActualHeight > 0 && ActualHeight < 860 ? 280 : 320;
 
         if (wide)
         {
+            HeroCard.Height = 320;
+            HeroLayoutGrid.ColumnDefinitions[0].Width = GridLength.Auto;
+            HeroLayoutGrid.ColumnDefinitions[1].Width = new GridLength(1, GridUnitType.Star);
+            HeroLayoutGrid.RowDefinitions[0].Height = new GridLength(1, GridUnitType.Star);
+            HeroLayoutGrid.RowDefinitions[1].Height = new GridLength(0);
+            HeroImageFrame.Width = 360;
+            HeroImageFrame.Height = 270;
+            Grid.SetRow(HeroImageFrame, 0);
+            Grid.SetColumn(HeroImageFrame, 0);
+            Grid.SetRow(HeroInfoGrid, 0);
+            Grid.SetColumn(HeroInfoGrid, 1);
+
             StatsGrid.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
             StatsGrid.ColumnDefinitions[1].Width = new GridLength(1, GridUnitType.Star);
             StatsGrid.ColumnDefinitions[2].Width = new GridLength(1, GridUnitType.Star);
@@ -90,6 +103,18 @@ public sealed partial class HomePage : Page
         }
         else
         {
+            HeroCard.Height = 500;
+            HeroLayoutGrid.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
+            HeroLayoutGrid.ColumnDefinitions[1].Width = new GridLength(0);
+            HeroLayoutGrid.RowDefinitions[0].Height = GridLength.Auto;
+            HeroLayoutGrid.RowDefinitions[1].Height = new GridLength(1, GridUnitType.Star);
+            HeroImageFrame.Width = 320;
+            HeroImageFrame.Height = 240;
+            Grid.SetRow(HeroImageFrame, 0);
+            Grid.SetColumn(HeroImageFrame, 0);
+            Grid.SetRow(HeroInfoGrid, 1);
+            Grid.SetColumn(HeroInfoGrid, 0);
+
             StatsGrid.ColumnDefinitions[2].Width = new GridLength(0);
             StatsGrid.ColumnDefinitions[3].Width = new GridLength(0);
             Grid.SetRow(StatPhotosCard, 0);
@@ -301,6 +326,10 @@ public sealed partial class HomePage : Page
             return;
         }
 
+        _heroStoryboard?.Stop();
+        _heroStoryboard = null;
+        var visualVersion = ++_heroVisualVersion;
+
         if (!crossFade || HeroImageFront.Source is null)
         {
             HeroImageFront.Source = image;
@@ -320,6 +349,7 @@ public sealed partial class HomePage : Page
         HeroImageFront.Opacity = 1;
 
         var storyboard = new Storyboard();
+        _heroStoryboard = storyboard;
         var fadeOut = new DoubleAnimation
         {
             To = 0,
@@ -338,18 +368,35 @@ public sealed partial class HomePage : Page
         storyboard.Children.Add(fadeIn);
         storyboard.Completed += (_, _) =>
         {
+            if (visualVersion != _heroVisualVersion
+                || !ReferenceEquals(ViewModel.CurrentHeroImage, image))
+            {
+                return;
+            }
+
             HeroImageFront.Source = image;
             HeroImageFront.Opacity = 1;
             HeroImageBack.Opacity = 0;
+            _heroStoryboard = null;
         };
         storyboard.Begin();
     }
 
-    private void HeroCard_OnTapped(object sender, TappedRoutedEventArgs e) =>
-        ViewModel.OpenHeroCommand.Execute(null);
+    private void HeroCard_OnTapped(object sender, TappedRoutedEventArgs e)
+    {
+        for (var element = e.OriginalSource as DependencyObject;
+             element is not null && !ReferenceEquals(element, HeroCard);
+             element = VisualTreeHelper.GetParent(element))
+        {
+            if (element is Button)
+            {
+                e.Handled = true;
+                return;
+            }
+        }
 
-    private void HeroNav_OnTapped(object sender, TappedRoutedEventArgs e) =>
-        e.Handled = true;
+        ViewModel.OpenHeroCommand.Execute(null);
+    }
 
     private void HeroPrevious_OnClick(object sender, RoutedEventArgs e) =>
         ViewModel.PreviousHeroCommand.Execute(null);

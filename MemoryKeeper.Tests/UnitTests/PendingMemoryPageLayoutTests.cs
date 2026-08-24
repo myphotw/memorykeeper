@@ -10,7 +10,15 @@ public sealed class PendingMemoryPageLayoutTests
 
         Assert.DoesNotContain("UniformToFill", xaml, StringComparison.Ordinal);
         Assert.True(CountOccurrences(xaml, "Stretch=\"Uniform\"") >= 2);
-        Assert.Contains("MinHeight=\"72\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Width=\"232\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Height=\"320\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("MinHeight=\"220\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Text=\"{Binding FileName}", xaml, StringComparison.Ordinal);
+        Assert.Contains("IsChecked=\"{Binding IsIncluded, Mode=TwoWay}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Command=\"{Binding IncludeAllCommand}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Command=\"{Binding ExcludeAllCommand}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Command=\"{Binding AssignPlaceCommand}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("<ItemsWrapGrid Orientation=\"Horizontal\" />", xaml, StringComparison.Ordinal);
     }
 
     private static string FindSourceFile(params string[] parts)

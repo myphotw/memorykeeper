@@ -102,63 +102,76 @@
                     Grid.Row="0"
                     Height="320"
                     CornerRadius="18"
-                    Padding="0"
-                    Background="#D1D1D6"
+                    Padding="24"
+                    Background="#F2F2F7"
                     PointerEntered="Card_OnPointerEntered"
                     PointerExited="Card_OnPointerExited"
                     Tapped="HeroCard_OnTapped">
-                    <Grid>
-                        <Image x:Name="HeroImageBack" Stretch="UniformToFill" Opacity="0" />
-                        <Image
-                            x:Name="HeroImageFront"
-                            Stretch="UniformToFill"
-                            Opacity="1"
-                            Source="{Binding CurrentHeroImage, Mode=OneWay}" />
+                    <Grid x:Name="HeroLayoutGrid" ColumnSpacing="24" RowSpacing="18">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="0" />
+                        </Grid.RowDefinitions>
 
-                        <Border>
-                            <Border.Background>
-                                <LinearGradientBrush StartPoint="0,0.15" EndPoint="1,0.85">
-                                    <GradientStop Color="#66000000" Offset="0" />
-                                    <GradientStop Color="#33000000" Offset="0.45" />
-                                    <GradientStop Color="#99000000" Offset="1" />
-                                </LinearGradientBrush>
-                            </Border.Background>
+                        <Border
+                            x:Name="HeroImageFrame"
+                            Width="360"
+                            Height="270"
+                            CornerRadius="14"
+                            Background="#E5E5EA"
+                            VerticalAlignment="Center">
+                            <Grid>
+                                <Image x:Name="HeroImageBack" Stretch="Uniform" Opacity="0" />
+                                <Image
+                                    x:Name="HeroImageFront"
+                                    Stretch="Uniform"
+                                    Opacity="1"
+                                    Source="{Binding CurrentHeroImage, Mode=OneWay}" />
+                            </Grid>
                         </Border>
 
-                        <Grid Padding="28,26" ColumnSpacing="24">
+                        <Grid x:Name="HeroInfoGrid" Grid.Column="1" ColumnSpacing="20">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
 
-                            <StackPanel Spacing="10" MaxWidth="620" VerticalAlignment="Center">
+                            <StackPanel Spacing="8" MaxWidth="520" VerticalAlignment="Center">
                                 <TextBlock
-                                    Text="Memory Keeper"
-                                    FontSize="34"
+                                    Text="Memory Keeper / 오늘의 추억"
+                                    FontSize="13"
+                                    FontWeight="SemiBold"
+                                    Foreground="#8E8E93" />
+                                <TextBlock
+                                    Text="{Binding CurrentHeroTitle, Mode=OneWay}"
+                                    FontSize="28"
                                     FontWeight="Bold"
-                                    Foreground="White" />
+                                    Foreground="#1C1C1E"
+                                    TextTrimming="CharacterEllipsis" />
                                 <TextBlock
-                                    Text="오늘도 소중한 추억을 만나보세요."
-                                    FontSize="15"
-                                    Foreground="White"
-                                    Opacity="0.95"
-                                    TextWrapping="Wrap" />
+                                    Text="{Binding CurrentHeroSubtitle, Mode=OneWay}"
+                                    FontSize="14"
+                                    Foreground="#636366" />
                                 <TextBlock
                                     Text="{Binding CurrentHeroDescription, Mode=OneWay}"
                                     FontSize="13"
-                                    Foreground="White"
-                                    Opacity="0.78"
-                                    TextTrimming="CharacterEllipsis"
+                                    Foreground="#8E8E93"
+                                    TextWrapping="Wrap"
+                                    MaxLines="2"
                                     Visibility="{Binding HasHero, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
                                 <StackPanel
                                     Orientation="Horizontal"
                                     Spacing="10"
                                     Margin="0,8,0,0"
                                     Visibility="{Binding HasHeroCarousel, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
-                                    <Button Style="{StaticResource HomeHeroNavButtonStyle}" Click="HeroPrevious_OnClick" Tapped="HeroNav_OnTapped">
+                                    <Button Style="{StaticResource HomeHeroNavButtonStyle}" Click="HeroPrevious_OnClick">
                                         <FontIcon Glyph="&#xE76B;" FontSize="14" Foreground="#3A3A3C" />
                                     </Button>
-                                    <Button Style="{StaticResource HomeHeroNavButtonStyle}" Click="HeroNext_OnClick" Tapped="HeroNav_OnTapped">
+                                    <Button Style="{StaticResource HomeHeroNavButtonStyle}" Click="HeroNext_OnClick">
                                         <FontIcon Glyph="&#xE76C;" FontSize="14" Foreground="#3A3A3C" />
                                     </Button>
                                 </StackPanel>
@@ -361,6 +374,7 @@
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <Border
+                                        Width="260"
                                         Background="White"
                                         BorderBrush="#E5E5EA"
                                         BorderThickness="1"
@@ -370,11 +384,11 @@
                                         Tag="{Binding}">
                                         <Grid>
                                             <Grid.RowDefinitions>
-                                                <RowDefinition Height="148" />
+                                                <RowDefinition Height="172" />
                                                 <RowDefinition Height="Auto" />
                                             </Grid.RowDefinitions>
                                             <Border CornerRadius="14,14,0,0" Background="#F2F2F7">
-                                                <Image Source="{Binding ThumbnailImage, Mode=OneWay}" Stretch="UniformToFill" />
+                                                <Image Source="{Binding ThumbnailImage, Mode=OneWay}" Stretch="Uniform" />
                                             </Border>
                                             <Grid Grid.Row="1" Padding="14,12" ColumnSpacing="8">
                                                 <Grid.ColumnDefinitions>

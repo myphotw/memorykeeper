@@ -155,7 +155,7 @@
         <!-- Photo-first main column -->
         <Grid
             Grid.Column="1"
-            RowDefinitions="Auto,Auto,*,Auto"
+            RowDefinitions="Auto,*,Auto"
             RowSpacing="{StaticResource MkSectionSpacing}"
             MinWidth="240">
 
@@ -177,26 +177,8 @@
                     Opacity="0.75" />
             </StackPanel>
 
-            <!-- Representative thumbnail — compact banner so the grid stays the hero -->
-            <Border
-                x:Name="HeroThumbHost"
-                Grid.Row="1"
-                Height="148"
-                Style="{StaticResource MkThumbnailBorderStyle}"
-                Visibility="Collapsed">
-                <Grid>
-                    <Border Background="{ThemeResource MkBrushSurfaceMuted}" />
-                    <Image
-                        x:Name="HeroThumbImage"
-                        Style="{StaticResource MkImageStyle}"
-                        Stretch="UniformToFill"
-                        HorizontalAlignment="Center"
-                        VerticalAlignment="Center" />
-                </Grid>
-            </Border>
-
             <!-- Photo grid -->
-            <Grid Grid.Row="2">
+            <Grid Grid.Row="1">
                 <GridView
                     x:Name="PhotoGrid"
                     ItemsSource="{Binding Items, Mode=OneWay}"
@@ -279,7 +261,7 @@
             <!-- Selected photo detail (촬영일 · 장소 · 파일명) -->
             <Border
                 x:Name="DetailCard"
-                Grid.Row="3"
+                Grid.Row="2"
                 Style="{StaticResource MkCardStyle}"
                 Visibility="Collapsed">
                 <Grid ColumnDefinitions="96,*" ColumnSpacing="{StaticResource MkComponentSpacing}">

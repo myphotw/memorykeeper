@@ -50,7 +50,7 @@ public sealed partial class GalleryPage : Page
     {
         GalleryDiagnostics.WriteStep("GalleryPage Loaded");
         UpdateEmptyState();
-        RefreshHeroAndDetail();
+        RefreshDetail();
     }
 
     private void ViewModel_OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -63,13 +63,13 @@ public sealed partial class GalleryPage : Page
             }
 
             UpdateEmptyState();
-            RefreshHeroAndDetail();
+            RefreshDetail();
         }
         else if (e.PropertyName is nameof(GalleryViewModel.BreadcrumbText)
                  or nameof(GalleryViewModel.SelectedNode)
                  or nameof(GalleryViewModel.SelectedItem))
         {
-            RefreshHeroAndDetail();
+            RefreshDetail();
         }
     }
 
@@ -111,14 +111,14 @@ public sealed partial class GalleryPage : Page
         }
 
         UpdateEmptyState();
-        RefreshHeroAndDetail();
+        RefreshDetail();
     }
 
     private void GalleryItem_OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(GalleryItem.ThumbnailImage) or nameof(GalleryItem.IsSelected))
         {
-            DispatcherQueue.TryEnqueue(RefreshHeroAndDetail);
+            DispatcherQueue.TryEnqueue(RefreshDetail);
         }
     }
 
@@ -129,7 +129,6 @@ public sealed partial class GalleryPage : Page
         PhotoGrid.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;
         if (empty)
         {
-            HeroThumbHost.Visibility = Visibility.Collapsed;
             DetailCard.Visibility = Visibility.Collapsed;
         }
     }
@@ -155,11 +154,11 @@ public sealed partial class GalleryPage : Page
 
         _pageSelectedItem = item;
         ViewModel.SelectedItem = item;
-        RefreshHeroAndDetail();
+        RefreshDetail();
         ApplySelectionVisuals();
     }
 
-    private void RefreshHeroAndDetail()
+    private void RefreshDetail()
     {
         var focus = ViewModel.SelectedItem
             ?? _pageSelectedItem
@@ -167,13 +166,9 @@ public sealed partial class GalleryPage : Page
 
         if (focus is null || ViewModel.Items.Count == 0)
         {
-            HeroThumbHost.Visibility = Visibility.Collapsed;
             DetailCard.Visibility = Visibility.Collapsed;
             return;
         }
-
-        HeroThumbHost.Visibility = Visibility.Visible;
-        HeroThumbImage.Source = focus.ThumbnailImage;
 
         DetailCard.Visibility = Visibility.Visible;
         DetailThumbImage.Source = focus.ThumbnailImage;

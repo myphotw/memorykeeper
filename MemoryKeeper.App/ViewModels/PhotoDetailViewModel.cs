@@ -424,17 +424,25 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
             return;
         }
 
+        var selectedPlace = SelectedPlace;
+
         await RunBusyAsync(async () =>
         {
             if (IsBackendOnlyMedia)
             {
                 try
                 {
-                    await _placeService.AssignFilePlaceAsync(MediaId, SelectedPlace.Id, _placeRevision);
-                    var apiDetail = await _galleryApiRepository.GetPhotoAsync(MediaId);
-                    await ApplyDetailAsync(GalleryBackendMapper.ToPhotoDetail(apiDetail, _apiClient.ApiBaseUrl));
+                    await _placeService.AssignFilePlaceAsync(MediaId, selectedPlace.Id, _placeRevision);
+                    await SupplementBackendRawLocationAsync(
+                        PlaceLocationPreview.FromPlaceDto(selectedPlace, PlaceLocationSource.Existing));
+                    await ReloadBackendDetailAsync();
                 }
                 catch (MemoryKeeperPlaceRevisionConflictException)
+                {
+                    await RefreshAfterRevisionConflictAsync();
+                    return;
+                }
+                catch (ApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Conflict)
                 {
                     await RefreshAfterRevisionConflictAsync();
                     return;
@@ -442,10 +450,10 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
             }
             else
             {
-                var detail = await _photoDetailService.UpdatePlaceAsync(MediaId, SelectedPlace.Id);
+                var detail = await _photoDetailService.UpdatePlaceAsync(MediaId, selectedPlace.Id);
                 await ApplyDetailAsync(detail);
             }
-            StatusMessage = $"장소를 '{SelectedPlace.DisplayName}'(으)로 변경했습니다.";
+            StatusMessage = $"장소를 '{selectedPlace.DisplayName}'(으)로 변경했습니다.";
             ToastRequested?.Invoke(this, "위치정보가 등록되었습니다.");
             PlaceRegistered?.Invoke(this, EventArgs.Empty);
             await TryAutoAdvanceAfterPlaceRegisterAsync();
@@ -992,6 +1000,7 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
                 PlaceDialogStatus = StatusMessage;
                 return false;
             }
+            await SupplementBackendRawLocationAsync(BuildRawLocationSource(place, SelectedLocation));
             var createdNow = createsNewPlace && Places.All(existing => existing.Id != place.Id);
             var reclass = createdNow
                 ? await _placeService.ReclassifyMediaAsync(place.Id, reassignFromOtherPlaces: true)
@@ -1008,6 +1017,12 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
             PlaceRegistered?.Invoke(this, EventArgs.Empty);
             await TryAutoAdvanceAfterPlaceRegisterAsync();
             return true;
+        }
+        catch (ApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Conflict)
+        {
+            await RefreshAfterRevisionConflictAsync();
+            PlaceDialogStatus = StatusMessage;
+            return false;
         }
         catch (ApiException ex)
         {
@@ -1066,6 +1081,8 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
             Country = source.Country,
             Province = source.Province,
             City = source.City,
+            District = source.District,
+            Address = source.Address,
             Latitude = source.Latitude,
             Longitude = source.Longitude,
             RadiusMeters = source.RadiusMeters,
@@ -1322,6 +1339,7 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
             Country = normalized?.Country ?? string.Empty,
             Province = normalized?.Province ?? string.Empty,
             City = normalized?.City ?? string.Empty,
+            District = resolved?.District ?? string.Empty,
             Address = resolved?.Address ?? string.Empty,
             PostalCode = resolved?.PostalCode ?? string.Empty,
             GooglePlaceId = resolved?.PlaceId,
@@ -1402,6 +1420,7 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
             Country = normalized.Country,
             Province = normalized.Province,
             City = normalized.City,
+            District = resolved.District,
             Address = resolved.Address,
             PostalCode = resolved.PostalCode,
             GooglePlaceId = resolved.PlaceId,
@@ -1415,11 +1434,44 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
 
     private async Task<PlaceDto> CreateNasPlaceFromNearbyAsync(NearbyPlaceCandidateDto candidate)
     {
+        LocationResult? resolved = null;
+        if (!string.IsNullOrWhiteSpace(candidate.GooglePlaceId))
+        {
+            try
+            {
+                resolved = await _locationResolver.ResolvePlaceIdAsync(candidate.GooglePlaceId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Nearby place detail lookup failed. ProviderPlaceId={ProviderPlaceId}",
+                    candidate.GooglePlaceId);
+            }
+        }
+
+        var latitude = resolved?.Latitude ?? candidate.Latitude;
+        var longitude = resolved?.Longitude ?? candidate.Longitude;
+        var normalized = resolved is null ? null : PlaceNormalizer.Normalize(resolved);
+        if (resolved is not null)
+        {
+            SelectedLocation = PlaceLocationPreview.FromLocationResult(
+                resolved with
+                {
+                    DisplayName = normalized!.DisplayName,
+                    Country = normalized.Country,
+                    Province = normalized.Province,
+                    City = normalized.City,
+                },
+                MapPickRadiusMeters,
+                PlaceLocationSource.Nearby);
+        }
+
         var matched = await _placeService.MatchPlaceAsync(
-            candidate.Latitude,
-            candidate.Longitude,
+            latitude,
+            longitude,
             candidate.GooglePlaceId,
-            candidate.Name);
+            normalized?.CanonicalName ?? candidate.Name);
         if (matched is not null)
         {
             return matched;
@@ -1427,12 +1479,18 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
 
         return await _placeService.CreatePlaceAsync(new CreatePlaceRequest
         {
-            DisplayName = candidate.Name,
-            CanonicalName = candidate.Name,
+            DisplayName = normalized?.DisplayName ?? candidate.Name,
+            CanonicalName = normalized?.CanonicalName ?? candidate.Name,
+            Country = normalized?.Country ?? string.Empty,
+            Province = normalized?.Province ?? string.Empty,
+            City = normalized?.City ?? string.Empty,
+            District = resolved?.District ?? string.Empty,
+            Address = resolved?.Address ?? candidate.Vicinity,
+            PostalCode = resolved?.PostalCode ?? string.Empty,
             GooglePlaceId = candidate.GooglePlaceId,
-            Category = candidate.PlaceType,
-            Latitude = candidate.Latitude,
-            Longitude = candidate.Longitude,
+            Category = resolved?.PlaceType ?? candidate.PlaceType,
+            Latitude = latitude,
+            Longitude = longitude,
             Radius = MapPickRadiusMeters,
             IsActive = true,
         });
@@ -1513,6 +1571,47 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
         var apiDetail = await _galleryApiRepository.GetPhotoAsync(MediaId);
         await ApplyDetailAsync(GalleryBackendMapper.ToPhotoDetail(apiDetail, _apiClient.ApiBaseUrl));
     }
+
+    private async Task SupplementBackendRawLocationAsync(PlaceLocationPreview selectedLocation)
+    {
+        var apiDetail = await _galleryApiRepository.GetPhotoAsync(MediaId);
+        var detail = GalleryBackendMapper.ToPhotoDetail(apiDetail, _apiClient.ApiBaseUrl);
+        var response = await _writeService.SupplementRawLocationFromPlaceAsync(
+            MediaId,
+            detail.MetadataRevision,
+            detail.Latitude,
+            detail.Longitude,
+            selectedLocation);
+        if (response is not null)
+        {
+            _metadataRevision = response.Revision;
+        }
+    }
+
+    private static PlaceLocationPreview BuildRawLocationSource(
+        PlaceDto place,
+        PlaceLocationPreview selection)
+    {
+        var placeLocation = PlaceLocationPreview.FromPlaceDto(place, selection.Source);
+        return new PlaceLocationPreview
+        {
+            PlaceId = place.Id,
+            GooglePlaceId = FirstNotBlank(selection.GooglePlaceId, place.GooglePlaceId),
+            DisplayName = FirstNotBlank(selection.DisplayName, place.DisplayName) ?? place.DisplayName,
+            Country = FirstNotBlank(selection.Country, place.Country) ?? string.Empty,
+            Province = FirstNotBlank(selection.Province, place.Province) ?? string.Empty,
+            City = FirstNotBlank(selection.City, place.City) ?? string.Empty,
+            District = FirstNotBlank(selection.District, place.District) ?? string.Empty,
+            Address = FirstNotBlank(selection.Address, place.Address) ?? string.Empty,
+            Latitude = selection.Latitude ?? placeLocation.Latitude,
+            Longitude = selection.Longitude ?? placeLocation.Longitude,
+            RadiusMeters = selection.RadiusMeters > 0 ? selection.RadiusMeters : placeLocation.RadiusMeters,
+            Source = selection.Source,
+        };
+    }
+
+    private static string? FirstNotBlank(params string?[] values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim();
 
     private async Task RefreshAfterRevisionConflictAsync()
     {

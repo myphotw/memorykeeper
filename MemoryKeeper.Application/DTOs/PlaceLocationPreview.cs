@@ -30,6 +30,10 @@ public sealed class PlaceLocationPreview
 
     public string City { get; init; } = string.Empty;
 
+    public string District { get; init; } = string.Empty;
+
+    public string Address { get; init; } = string.Empty;
+
     public double? Latitude { get; init; }
 
     public double? Longitude { get; init; }
@@ -67,6 +71,8 @@ public sealed class PlaceLocationPreview
             Country = place.Country,
             Province = place.Province,
             City = place.City,
+            District = place.District,
+            Address = place.Address,
             Latitude = place.Latitude,
             Longitude = place.Longitude,
             RadiusMeters = place.Radius > 0 ? place.Radius : 100,
@@ -88,6 +94,8 @@ public sealed class PlaceLocationPreview
             Country = location.Country,
             Province = location.Province,
             City = location.City,
+            District = location.District,
+            Address = location.Address,
             Latitude = location.Latitude,
             Longitude = location.Longitude,
             RadiusMeters = radiusMeters is > 0 ? radiusMeters.Value : 100,
@@ -103,7 +111,9 @@ public sealed class PlaceLocationPreview
             DisplayName = candidate.Name,
             Country = string.Empty,
             Province = string.Empty,
-            City = candidate.Vicinity,
+            City = string.Empty,
+            District = string.Empty,
+            Address = candidate.Vicinity,
             Latitude = candidate.Latitude,
             Longitude = candidate.Longitude,
             RadiusMeters = radiusMeters,
@@ -124,6 +134,8 @@ public sealed class PlaceLocationPreview
             Country = resolved?.Country ?? string.Empty,
             Province = resolved?.Province ?? string.Empty,
             City = resolved?.City ?? string.Empty,
+            District = resolved?.District ?? string.Empty,
+            Address = resolved?.Address ?? string.Empty,
             Latitude = latitude,
             Longitude = longitude,
             RadiusMeters = radiusMeters,

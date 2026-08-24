@@ -110,8 +110,8 @@
                                     <Image Stretch="Uniform" Source="{Binding ThumbnailImage, Mode=OneWay}" />
                                 </Border>
                                 <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding FileName}" FontWeight="SemiBold" FontSize="12" TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Text="{Binding CapturedAtText}" Opacity="0.75" FontSize="11" />
+                                    <TextBlock Text="{Binding CapturedAtText}" FontWeight="SemiBold" FontSize="12" />
+                                    <TextBlock Text="{Binding StatusSummaryText}" Opacity="0.75" FontSize="11" />
                                 </StackPanel>
                             </Grid>
                         </DataTemplate>
@@ -160,24 +160,25 @@
                     Grid.Row="2"
                     ItemsSource="{Binding ActiveMediaItems, Mode=OneWay}"
                     SelectionMode="None">
+                    <GridView.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <ItemsWrapGrid Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </GridView.ItemsPanel>
                     <GridView.ItemTemplate>
                         <DataTemplate>
                             <Border
-                                Width="160"
-                                Height="220"
-                                Margin="4"
+                                Width="232"
+                                Height="320"
+                                Margin="6"
                                 Padding="8"
                                 Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                                 BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                                 BorderThickness="1"
                                 CornerRadius="8">
-                                <Grid RowDefinitions="Auto,*,Auto,Auto" RowSpacing="6">
-                                    <CheckBox
-                                        Content="포함"
-                                        IsChecked="{Binding IsIncluded, Mode=TwoWay}" />
+                                <Grid RowDefinitions="*,Auto,Auto" RowSpacing="6">
                                     <Border
-                                        Grid.Row="1"
-                                        MinHeight="72"
+                                        MinHeight="220"
                                         Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}"
                                         CornerRadius="4"
                                         Tapped="PendingMedia_OnTapped"
@@ -200,15 +201,20 @@
                                                 Background="#B33A2E">
                                                 <TextBlock Text="미등록" Foreground="White" FontSize="10" FontWeight="SemiBold" />
                                             </Border>
+                                            <Border
+                                                HorizontalAlignment="Right"
+                                                VerticalAlignment="Top"
+                                                Margin="4"
+                                                Padding="5,1"
+                                                CornerRadius="4"
+                                                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                                                <CheckBox
+                                                    Content="포함"
+                                                    IsChecked="{Binding IsIncluded, Mode=TwoWay}" />
+                                            </Border>
                                         </Grid>
                                     </Border>
-                                    <StackPanel Grid.Row="2" Spacing="2">
-                                        <TextBlock
-                                            Text="{Binding FileName}"
-                                            TextTrimming="CharacterEllipsis"
-                                            MaxLines="1"
-                                            FontSize="12"
-                                            FontWeight="SemiBold" />
+                                    <StackPanel Grid.Row="1" Spacing="2">
                                         <TextBlock
                                             Text="{Binding CapturedAtText}"
                                             Opacity="0.75"
@@ -217,19 +223,9 @@
                                             Text="{Binding StatusSummaryText}"
                                             FontSize="11"
                                             Opacity="0.9" />
-                                        <TextBlock
-                                            Text="{Binding GeographyText}"
-                                            FontSize="11"
-                                            Opacity="0.75"
-                                            TextWrapping="Wrap" />
-                                        <TextBlock
-                                            Text="{Binding SuggestedPlaceText}"
-                                            FontSize="11"
-                                            Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
-                                            TextWrapping="Wrap" />
                                     </StackPanel>
                                     <Button
-                                        Grid.Row="3"
+                                        Grid.Row="2"
                                         Content="상세"
                                         HorizontalAlignment="Stretch"
                                         Click="PendingMediaDetail_OnClick"
