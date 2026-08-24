@@ -275,7 +275,10 @@ public sealed class GalleryHierarchyService
     {
         ArgumentNullException.ThrowIfNull(query);
 
-        IEnumerable<HierarchyPhoto> filtered = await LoadPhotosAsync(cancellationToken).ConfigureAwait(false);
+        var backendSearch = !string.IsNullOrWhiteSpace(query.SearchText);
+        IEnumerable<HierarchyPhoto> filtered = await LoadPhotosAsync(
+            cancellationToken,
+            backendSearch ? query.SearchText!.Trim() : null).ConfigureAwait(false);
         if (query.PendingOnly)
         {
             filtered = filtered.Where(IsPending);
@@ -351,7 +354,7 @@ public sealed class GalleryHierarchyService
             });
         }
 
-        if (!string.IsNullOrWhiteSpace(query.SearchText))
+        if (!backendSearch && !string.IsNullOrWhiteSpace(query.SearchText))
         {
             var term = query.SearchText.Trim();
             filtered = filtered.Where(photo => MatchesSearch(photo, term));
@@ -360,9 +363,13 @@ public sealed class GalleryHierarchyService
         return filtered.ToList();
     }
 
-    private async Task<List<HierarchyPhoto>> LoadPhotosAsync(CancellationToken cancellationToken)
+    private async Task<List<HierarchyPhoto>> LoadPhotosAsync(
+        CancellationToken cancellationToken,
+        string? keyword = null)
     {
-        var snapshot = await _catalog.QueryAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+        var snapshot = await _catalog.QueryAsync(
+            keyword: keyword,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var markersByFileId = snapshot.MapMarkers
             .Where(marker => !string.IsNullOrWhiteSpace(marker.FileId))

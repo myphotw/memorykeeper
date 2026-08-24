@@ -127,6 +127,76 @@ public sealed class MemoryKeeperWriteApiRepositoryTests
     }
 
     [Fact]
+    public async Task UnifiedCatalog_RenameCanChangeIdentity_AndDeleteUsesReturnedRevision()
+    {
+        const string getKey = "GET /api/memorykeeper/tags/catalog?limit=500&offset=0";
+        const string patchKey = "PATCH /api/memorykeeper/tags/catalog/ai%3Adog";
+        const string deleteKey = "DELETE /api/memorykeeper/tags/catalog/tag%3A123?expected_revision=2";
+        var handler = new RecordingHandler
+        {
+            Responses =
+            {
+                [getKey] = "{\"items\":[{\"identity\":\"ai:dog\",\"display_name\":\"강아지\",\"usage_count\":12,\"favorite\":false,\"revision\":1,\"editable\":true,\"canonical_references\":[\"dog\"]}],\"total\":1}",
+                [patchKey] = "{\"identity\":\"tag:123\",\"display_name\":\"반려동물\",\"usage_count\":12,\"favorite\":false,\"revision\":2,\"editable\":true,\"canonical_references\":[\"dog\"]}",
+                [deleteKey] = "{}",
+            },
+        };
+        using var provider = BuildProvider(handler);
+        var repository = provider.GetRequiredService<IMemoryKeeperWriteApiRepository>();
+
+        var original = Assert.Single((await repository.GetTagCatalogAsync()).Items);
+        Assert.Equal("강아지", original.DisplayName);
+        Assert.Equal(12, original.UsageCount);
+        Assert.Null(original.ManagedTagId);
+
+        var renamed = await repository.RenameCatalogTagAsync(
+            original.Identity,
+            new MemoryKeeperTagCatalogRenameRequest { Name = "반려동물", Revision = original.Revision });
+        Assert.Equal("tag:123", renamed.Identity);
+        Assert.Equal(123, renamed.ManagedTagId);
+        Assert.Equal(2, renamed.Revision);
+        await repository.DeleteCatalogTagAsync(renamed.Identity, renamed.Revision);
+
+        using var payload = JsonDocument.Parse(handler.Bodies[patchKey]);
+        Assert.Equal("반려동물", payload.RootElement.GetProperty("name").GetString());
+        Assert.Equal(1, payload.RootElement.GetProperty("revision").GetInt32());
+    }
+
+    [Fact]
+    public async Task FileCatalogTagMutations_UseOpaqueIdentityAndMetadataRevision_WithoutGlobalDelete()
+    {
+        var restoreKey = $"POST /api/memorykeeper/files/{FileId}/tags/catalog/ai%3Adog";
+        var hideKey = $"DELETE /api/memorykeeper/files/{FileId}/tags/catalog/tag%3A42?expected_revision=6";
+        var handler = new RecordingHandler
+        {
+            Responses =
+            {
+                [restoreKey] = $"{{\"file_id\":\"{FileId}\",\"identity\":\"ai:dog\",\"hidden\":false,\"revision\":6}}",
+                [hideKey] = $"{{\"file_id\":\"{FileId}\",\"identity\":\"tag:42\",\"hidden\":true,\"revision\":7}}",
+            },
+        };
+        using var provider = BuildProvider(handler);
+        var repository = provider.GetRequiredService<IMemoryKeeperWriteApiRepository>();
+
+        var restored = await repository.RestoreFileCatalogTagAsync(FileId, "ai:dog", 5);
+        var hidden = await repository.HideFileCatalogTagAsync(FileId, "tag:42", restored.Revision);
+
+        Assert.False(restored.Hidden);
+        Assert.Equal("ai:dog", restored.Identity);
+        Assert.Equal(6, restored.Revision);
+        Assert.True(hidden.Hidden);
+        Assert.Equal("tag:42", hidden.Identity);
+        Assert.Equal(7, hidden.Revision);
+        using var payload = JsonDocument.Parse(handler.Bodies[restoreKey]);
+        Assert.Equal(5, payload.RootElement.GetProperty("expected_revision").GetInt32());
+        Assert.Contains(restoreKey, handler.Requests);
+        Assert.Contains(hideKey, handler.Requests);
+        Assert.DoesNotContain(
+            handler.Requests,
+            request => request.StartsWith("DELETE /api/memorykeeper/tags/catalog/", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task PendingListAndBatchAssignment_PreserveRawGeographyAndPlaceRevision()
     {
         var pendingKey = "GET /api/memorykeeper/pending?page=1&page_size=200&include_suggestions=true";
@@ -228,10 +298,12 @@ public sealed class MemoryKeeperWriteApiRepositoryTests
         public Dictionary<string, string> Responses { get; init; } = new(StringComparer.Ordinal);
         public Dictionary<string, HttpStatusCode> StatusCodes { get; init; } = new(StringComparer.Ordinal);
         public Dictionary<string, string> Bodies { get; } = new(StringComparer.Ordinal);
+        public List<string> Requests { get; } = [];
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var key = $"{request.Method.Method} {request.RequestUri!.PathAndQuery}";
+            Requests.Add(key);
             if (request.Content is not null)
             {
                 Bodies[key] = await request.Content.ReadAsStringAsync(cancellationToken);

@@ -36,8 +36,8 @@
                             Style="{StaticResource MkSecondaryButtonStyle}"
                             Command="{Binding ShowTagsCommand}" />
 
-                    <TextBlock Text="AI" Style="{StaticResource MkCaptionTextStyle}" FontWeight="SemiBold" Margin="0,16,0,0" />
-                    <Button Content="AI (준비 중)" HorizontalAlignment="Stretch"
+                    <TextBlock Text="자동 태그" Style="{StaticResource MkCaptionTextStyle}" FontWeight="SemiBold" Margin="0,16,0,0" />
+                    <Button Content="자동 태그" HorizontalAlignment="Stretch"
                             Style="{StaticResource MkSecondaryButtonStyle}"
                             Command="{Binding ShowAiCommand}" />
 
@@ -189,9 +189,9 @@
                 <StackPanel
                     Spacing="10"
                     Visibility="{Binding IsAiVisible, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
-                    <TextBlock Text="AI" Style="{StaticResource MkSectionTitleStyle}" />
+                    <TextBlock Text="자동 태그" Style="{StaticResource MkSectionTitleStyle}" />
                     <TextBlock
-                        Text="향후 AI 검색·자동 태깅 기능이 이 영역에 추가됩니다."
+                        Text="자동 태그 상태와 관리 기능은 준비 중입니다."
                         Opacity="0.75"
                         TextWrapping="Wrap" />
                     <InfoBar
@@ -199,7 +199,7 @@
                         IsClosable="False"
                         Severity="Informational"
                         Title="준비 중"
-                        Message="AI 기능은 아직 제공되지 않습니다." />
+                        Message="자동 태그 상태와 관리 기능은 아직 제공되지 않습니다." />
                 </StackPanel>
 
                 <!-- 유지보수 -->

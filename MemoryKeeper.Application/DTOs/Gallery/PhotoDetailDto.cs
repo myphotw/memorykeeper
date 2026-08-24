@@ -84,6 +84,9 @@ public sealed class PhotoDetailDto
     [JsonPropertyName("user_tags")]
     public IReadOnlyList<GalleryTagDto> UserTags { get; init; } = Array.Empty<GalleryTagDto>();
 
+    [JsonPropertyName("tags")]
+    public IReadOnlyList<GalleryTagDto> Tags { get; init; } = Array.Empty<GalleryTagDto>();
+
     [JsonPropertyName("history_count")]
     public int HistoryCount { get; init; }
 
@@ -110,4 +113,25 @@ public sealed class GalleryTagDto
 
     [JsonPropertyName("tag_id")]
     public int? TagId { get; init; }
+
+    [JsonPropertyName("canonical")]
+    public string? Canonical { get; init; }
+
+    [JsonPropertyName("display_name")]
+    public string? DisplayName { get; init; }
+
+    [JsonPropertyName("aliases")]
+    public IReadOnlyList<string> Aliases { get; init; } = Array.Empty<string>();
+
+    [JsonPropertyName("curation_version")]
+    public int? CurationVersion { get; init; }
+
+    [JsonPropertyName("identity")]
+    public string? Identity { get; init; }
+
+    [JsonPropertyName("editable")]
+    public bool Editable { get; init; }
+
+    [JsonPropertyName("revision")]
+    public int? Revision { get; init; }
 }

@@ -194,6 +194,38 @@ public sealed class MemoryKeeperWriteService
     public Task<MemoryKeeperTagListDto> GetTagsAsync(CancellationToken cancellationToken = default) =>
         _repository.GetTagsAsync(cancellationToken);
 
+    public Task<MemoryKeeperTagCatalogListDto> GetTagCatalogAsync(
+        string? query = null,
+        CancellationToken cancellationToken = default) =>
+        _repository.GetTagCatalogAsync(query, cancellationToken);
+
+    public async Task<MemoryKeeperTagCatalogItemDto> RenameCatalogTagAsync(
+        string identity,
+        int revision,
+        string name,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _repository.RenameCatalogTagAsync(
+            identity,
+            new MemoryKeeperTagCatalogRenameRequest
+            {
+                Name = RequireName(name),
+                Revision = revision,
+            },
+            cancellationToken).ConfigureAwait(false);
+        InvalidateTags();
+        return result;
+    }
+
+    public async Task DeleteCatalogTagAsync(
+        string identity,
+        int revision,
+        CancellationToken cancellationToken = default)
+    {
+        await _repository.DeleteCatalogTagAsync(identity, revision, cancellationToken).ConfigureAwait(false);
+        InvalidateTags();
+    }
+
     public async Task<MemoryKeeperTagDto> CreateTagAsync(
         string name,
         bool favorite,
@@ -262,6 +294,30 @@ public sealed class MemoryKeeperWriteService
     {
         var result = await _repository.AssignFileTagAsync(
             FileId(mediaId), tagId, expectedRevision, cancellationToken).ConfigureAwait(false);
+        InvalidateTags();
+        return result.Revision;
+    }
+
+    public async Task<int> RestoreFileCatalogTagAsync(
+        Guid mediaId,
+        string identity,
+        int expectedRevision,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _repository.RestoreFileCatalogTagAsync(
+            FileId(mediaId), RequireIdentity(identity), expectedRevision, cancellationToken).ConfigureAwait(false);
+        InvalidateTags();
+        return result.Revision;
+    }
+
+    public async Task<int> HideFileCatalogTagAsync(
+        Guid mediaId,
+        string identity,
+        int expectedRevision,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _repository.HideFileCatalogTagAsync(
+            FileId(mediaId), RequireIdentity(identity), expectedRevision, cancellationToken).ConfigureAwait(false);
         InvalidateTags();
         return result.Revision;
     }
@@ -386,6 +442,16 @@ public sealed class MemoryKeeperWriteService
     private void InvalidateTags() =>
         _invalidation.Invalidate(
             CatalogSurface.Gallery | CatalogSurface.Home | CatalogSurface.Travel | CatalogSurface.Tags);
+
+    private static string RequireIdentity(string identity)
+    {
+        if (string.IsNullOrWhiteSpace(identity))
+        {
+            throw new ArgumentException("태그 identity가 필요합니다.", nameof(identity));
+        }
+
+        return identity.Trim();
+    }
 
     private static IReadOnlySet<string> Fields(params string[] values) =>
         new HashSet<string>(values, StringComparer.Ordinal);

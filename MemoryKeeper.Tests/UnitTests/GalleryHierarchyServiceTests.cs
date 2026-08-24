@@ -587,6 +587,21 @@ public sealed class GalleryHierarchyServiceTests
         Assert.False(VisitRecordPlaceScoping.HasAnyPhotos(result.TimelinePlaces));
     }
 
+    [Fact]
+    public async Task Search_UsesBackendKeywordResults_ForCuratedKoreanTags()
+    {
+        var matched = Photo("unrelated-filename.jpg", 2026, "대한민국", "서울특별시", "서울숲");
+        var catalog = new FixedCatalog(new GalleryPhotoCatalogSnapshot { Photos = [matched] });
+        var service = new GalleryHierarchyService(
+            catalog,
+            NullLogger<GalleryHierarchyService>.Instance);
+
+        var result = await service.QueryAsync(new GalleryHierarchyQuery { SearchText = "강아지" });
+
+        Assert.Same(matched, Assert.Single(result));
+        Assert.Equal("강아지", catalog.LastKeyword);
+    }
+
     private static GalleryHierarchyService CreateService(params PhotoDto[] photos) =>
         new(
             new FixedCatalog(new GalleryPhotoCatalogSnapshot { Photos = photos }),
@@ -628,10 +643,16 @@ public sealed class GalleryHierarchyServiceTests
 
         public FixedCatalog(GalleryPhotoCatalogSnapshot snapshot) => _snapshot = snapshot;
 
+        public string? LastKeyword { get; private set; }
+
         public Task<GalleryPhotoCatalogSnapshot> QueryAsync(
             int? year = null,
             string? country = null,
             string? keyword = null,
-            CancellationToken cancellationToken = default) => Task.FromResult(_snapshot);
+            CancellationToken cancellationToken = default)
+        {
+            LastKeyword = keyword;
+            return Task.FromResult(_snapshot);
+        }
     }
 }

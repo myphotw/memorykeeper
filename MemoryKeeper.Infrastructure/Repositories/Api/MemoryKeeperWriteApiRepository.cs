@@ -33,6 +33,52 @@ public sealed class MemoryKeeperWriteApiRepository : IMemoryKeeperWriteApiReposi
             FilePath(fileId), cancellationToken).ConfigureAwait(false)).Data,
             "사진 삭제 응답이 비어 있습니다.");
 
+    public async Task<MemoryKeeperTagCatalogListDto> GetTagCatalogAsync(
+        string? query = null,
+        CancellationToken cancellationToken = default)
+    {
+        const int limit = 500;
+        var items = new List<MemoryKeeperTagCatalogItemDto>();
+        var total = 0;
+        var queryPart = string.IsNullOrWhiteSpace(query)
+            ? string.Empty
+            : $"&query={Uri.EscapeDataString(query.Trim())}";
+        for (var offset = 0; offset == 0 || offset < total; offset += limit)
+        {
+            var page = (await _apiClient.GetAsync<MemoryKeeperTagCatalogListDto>(
+                $"{Root}/tags/catalog?limit={limit}&offset={offset}{queryPart}", cancellationToken)
+                .ConfigureAwait(false)).Data ?? new MemoryKeeperTagCatalogListDto();
+            total = page.Total;
+            items.AddRange(page.Items);
+            if (page.Items.Count == 0 || items.Count >= total)
+            {
+                break;
+            }
+        }
+
+        return new MemoryKeeperTagCatalogListDto { Items = items, Total = total };
+    }
+
+    public async Task<MemoryKeeperTagCatalogItemDto> RenameCatalogTagAsync(
+        string identity,
+        MemoryKeeperTagCatalogRenameRequest request,
+        CancellationToken cancellationToken = default) =>
+        Require((await _apiClient.PatchAsync<MemoryKeeperTagCatalogItemDto>(
+            $"{Root}/tags/catalog/{Uri.EscapeDataString(identity)}",
+            request,
+            cancellationToken).ConfigureAwait(false)).Data,
+            "태그 이름 변경 응답이 비어 있습니다.");
+
+    public async Task DeleteCatalogTagAsync(
+        string identity,
+        int expectedRevision,
+        CancellationToken cancellationToken = default)
+    {
+        await _apiClient.DeleteAsync<object>(
+            $"{Root}/tags/catalog/{Uri.EscapeDataString(identity)}?expected_revision={expectedRevision}",
+            cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<MemoryKeeperTagListDto> GetTagsAsync(CancellationToken cancellationToken = default)
     {
         const int limit = 500;
@@ -96,6 +142,27 @@ public sealed class MemoryKeeperWriteApiRepository : IMemoryKeeperWriteApiReposi
             new MemoryKeeperFileTagMutationRequest { ExpectedRevision = expectedRevision },
             cancellationToken).ConfigureAwait(false)).Data,
             "사진 태그 추가 응답이 비어 있습니다.");
+
+    public async Task<MemoryKeeperFileCatalogTagMutationResponse> RestoreFileCatalogTagAsync(
+        string fileId,
+        string identity,
+        int expectedRevision,
+        CancellationToken cancellationToken = default) =>
+        Require((await _apiClient.PostAsync<MemoryKeeperFileCatalogTagMutationResponse>(
+            $"{FilePath(fileId)}/tags/catalog/{Uri.EscapeDataString(identity)}",
+            new MemoryKeeperFileTagMutationRequest { ExpectedRevision = expectedRevision },
+            cancellationToken).ConfigureAwait(false)).Data,
+            "사진 태그 복원 응답이 비어 있습니다.");
+
+    public async Task<MemoryKeeperFileCatalogTagMutationResponse> HideFileCatalogTagAsync(
+        string fileId,
+        string identity,
+        int expectedRevision,
+        CancellationToken cancellationToken = default) =>
+        Require((await _apiClient.DeleteAsync<MemoryKeeperFileCatalogTagMutationResponse>(
+            $"{FilePath(fileId)}/tags/catalog/{Uri.EscapeDataString(identity)}?expected_revision={expectedRevision}",
+            cancellationToken).ConfigureAwait(false)).Data,
+            "사진 태그 숨김 응답이 비어 있습니다.");
 
     public async Task<MemoryKeeperFileTagMutationResponse> RemoveFileTagAsync(
         string fileId,

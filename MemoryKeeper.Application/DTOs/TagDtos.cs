@@ -9,6 +9,9 @@ public sealed class TagDto
     /// <summary>Canonical tc-backend tag id. Null only for legacy/local or Vision-only tags.</summary>
     public int? BackendId { get; init; }
 
+    /// <summary>Opaque Backend catalog identity used only for mutations and selection.</summary>
+    public string? Identity { get; init; }
+
     public string Name { get; init; } = string.Empty;
 
     public string Color { get; init; } = string.Empty;
@@ -22,6 +25,8 @@ public sealed class TagDto
     public bool IsAssigned { get; init; }
 
     public int Revision { get; init; }
+
+    public bool CanRemove { get; init; } = true;
 }
 
 public sealed class CreateTagRequest

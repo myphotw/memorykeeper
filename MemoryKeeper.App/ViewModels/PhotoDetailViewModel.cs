@@ -1131,9 +1131,13 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
 
         if (IsBackendOnlyMedia)
         {
-            if (tag.BackendId is not int backendTagId)
+            if (string.IsNullOrWhiteSpace(tag.Identity))
             {
-                StatusMessage = "자동 태그는 직접 삭제할 수 없습니다.";
+                _logger.LogWarning(
+                    "Photo detail tag is read-only because its catalog identity is missing. MediaId={MediaId}, TagName={TagName}",
+                    MediaId,
+                    tag.Name);
+                StatusMessage = "이 태그는 현재 사진에서 개별적으로 제거할 수 없습니다.";
                 return;
             }
 
@@ -1141,8 +1145,8 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
             {
                 try
                 {
-                    _metadataRevision = await _writeService.RemoveFileTagAsync(
-                        MediaId, backendTagId, _metadataRevision);
+                    _metadataRevision = await _writeService.HideFileCatalogTagAsync(
+                        MediaId, tag.Identity, _metadataRevision);
                     await RefreshBackendTagsAsync();
                     StatusMessage = $"태그 '{tag.Name}'을(를) 제거했습니다.";
                 }
@@ -1170,31 +1174,36 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
     {
         if (IsBackendOnlyMedia)
         {
-            var assigned = Tags
+            var assignedIdentities = Tags
+                .Where(tag => !string.IsNullOrWhiteSpace(tag.Identity))
+                .Select(tag => tag.Identity!)
+                .ToHashSet(StringComparer.Ordinal);
+            var assignedIds = Tags
                 .Where(tag => tag.BackendId.HasValue)
                 .Select(tag => tag.BackendId!.Value)
                 .ToHashSet();
-            var list = await _writeService.GetTagsAsync();
+            var list = await _writeService.GetTagCatalogAsync(TagSearchKeyword);
             var mapped = list.Items.Select(tag => new TagDto
             {
-                Id = ToTagGuid(tag.Id),
-                BackendId = tag.Id,
-                Name = tag.Name,
+                Id = tag.ManagedTagId is int managedId
+                    ? ToTagGuid(managedId)
+                    : ToTagGuid(StringComparer.Ordinal.GetHashCode(tag.Identity)),
+                BackendId = tag.ManagedTagId,
+                Identity = tag.Identity,
+                Name = tag.DisplayName,
                 UsageCount = tag.UsageCount,
                 Source = MemoryKeeper.Domain.Enums.TagSource.User,
-                IsPinned = tag.Favorite,
-                IsAssigned = assigned.Contains(tag.Id),
+                IsAssigned = assignedIdentities.Contains(tag.Identity)
+                             || (tag.ManagedTagId is int assignedManagedId
+                                 && assignedIds.Contains(assignedManagedId)),
                 Revision = tag.Revision,
+                CanRemove = true,
             }).ToList();
-            TagPickerPinnedItems = new ObservableCollection<TagChipItem>(
-                mapped.Where(tag => tag.IsPinned).Select(tag => new TagChipItem(tag)));
+            TagPickerPinnedItems = [];
             TagPickerRecentItems = [];
             TagPickerCommonItems = [];
             TagPickerCandidateItems = new ObservableCollection<TagChipItem>(
-                mapped.Where(tag => !tag.IsPinned)
-                    .Where(tag => string.IsNullOrWhiteSpace(TagSearchKeyword)
-                                  || tag.Name.Contains(TagSearchKeyword.Trim(), StringComparison.OrdinalIgnoreCase))
-                    .Select(tag => new TagChipItem(tag)));
+                mapped.Select(tag => new TagChipItem(tag)));
             return;
         }
 
@@ -1232,16 +1241,17 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
             .Select(item => item.Id)
             .Distinct()
             .ToList();
-        var backendTagIds = TagPickerPinnedItems
+        var backendCatalogSelections = TagPickerPinnedItems
             .Concat(TagPickerRecentItems)
             .Concat(TagPickerCommonItems)
             .Concat(TagPickerCandidateItems)
-            .Where(item => item.IsSelected && !item.IsAssigned && item.BackendId.HasValue)
-            .Select(item => item.BackendId!.Value)
-            .Distinct()
+            .Where(item => item.IsSelected && !item.IsAssigned)
+            .Where(item => !string.IsNullOrWhiteSpace(item.Identity))
+            .GroupBy(item => item.Identity!, StringComparer.Ordinal)
+            .Select(group => group.First())
             .ToList();
         var newName = NewTagName.Trim();
-        if ((IsBackendOnlyMedia ? backendTagIds.Count : tagIds.Count) == 0
+        if ((IsBackendOnlyMedia ? backendCatalogSelections.Count : tagIds.Count) == 0
             && string.IsNullOrWhiteSpace(newName))
         {
             StatusMessage = "추가할 태그를 선택하거나 새 태그를 입력하세요.";
@@ -1254,22 +1264,38 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
             {
                 try
                 {
+                    var catalogIdentities = backendCatalogSelections
+                        .Select(selection => selection.Identity!)
+                        .ToHashSet(StringComparer.Ordinal);
+                    int? createdTagId = null;
+
                     if (!string.IsNullOrWhiteSpace(newName))
                     {
-                        var existing = (await _writeService.GetTagsAsync()).Items.FirstOrDefault(tag =>
-                            string.Equals(tag.Name.Trim(), newName.Trim(), StringComparison.OrdinalIgnoreCase));
+                        var existing = (await _writeService.GetTagCatalogAsync(newName)).Items.FirstOrDefault(tag =>
+                            string.Equals(tag.DisplayName.Trim(), newName.Trim(), StringComparison.OrdinalIgnoreCase));
                         if (existing is not null)
                         {
-                            backendTagIds.Add(existing.Id);
+                            var isAlreadyAssigned = Tags.Any(tag =>
+                                string.Equals(tag.Identity, existing.Identity, StringComparison.Ordinal));
+                            if (!isAlreadyAssigned)
+                            {
+                                catalogIdentities.Add(existing.Identity);
+                            }
                         }
                         else
                         {
                             var created = await _writeService.CreateTagAsync(newName, favorite: false);
-                            backendTagIds.Add(created.Id);
+                            createdTagId = created.Id;
                         }
                     }
 
-                    foreach (var backendTagId in backendTagIds.Distinct())
+                    foreach (var identity in catalogIdentities)
+                    {
+                        _metadataRevision = await _writeService.RestoreFileCatalogTagAsync(
+                            MediaId, identity, _metadataRevision);
+                    }
+
+                    if (createdTagId is int backendTagId)
                     {
                         _metadataRevision = await _writeService.AssignFileTagAsync(
                             MediaId, backendTagId, _metadataRevision);

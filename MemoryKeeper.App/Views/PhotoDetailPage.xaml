@@ -119,8 +119,7 @@
                                     <Border Padding="10,4" CornerRadius="12" Background="{Binding ColorBrush}">
                                         <StackPanel Orientation="Horizontal" Spacing="6">
                                             <TextBlock Text="{Binding Name}" Foreground="White" FontSize="12" />
-                                            <TextBlock Text="{Binding SourceText}" Foreground="White" Opacity="0.75" FontSize="10" />
-                                            <Button Content="×" Padding="4,0" MinWidth="24" FontSize="12" Click="RemoveTag_OnClick" Tag="{Binding}" IsEnabled="{Binding CanRemove}" />
+                                            <Button Content="×" Padding="4,0" MinWidth="24" FontSize="12" Click="RemoveTag_OnClick" Tag="{Binding}" Visibility="{Binding CanRemove, Converter={StaticResource BoolToVisibilityConverter}}" />
                                         </StackPanel>
                                     </Border>
                                 </DataTemplate>

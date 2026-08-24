@@ -27,7 +27,7 @@ public sealed class GalleryApiRepositoryUnitTests
         handler.Map["GET /api/common/gallery/statistics?service_name=MemoryKeeper"] =
             """{"total_photos":3,"gps_count":2,"ai_tag_count":1,"by_camera":[{"name":"X","count":3}],"by_country":[{"name":"Korea","count":3}],"by_year":[{"name":"2024","count":3}],"by_service":[{"name":"MemoryKeeper","count":3}]}""";
         handler.Map["GET /api/common/gallery/11111111-1111-1111-1111-111111111111"] =
-            """{"file_id":"11111111-1111-1111-1111-111111111111","filename":"a.jpg","extension":"jpg","mime_type":"image/jpeg","file_size":10,"width":100,"height":200,"favorite":true,"memo":"가족 여행","metadata_revision":5,"incomplete":false,"place_revision":9,"service_name":"MemoryKeeper","storage_path":"/o","preview_url":"/p","thumbnail_url":"/t","original_url":"/o","metadata":{"iso":100},"ai_tags":[{"tag":"사람","source":"AI","tag_type":"AI"}],"user_tags":[{"tag":"가족","source":"USER","tag_type":"USER","tag_id":42}],"history_count":0}""";
+            """{"file_id":"11111111-1111-1111-1111-111111111111","filename":"a.jpg","extension":"jpg","mime_type":"image/jpeg","file_size":10,"width":100,"height":200,"favorite":true,"memo":"가족 여행","metadata_revision":5,"incomplete":false,"place_revision":9,"service_name":"MemoryKeeper","storage_path":"/o","preview_url":"/p","thumbnail_url":"/t","original_url":"/o","metadata":{"iso":100},"ai_tags":[{"tag":"Dog","source":"AI","tag_type":"AI"}],"user_tags":[{"tag":"가족","source":"USER","tag_type":"USER","tag_id":42}],"tags":[{"tag":"강아지","display_name":"강아지","source":"AI","tag_type":"AI","identity":"ai:dog","revision":1,"aliases":["dog"]},{"tag":"가족","display_name":"가족","source":"USER","tag_type":"USER","tag_id":42,"identity":"tag:42","revision":3}],"history_count":0}""";
 
         using var provider = BuildProvider(handler);
         var repo = provider.GetRequiredService<IGalleryApiRepository>();
@@ -62,6 +62,10 @@ public sealed class GalleryApiRepositoryUnitTests
         Assert.Equal(9, detail.PlaceRevision);
         Assert.Equal(42, Assert.Single(detail.UserTags).TagId);
         Assert.Single(detail.AiTags);
+        Assert.Equal(2, detail.Tags.Count);
+        Assert.Equal("강아지", detail.Tags[0].DisplayName);
+        Assert.Equal("ai:dog", detail.Tags[0].Identity);
+        Assert.Equal("tag:42", detail.Tags[1].Identity);
         Assert.All(handler.AuthorizationHeaders, header =>
         {
             Assert.Equal("Bearer", header?.Scheme);

@@ -67,6 +67,35 @@ public sealed class MemoryKeeperTagListDto
     public int Total { get; init; }
 }
 
+public sealed class MemoryKeeperTagCatalogItemDto
+{
+    public string Identity { get; init; } = string.Empty;
+    public string DisplayName { get; init; } = string.Empty;
+    public int UsageCount { get; init; }
+    public bool Favorite { get; init; }
+    public int Revision { get; init; }
+    public bool Editable { get; init; }
+    public IReadOnlyList<string> CanonicalReferences { get; init; } = [];
+
+    public int? ManagedTagId =>
+        Identity.StartsWith("tag:", StringComparison.Ordinal)
+        && int.TryParse(Identity.AsSpan(4), out var value)
+            ? value
+            : null;
+}
+
+public sealed class MemoryKeeperTagCatalogListDto
+{
+    public IReadOnlyList<MemoryKeeperTagCatalogItemDto> Items { get; init; } = [];
+    public int Total { get; init; }
+}
+
+public sealed class MemoryKeeperTagCatalogRenameRequest
+{
+    public string Name { get; init; } = string.Empty;
+    public int Revision { get; init; }
+}
+
 public sealed class MemoryKeeperTagCreateRequest
 {
     public string Name { get; init; } = string.Empty;
@@ -97,6 +126,14 @@ public sealed class MemoryKeeperFileTagMutationResponse
     public string FileId { get; init; } = string.Empty;
     public int TagId { get; init; }
     public bool Assigned { get; init; }
+    public int Revision { get; init; }
+}
+
+public sealed class MemoryKeeperFileCatalogTagMutationResponse
+{
+    public string FileId { get; init; } = string.Empty;
+    public string Identity { get; init; } = string.Empty;
+    public bool Hidden { get; init; }
     public int Revision { get; init; }
 }
 

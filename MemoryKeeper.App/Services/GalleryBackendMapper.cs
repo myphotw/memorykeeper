@@ -134,14 +134,15 @@ public static class GalleryBackendMapper
 
     private static IReadOnlyList<TagDto> MapTags(GalleryPhotoDetailDto detail)
     {
-        return detail.UserTags
-            .Select(tag => MapTag(tag, TagSource.User))
-            .Concat(detail.AiTags.Select(tag => MapTag(tag, TagSource.Ai)))
-            .ToList();
+        return detail.Tags.Select(MapTag).ToList();
     }
 
-    private static TagDto MapTag(MemoryKeeper.Application.DTOs.Gallery.GalleryTagDto tag, TagSource source)
+    private static TagDto MapTag(MemoryKeeper.Application.DTOs.Gallery.GalleryTagDto tag)
     {
+        var source = string.Equals(tag.Source, "USER", StringComparison.OrdinalIgnoreCase)
+            ? TagSource.User
+            : TagSource.Ai;
+        var displayName = string.IsNullOrWhiteSpace(tag.DisplayName) ? tag.Tag : tag.DisplayName;
         var bytes = new byte[16];
         if (tag.TagId is int backendId)
         {
@@ -149,16 +150,19 @@ public static class GalleryBackendMapper
         }
         else
         {
-            BitConverter.GetBytes(StringComparer.OrdinalIgnoreCase.GetHashCode(tag.Tag)).CopyTo(bytes, 0);
+            BitConverter.GetBytes(StringComparer.OrdinalIgnoreCase.GetHashCode(tag.Identity ?? displayName)).CopyTo(bytes, 0);
         }
 
         return new TagDto
             {
                 Id = new Guid(bytes),
                 BackendId = tag.TagId,
-                Name = tag.Tag,
+                Identity = tag.Identity,
+                Name = displayName,
                 Source = source,
                 IsAssigned = true,
+                Revision = tag.Revision ?? 0,
+                CanRemove = !string.IsNullOrWhiteSpace(tag.Identity),
             };
     }
 

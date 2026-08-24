@@ -15,56 +15,60 @@ public sealed partial class TagManagementPage : Page
         InitializeComponent();
     }
 
+    private async void SaveName_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.SelectedTag is null)
+        {
+            ViewModel.StatusMessage = "이름을 변경할 태그를 선택하세요.";
+            return;
+        }
+
+        var target = ViewModel.FindExistingName(ViewModel.Name);
+        if (target is not null)
+        {
+            var source = ViewModel.SelectedTag;
+            var dialog = new ContentDialog
+            {
+                XamlRoot = XamlRoot,
+                Title = "태그 합치기",
+                Content = $"이미 '{target.DisplayName}' 태그가 있습니다.\n"
+                          + $"'{source.DisplayName}' 태그를 사용한 {source.UsageCount}장의 사진을 "
+                          + $"'{target.DisplayName}' 태그로 정리할까요?",
+                PrimaryButtonText = "합치기",
+                CloseButtonText = "취소",
+                DefaultButton = ContentDialogButton.Close,
+            };
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+            {
+                return;
+            }
+        }
+
+        await ViewModel.SaveNameCommand.ExecuteAsync(null);
+    }
+
     private async void Delete_OnClick(object sender, RoutedEventArgs e)
     {
         if (ViewModel.SelectedTag is null)
         {
-            ViewModel.StatusMessage = "삭제할 Tag를 선택하세요.";
+            ViewModel.StatusMessage = "삭제할 태그를 선택하세요.";
             return;
         }
 
         var dialog = new ContentDialog
         {
             XamlRoot = XamlRoot,
-            Title = "Tag 삭제",
-            Content = $"Tag '{ViewModel.SelectedTag.Name}'을(를) 삭제할까요?\n연결된 MediaTag만 제거되며 사진은 유지됩니다.",
+            Title = "태그 삭제",
+            Content = $"'{ViewModel.SelectedTag.DisplayName}' 태그를 삭제할까요?\n\n"
+                      + "태그만 제거되며 사진은 삭제되지 않습니다.",
             PrimaryButtonText = "삭제",
             CloseButtonText = "취소",
-            DefaultButton = ContentDialogButton.Close
+            DefaultButton = ContentDialogButton.Close,
         };
 
         if (await dialog.ShowAsync() == ContentDialogResult.Primary)
         {
             await ViewModel.DeleteCommand.ExecuteAsync(null);
-        }
-    }
-
-    private async void Merge_OnClick(object sender, RoutedEventArgs e)
-    {
-        if (ViewModel.SelectedTag is null || ViewModel.MergeTargetTag is null)
-        {
-            ViewModel.StatusMessage = "병합할 원본 태그와 대상 태그를 선택하세요.";
-            return;
-        }
-
-        if (ViewModel.SelectedTag.Id == ViewModel.MergeTargetTag.Id)
-        {
-            ViewModel.StatusMessage = "서로 다른 태그를 선택하세요.";
-            return;
-        }
-
-        var dialog = new ContentDialog
-        {
-            XamlRoot = XamlRoot,
-            Title = "태그 병합",
-            Content = $"'{ViewModel.SelectedTag.Name}'을(를) '{ViewModel.MergeTargetTag.Name}'에 병합할까요?",
-            PrimaryButtonText = "병합",
-            CloseButtonText = "취소",
-            DefaultButton = ContentDialogButton.Close,
-        };
-        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
-        {
-            await ViewModel.MergeCommand.ExecuteAsync(null);
         }
     }
 }

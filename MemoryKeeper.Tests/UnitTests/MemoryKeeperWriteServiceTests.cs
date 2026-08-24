@@ -193,6 +193,43 @@ public sealed class MemoryKeeperWriteServiceTests
     }
 
     [Fact]
+    public async Task FileCatalogTagRestoreAndHide_ChainMetadataRevisionAndInvalidateEveryTagSurface()
+    {
+        var repository = new FakeRepository();
+        var invalidation = new CatalogInvalidation();
+        var service = new MemoryKeeperWriteService(repository, invalidation);
+
+        var revision = await service.RestoreFileCatalogTagAsync(MediaId, "ai:dog", expectedRevision: 3);
+        revision = await service.HideFileCatalogTagAsync(MediaId, "tag:42", expectedRevision: revision);
+
+        Assert.Equal(5, revision);
+        Assert.Equal(
+            [("ai:dog", 3, false), ("tag:42", 4, true)],
+            repository.FileCatalogTagMutations);
+        Assert.True(invalidation.Consume(CatalogSurface.Tags));
+        Assert.True(invalidation.Consume(CatalogSurface.Gallery));
+        Assert.True(invalidation.Consume(CatalogSurface.Home));
+        Assert.True(invalidation.Consume(CatalogSurface.Travel));
+    }
+
+    [Fact]
+    public async Task CatalogRename_UsesReturnedIdentity_AndInvalidatesTagSurfaces()
+    {
+        var repository = new FakeRepository();
+        var invalidation = new CatalogInvalidation();
+        var service = new MemoryKeeperWriteService(repository, invalidation);
+
+        var renamed = await service.RenameCatalogTagAsync("ai:dog", 1, "반려동물");
+
+        Assert.Equal("tag:123", renamed.Identity);
+        Assert.Equal(("ai:dog", 1, "반려동물"), repository.CatalogRename);
+        Assert.True(invalidation.Consume(CatalogSurface.Tags));
+        Assert.True(invalidation.Consume(CatalogSurface.Gallery));
+        Assert.True(invalidation.Consume(CatalogSurface.Home));
+        Assert.True(invalidation.Consume(CatalogSurface.Travel));
+    }
+
+    [Fact]
     public async Task DeleteInvalidatesEveryDerivedSurface()
     {
         var invalidation = new CatalogInvalidation();
@@ -218,6 +255,8 @@ public sealed class MemoryKeeperWriteServiceTests
         public MemoryKeeperPendingListDto Pending { get; set; } = new();
         public MemoryKeeperPendingAssignRequest? LastPendingAssign { get; private set; }
         public List<(int TagId, int Revision)> FileTagMutations { get; } = [];
+        public List<(string Identity, int Revision, bool Hidden)> FileCatalogTagMutations { get; } = [];
+        public (string Identity, int Revision, string Name)? CatalogRename { get; private set; }
 
         public Task<MemoryKeeperFileMetadataPatchResponse> PatchMetadataAsync(string fileId, MemoryKeeperFileMetadataPatchRequest request, CancellationToken cancellationToken = default)
         {
@@ -258,7 +297,44 @@ public sealed class MemoryKeeperWriteServiceTests
             return Task.FromResult(new MemoryKeeperFileTagMutationResponse { FileId = fileId, TagId = tagId, Assigned = false, Revision = expectedRevision + 1 });
         }
 
+        public Task<MemoryKeeperFileCatalogTagMutationResponse> RestoreFileCatalogTagAsync(string fileId, string identity, int expectedRevision, CancellationToken cancellationToken = default)
+        {
+            FileCatalogTagMutations.Add((identity, expectedRevision, false));
+            return Task.FromResult(new MemoryKeeperFileCatalogTagMutationResponse
+            {
+                FileId = fileId,
+                Identity = identity,
+                Hidden = false,
+                Revision = expectedRevision + 1,
+            });
+        }
+
+        public Task<MemoryKeeperFileCatalogTagMutationResponse> HideFileCatalogTagAsync(string fileId, string identity, int expectedRevision, CancellationToken cancellationToken = default)
+        {
+            FileCatalogTagMutations.Add((identity, expectedRevision, true));
+            return Task.FromResult(new MemoryKeeperFileCatalogTagMutationResponse
+            {
+                FileId = fileId,
+                Identity = identity,
+                Hidden = true,
+                Revision = expectedRevision + 1,
+            });
+        }
+
         public Task<MemoryKeeperTagListDto> GetTagsAsync(CancellationToken cancellationToken = default) => Task.FromResult(new MemoryKeeperTagListDto());
+        public Task<MemoryKeeperTagCatalogListDto> GetTagCatalogAsync(string? query = null, CancellationToken cancellationToken = default) => Task.FromResult(new MemoryKeeperTagCatalogListDto());
+        public Task<MemoryKeeperTagCatalogItemDto> RenameCatalogTagAsync(string identity, MemoryKeeperTagCatalogRenameRequest request, CancellationToken cancellationToken = default)
+        {
+            CatalogRename = (identity, request.Revision, request.Name);
+            return Task.FromResult(new MemoryKeeperTagCatalogItemDto
+            {
+                Identity = "tag:123",
+                DisplayName = request.Name,
+                Revision = request.Revision + 1,
+                Editable = true,
+            });
+        }
+        public Task DeleteCatalogTagAsync(string identity, int expectedRevision, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task<MemoryKeeperTagDto> CreateTagAsync(MemoryKeeperTagCreateRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<MemoryKeeperTagDto> UpdateTagAsync(int tagId, MemoryKeeperTagUpdateRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task DeleteTagAsync(int tagId, int expectedRevision, CancellationToken cancellationToken = default) => throw new NotSupportedException();
