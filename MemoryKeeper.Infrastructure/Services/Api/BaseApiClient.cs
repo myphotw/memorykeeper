@@ -65,6 +65,47 @@ public sealed class BaseApiClient
     public Task<ApiResponse<T>> DeleteAsync<T>(string path, CancellationToken cancellationToken = default) =>
         SendAsync<T>(HttpMethod.Delete, path, content: null, ownsContent: false, cancellationToken);
 
+    public async Task DownloadToAsync(
+        string path,
+        Stream destination,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+        var options = _options.CurrentValue;
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, BuildUri(path, options.ApiBaseUrl));
+            var client = _httpClientFactory.CreateClient(HttpClientName);
+            using var response = await client.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                throw new ApiException(
+                    response.StatusCode,
+                    $"TC-Backend download failed: {(int)response.StatusCode} ({ApiErrorClassifier.SafePath(path)})",
+                    serverMessage: string.IsNullOrWhiteSpace(body) ? null : body,
+                    category: ApiErrorClassifier.FromStatusCode(response.StatusCode));
+            }
+
+            await response.Content.CopyToAsync(destination, cancellationToken).ConfigureAwait(false);
+        }
+        catch (ApiException)
+        {
+            throw;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            throw ApiErrorClassifier.FromTransport(ex, HttpMethod.Get, path);
+        }
+    }
+
     public async Task<ApiResponse<T>> UploadAsync<T>(
         string path,
         Stream fileStream,

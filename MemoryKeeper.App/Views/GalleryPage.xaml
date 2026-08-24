@@ -44,12 +44,12 @@
     </Page.Resources>
 
     <Grid
+        Style="{StaticResource MkWidePageContainerStyle}"
         Background="{ThemeResource MkBrushBackground}"
         ColumnDefinitions="0.22*,0.78*"
-        ColumnSpacing="{StaticResource MkComponentSpacing}"
+        ColumnSpacing="{StaticResource MkPageColumnGap}"
         MinWidth="640"
-        MinHeight="360"
-        Padding="{StaticResource MkPagePaddingThickness}">
+        MinHeight="360">
 
         <!-- Quiet filter column (not the visual hero) -->
         <Grid

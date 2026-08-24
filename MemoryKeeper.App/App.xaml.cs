@@ -224,6 +224,8 @@ public partial class App : Microsoft.UI.Xaml.Application
                 services.AddSingleton<IUploadJobApiRepository, UploadJobApiRepository>();
                 services.AddSingleton<IMemoryKeeperPlaceApiRepository, MemoryKeeperPlaceApiRepository>();
                 services.AddSingleton<IMemoryKeeperWriteApiRepository, MemoryKeeperWriteApiRepository>();
+                services.AddSingleton<IMemoryKeeperOperationsApiRepository, MemoryKeeperOperationsApiRepository>();
+                services.AddTransient<IPhotoExportSource, NasPhotoExportSource>();
                 services.AddSingleton<IBackendChangeFeed, BackendChangeFeedRepository>();
                 services.AddMemoryKeeperDatabase(DatabaseDirectory);
 
@@ -237,6 +239,13 @@ public partial class App : Microsoft.UI.Xaml.Application
                 services.AddSingleton<ITravelRecordsNavigationState, TravelRecordsNavigationState>();
                 services.AddSingleton<IShellFileService, ShellFileService>();
                 services.AddSingleton<IThumbnailService, ThumbnailService>();
+                services.AddSingleton<ILocalPreviewCacheService>(sp =>
+                {
+                    var thumbnail = sp.GetRequiredService<IThumbnailService>();
+                    return new MemoryKeeper.Infrastructure.Storage.LocalPreviewCacheService(
+                        thumbnail.CacheRootPath,
+                        sp.GetRequiredService<ILogger<MemoryKeeper.Infrastructure.Storage.LocalPreviewCacheService>>());
+                });
                 services.AddSingleton<IResponsiveLayoutService, ResponsiveLayoutService>();
                 services.AddSingleton<INavigationService, NavigationService>();
                 services.AddSingleton<IPrototypeMaintenanceService>(sp =>
@@ -252,8 +261,10 @@ public partial class App : Microsoft.UI.Xaml.Application
                 services.AddTransient<StorageManagementViewModel>();
                 services.AddTransient<StorageManagementPage>();
                 services.AddTransient<ImportViewModel>();
+                services.AddTransient<ImportView>();
                 services.AddTransient<ImportPage>();
                 services.AddTransient<PlaceManagementViewModel>();
+                services.AddTransient<PlaceManagementView>();
                 services.AddTransient<PlaceManagementPage>();
                 services.AddTransient<TimelineViewModel>();
                 services.AddTransient<TimelinePage>();
@@ -272,12 +283,14 @@ public partial class App : Microsoft.UI.Xaml.Application
                 services.AddTransient<FavoritesViewModel>();
                 services.AddTransient<FavoritesPage>();
                 services.AddTransient<PendingMemoryViewModel>();
+                services.AddTransient<PendingMemoryView>();
                 services.AddTransient<PendingMemoryPage>();
                 services.AddTransient<PhotoDetailViewModel>();
                 services.AddTransient<PhotoDetailPage>();
                 services.AddTransient<PhotoViewerViewModel>();
                 services.AddTransient<PhotoViewerPage>();
                 services.AddTransient<TagManagementViewModel>();
+                services.AddTransient<TagManagementView>();
                 services.AddTransient<TagManagementPage>();
                 services.AddTransient<SettingsViewModel>();
                 services.AddTransient<SettingsPage>();

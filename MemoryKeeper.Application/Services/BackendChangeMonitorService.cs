@@ -17,6 +17,8 @@ public sealed class BackendChangeMonitorService
     private long _cursor;
     private bool _initialized;
 
+    public CatalogSurface LastAffectedSurfaces { get; private set; }
+
     public BackendChangeMonitorService(
         IBackendChangeFeed feed,
         ICatalogInvalidation invalidation,
@@ -53,17 +55,23 @@ public sealed class BackendChangeMonitorService
             if (!_initialized)
             {
                 _initialized = true;
+                LastAffectedSurfaces = CatalogSurface.None;
                 _logger.LogInformation("Backend change cursor initialized at {Cursor}.", _cursor);
                 return false;
             }
 
             if (foundChanges)
             {
+                LastAffectedSurfaces = affectedSurfaces;
                 _invalidation.Invalidate(affectedSurfaces);
                 _logger.LogInformation(
                     "Backend changes detected through cursor {Cursor}; invalidated surfaces {Surfaces}.",
                     _cursor,
                     affectedSurfaces);
+            }
+            else
+            {
+                LastAffectedSurfaces = CatalogSurface.None;
             }
 
             return foundChanges;
@@ -87,6 +95,7 @@ public sealed class BackendChangeMonitorService
             // Tag catalog/relation changes do not alter Pending membership or map grouping.
             "MemoryKeeperTag" or "MemoryKeeperFileTag" =>
                 CatalogSurface.Gallery | CatalogSurface.Home | CatalogSurface.Travel | CatalogSurface.Tags,
+            "MemoryKeeperReset" => CatalogSurface.AllMemoryKeeper,
             _ => CatalogSurface.AllRelated,
         };
 }

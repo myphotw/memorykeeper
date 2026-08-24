@@ -83,9 +83,7 @@
             Padding="0">
             <Grid
                 x:Name="MainContent"
-                MaxWidth="1180"
-                HorizontalAlignment="Stretch"
-                Padding="28,24,28,36"
+                Style="{StaticResource MkStandardPageContainerStyle}"
                 RowSpacing="22">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
@@ -733,9 +731,7 @@
         <!-- Skeleton -->
         <Grid
             x:Name="SkeletonRoot"
-            MaxWidth="1180"
-            HorizontalAlignment="Stretch"
-            Padding="28,24"
+            Style="{StaticResource MkStandardPageContainerStyle}"
             Visibility="Collapsed"
             RowSpacing="20">
             <Grid.RowDefinitions>

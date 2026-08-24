@@ -27,7 +27,18 @@
     <x:Double x:Key="MkInputMaxWidth">560</x:Double>
     <x:Double x:Key="MkContentMaxWidth">1200</x:Double>
 
+    <!-- PC V2 page containers -->
+    <x:Double x:Key="MkPageHorizontalPadding">32</x:Double>
+    <x:Double x:Key="MkStandardPageMaxWidth">1520</x:Double>
+    <x:Double x:Key="MkWidePageMaxWidth">1640</x:Double>
+    <x:Double x:Key="MkSettingsSimpleDetailMaxWidth">920</x:Double>
+    <x:Double x:Key="MkSettingsNavigationWidth">232</x:Double>
+    <x:Double x:Key="MkPageColumnGap">24</x:Double>
+
     <Thickness x:Key="MkPagePaddingThickness">24,20,24,28</Thickness>
+    <Thickness x:Key="MkDesktopPagePaddingThickness">32,24,32,36</Thickness>
+    <Thickness x:Key="MkCompactPagePaddingThickness">16,16,16,24</Thickness>
+    <Thickness x:Key="MkSettingsDetailPaddingThickness">24,0,8,0</Thickness>
     <Thickness x:Key="MkCardPaddingThickness">24</Thickness>
     <Thickness x:Key="MkCardMarginThickness">0,0,0,24</Thickness>
     <Thickness x:Key="MkLabelSpacing">0,0,0,8</Thickness>

@@ -10,14 +10,14 @@ using Microsoft.UI.Xaml.Input;
 
 namespace MemoryKeeper.App.Views;
 
-public sealed partial class PendingMemoryPage : Page
+public sealed partial class PendingMemoryView : UserControl
 {
     private readonly ILoggerFactory _loggerFactory;
     private readonly ISettingRepository _settingRepository;
 
     public PendingMemoryViewModel ViewModel { get; }
 
-    public PendingMemoryPage(
+    public PendingMemoryView(
         PendingMemoryViewModel viewModel,
         ILoggerFactory loggerFactory,
         ISettingRepository settingRepository)

@@ -76,6 +76,36 @@ public sealed class BackendChangeMonitorServiceTests
         Assert.False(invalidation.Consume(CatalogSurface.Visits));
     }
 
+    [Fact]
+    public async Task ResetResource_InvalidatesEveryMemoryKeeperSurface()
+    {
+        var feed = new FakeFeed(
+            new BackendChangeFeedDto { NextCursor = 30 },
+            new BackendChangeFeedDto
+            {
+                Items = [new BackendChangeEventDto { Cursor = 31, ResourceType = "MemoryKeeperReset" }],
+                NextCursor = 31,
+            });
+        var invalidation = new CatalogInvalidation();
+        var service = new BackendChangeMonitorService(
+            feed,
+            invalidation,
+            NullLogger<BackendChangeMonitorService>.Instance);
+
+        Assert.False(await service.CheckForChangesAsync());
+        Assert.True(await service.CheckForChangesAsync());
+        Assert.Equal(CatalogSurface.AllMemoryKeeper, service.LastAffectedSurfaces);
+        foreach (var surface in new[]
+                 {
+                     CatalogSurface.Gallery, CatalogSurface.Home, CatalogSurface.Visits,
+                     CatalogSurface.Travel, CatalogSurface.Pending, CatalogSurface.Tags,
+                     CatalogSurface.Places, CatalogSurface.Favorites,
+                 })
+        {
+            Assert.True(invalidation.Consume(surface));
+        }
+    }
+
     private sealed class FakeFeed(params BackendChangeFeedDto[] pages) : IBackendChangeFeed
     {
         private readonly Queue<BackendChangeFeedDto> _pages = new(pages);

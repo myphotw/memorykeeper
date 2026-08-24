@@ -48,9 +48,7 @@
             Padding="0,0,8,0">
             <StackPanel
                 x:Name="ContentHost"
-                HorizontalAlignment="Stretch"
-                MaxWidth="{StaticResource MkContentMaxWidth}"
-                Padding="{StaticResource MkPagePaddingThickness}"
+                Style="{StaticResource MkStandardStackPageContainerStyle}"
                 Spacing="0">
 
                 <!-- Header -->

@@ -13,7 +13,7 @@
         <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
     </Page.Resources>
 
-    <Grid RowDefinitions="Auto,Auto,*" RowSpacing="12">
+    <Grid Style="{StaticResource MkStandardPageContainerStyle}" RowDefinitions="Auto,Auto,*" RowSpacing="12">
         <Grid ColumnDefinitions="Auto,*">
             <Button Content="뒤로" Command="{Binding BackCommand}" Margin="0,0,12,0" />
             <TextBlock

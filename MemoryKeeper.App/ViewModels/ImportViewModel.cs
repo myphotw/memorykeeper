@@ -32,7 +32,7 @@ public partial class ImportViewModel : ObservableObject
     private string sourceFolderPath = string.Empty;
 
     [ObservableProperty]
-    private string statusMessage = "등록할 폴더를 선택한 뒤 사진등록을 실행하세요.";
+    private string statusMessage = "등록할 폴더를 선택한 뒤 사진 등록을 실행하세요.";
 
     [ObservableProperty]
     private bool isBusy;
@@ -179,8 +179,8 @@ public partial class ImportViewModel : ObservableObject
             StatusMessage = storage is null
                 ? "MemoryKeeper 저장소가 설정되지 않았습니다. 설정에서 폴더를 지정하세요."
                 : resumed > 0
-                    ? $"사진등록 준비 완료. 이전 세션 Job {resumed}건 상태를 갱신했습니다."
-                    : "사진등록 준비가 완료되었습니다.";
+                    ? $"사진 등록 준비 완료. 이전 세션 Job {resumed}건 상태를 갱신했습니다."
+                    : "사진 등록 준비가 완료되었습니다.";
         }, markBusy: false);
     }
 
@@ -273,7 +273,7 @@ public partial class ImportViewModel : ObservableObject
     private void CancelImport()
     {
         _importCancellation?.Cancel();
-        StatusMessage = "사진등록 취소가 요청되었습니다. 이미 접수된 Job은 서버에서 계속 처리됩니다.";
+        StatusMessage = "사진 등록 취소가 요청되었습니다. 이미 접수된 Job은 서버에서 계속 처리됩니다.";
     }
 
     private void ApplyImportResult(MediaImportResult result)
@@ -286,7 +286,7 @@ public partial class ImportViewModel : ObservableObject
             var failed = result.Items.LastOrDefault(item =>
                 item.Status == MediaStatus.Failed && !string.IsNullOrWhiteSpace(item.ErrorMessage));
             FailureMessage = failed?.ErrorMessage
-                ?? $"사진등록 실패 {result.FailedCount}건.";
+                ?? $"사진 등록 실패 {result.FailedCount}건.";
             LastJobId = failed?.ContentHash;
             IsRetryReady = true;
             CurrentStage = UploadJobStatusDto.Failed;
@@ -309,7 +309,7 @@ public partial class ImportViewModel : ObservableObject
         CurrentStage = UploadJobStatusDto.Completed;
         BackendStatus = UploadJobStatusDto.Completed;
         StatusMessage =
-            $"사진등록 완료. 전체 {result.ScannedCount}, 등록 {result.ImportedCount}, 중복 {result.DuplicateCount}, 실패 {result.FailedCount}";
+            $"사진 등록 완료. 전체 {result.ScannedCount}, 등록 {result.ImportedCount}, 중복 {result.DuplicateCount}, 실패 {result.FailedCount}";
 
         _logger.LogInformation(
             "[Photo Register] COMPLETED — Gallery Reload via catalog invalidation.");
@@ -455,17 +455,17 @@ public partial class ImportViewModel : ObservableObject
         }
         catch (OperationCanceledException)
         {
-            StatusMessage = "사진등록이 취소되었습니다. 이미 접수된 Job은 서버에서 계속 처리됩니다.";
+            StatusMessage = "사진 등록이 취소되었습니다. 이미 접수된 Job은 서버에서 계속 처리됩니다.";
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Photo register UI operation failed.");
-            StatusMessage = "사진등록 중 오류가 발생했습니다.";
+            StatusMessage = "사진 등록 중 오류가 발생했습니다.";
             FailureMessage = ex.Message;
             IsRetryReady = true;
             ErrorDialog.Show(
                 ErrorReportSource.Import,
-                "Memory Keeper — 사진등록 오류",
+                "Memory Keeper — 사진 등록 오류",
                 ex,
                 stage: "ImportViewModel.RunBusyAsync");
         }

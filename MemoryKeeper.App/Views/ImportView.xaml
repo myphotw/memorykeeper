@@ -1,6 +1,6 @@
-<Page
+<UserControl
 
-    x:Class="MemoryKeeper.App.Views.ImportPage"
+    x:Class="MemoryKeeper.App.Views.ImportView"
 
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
 
@@ -16,26 +16,16 @@
 
 
 
-    <Page.Resources>
+    <UserControl.Resources>
 
         <converters:BoolNegationConverter x:Key="BoolNegationConverter" />
 
-    </Page.Resources>
+    </UserControl.Resources>
 
 
 
-    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,*" RowSpacing="16">
-        <StackPanel Orientation="Horizontal" Spacing="8">
-            <Button Content="뒤로" Command="{Binding GoBackCommand}" Padding="10,4" />
-            <TextBlock
-                Text="사진등록"
-                FontSize="28"
-                FontWeight="SemiBold"
-                VerticalAlignment="Center" />
-        </StackPanel>
-
-
-        <StackPanel Grid.Row="1" Spacing="4">
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" RowSpacing="16">
+        <StackPanel x:Name="StoragePathPanel" Spacing="4">
 
             <TextBlock Text="MemoryKeeper 저장소" FontWeight="SemiBold" />
 
@@ -54,7 +44,8 @@
 
 
         <Grid
-            Grid.Row="2"
+            x:Name="SourceFolderPanel"
+            Grid.Row="1"
             MaxWidth="{StaticResource MkInputMaxWidth}"
             HorizontalAlignment="Left"
             ColumnDefinitions="*,Auto"
@@ -75,11 +66,11 @@
 
 
 
-        <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8">
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8">
 
             <Button
 
-                Content="사진등록 시작"
+                Content="사진 등록 시작"
 
                 Style="{StaticResource AccentButtonStyle}"
 
@@ -99,44 +90,56 @@
 
 
 
-        <Grid Grid.Row="4" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8">
+        <Grid Grid.Row="3" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="10">
+
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="등록 진행" FontWeight="SemiBold" />
+                <TextBlock Grid.Column="1" Text="{Binding ProgressCountText, Mode=OneWay}" FontWeight="SemiBold" />
+            </Grid>
 
             <ProgressBar
+                Grid.Row="1"
                 Minimum="0"
                 Maximum="1"
                 Value="{Binding ProgressValue, Mode=OneWay}"
                 Height="8" />
 
             <TextBlock
-                Grid.Row="1"
+                Grid.Row="2"
                 Text="{Binding CurrentStage, Mode=OneWay}"
                 FontWeight="SemiBold"
                 Opacity="0.85" />
 
-            <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="16">
-                <TextBlock Text="{Binding UploadProgressText, Mode=OneWay}" Opacity="0.85" />
-                <TextBlock Text="{Binding AnalysisProgressText, Mode=OneWay}" Opacity="0.85" />
-            </StackPanel>
-
-            <TextBlock
-                Grid.Row="3"
-                Text="{Binding CurrentFileName, Mode=OneWay}"
-                Opacity="0.75"
-                TextWrapping="Wrap" />
+            <Grid Grid.Row="3" ColumnDefinitions="*,*,*" ColumnSpacing="8">
+                <Border Padding="12,10" CornerRadius="8" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}">
+                    <TextBlock Text="{Binding RegisteredCountText, Mode=OneWay}" FontWeight="SemiBold" />
+                </Border>
+                <Border Grid.Column="1" Padding="12,10" CornerRadius="8" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}">
+                    <TextBlock Text="{Binding DuplicateCountText, Mode=OneWay}" FontWeight="SemiBold" />
+                </Border>
+                <Border Grid.Column="2" Padding="12,10" CornerRadius="8" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}">
+                    <TextBlock Text="{Binding FailedCountText, Mode=OneWay}" FontWeight="SemiBold" />
+                </Border>
+            </Grid>
 
             <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="16">
-                <TextBlock Text="{Binding TotalCountText, Mode=OneWay}" />
-                <TextBlock Text="{Binding UploadingCountText, Mode=OneWay}" />
-                <TextBlock Text="{Binding WaitingCountText, Mode=OneWay}" />
-                <TextBlock Text="{Binding ProcessingCountText, Mode=OneWay}" />
-                <TextBlock Text="{Binding RegisteredCountText, Mode=OneWay}" />
-                <TextBlock Text="{Binding DuplicateCountText, Mode=OneWay}" />
-                <TextBlock Text="{Binding FailedCountText, Mode=OneWay}" />
+                <TextBlock Text="{Binding UploadProgressText, Mode=OneWay}" Opacity="0.75" />
+                <TextBlock Text="{Binding WaitingCountText, Mode=OneWay}" Opacity="0.75" />
+                <TextBlock Text="{Binding ProcessingCountText, Mode=OneWay}" Opacity="0.75" />
+                <TextBlock Text="{Binding AnalysisProgressText, Mode=OneWay}" Opacity="0.75" />
+            </StackPanel>
+
+            <StackPanel Grid.Row="5" Spacing="2">
+                <TextBlock Text="현재 파일" Opacity="0.65" FontSize="12" />
+                <TextBlock
+                    Text="{Binding CurrentFileName, Mode=OneWay}"
+                    Opacity="0.75"
+                    TextWrapping="Wrap" />
             </StackPanel>
 
             <Button
-                Grid.Row="5"
-                Content="실패 항목 재시도"
+                Grid.Row="6"
+                Content="실패 항목 다시 시도"
                 Command="{Binding RetryImportCommand}"
                 IsEnabled="{Binding IsRetryReady, Mode=OneWay}"
                 HorizontalAlignment="Left"
@@ -144,12 +147,12 @@
         </Grid>
 
         <TextBlock
-            Grid.Row="5"
+            Grid.Row="4"
             Text="{Binding StatusMessage, Mode=OneWay}"
             TextWrapping="Wrap"
             VerticalAlignment="Top"
             Opacity="0.85" />
     </Grid>
-</Page>
+</UserControl>
 
 

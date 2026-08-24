@@ -11,7 +11,9 @@ public enum CatalogSurface
     Travel = 16,
     Favorites = 32,
     Tags = 64,
-    AllRelated = Visits | Pending | Home | Gallery | Travel | Favorites
+    Places = 128,
+    AllRelated = Visits | Pending | Home | Gallery | Travel | Favorites,
+    AllMemoryKeeper = AllRelated | Tags | Places,
 }
 
 /// <summary>

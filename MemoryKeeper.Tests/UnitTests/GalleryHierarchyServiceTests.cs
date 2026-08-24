@@ -602,6 +602,23 @@ public sealed class GalleryHierarchyServiceTests
         Assert.Equal("강아지", catalog.LastKeyword);
     }
 
+    [Fact]
+    public async Task ExportCatalog_UsesSameYearCountryRegionPlaceAndUnclassifiedRules()
+    {
+        var classified = Photo("classified.jpg", 2026, "대한민국", "구례군", "피아골");
+        var unclassified = Photo("unclassified.jpg", 2025, null, null, null);
+        var service = CreateService(classified, unclassified);
+
+        var result = await service.GetExportCatalogAsync();
+
+        var first = Assert.Single(result, item => item.Filename == "classified.jpg");
+        Assert.Equal(("2026", "대한민국", "구례군", "피아골"),
+            (first.Year, first.Country, first.Region, first.Place));
+        var second = Assert.Single(result, item => item.Filename == "unclassified.jpg");
+        Assert.Equal(("2025", "미분류", "미분류", "미분류"),
+            (second.Year, second.Country, second.Region, second.Place));
+    }
+
     private static GalleryHierarchyService CreateService(params PhotoDto[] photos) =>
         new(
             new FixedCatalog(new GalleryPhotoCatalogSnapshot { Photos = photos }),

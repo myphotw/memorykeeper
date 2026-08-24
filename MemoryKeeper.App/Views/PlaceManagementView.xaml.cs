@@ -7,14 +7,16 @@ using Microsoft.UI.Xaml.Controls;
 
 namespace MemoryKeeper.App.Views;
 
-public sealed partial class PlaceManagementPage : Page
+public sealed partial class PlaceManagementView : UserControl
 {
     private readonly ILoggerFactory _loggerFactory;
     private GoogleMapController? _mapController;
 
     public PlaceManagementViewModel ViewModel { get; }
 
-    public PlaceManagementPage(PlaceManagementViewModel viewModel, ILoggerFactory loggerFactory)
+    public bool AutoActivate { get; set; }
+
+    public PlaceManagementView(PlaceManagementViewModel viewModel, ILoggerFactory loggerFactory)
     {
         ViewModel = viewModel;
         DataContext = viewModel;
@@ -36,10 +38,19 @@ public sealed partial class PlaceManagementPage : Page
         }
     }
 
-    private async void PlaceManagementPage_OnLoaded(object sender, RoutedEventArgs e)
+    private async void PlaceManagementView_OnLoaded(object sender, RoutedEventArgs e)
     {
         ViewModel.HostXamlRoot = XamlRoot;
 
+        if (AutoActivate)
+        {
+            await ActivateAsync();
+        }
+    }
+
+    public async Task ActivateAsync()
+    {
+        ViewModel.HostXamlRoot = XamlRoot;
         if (_mapController is not null)
         {
             return;
@@ -52,7 +63,7 @@ public sealed partial class PlaceManagementPage : Page
         await ViewModel.InitializeMapCommand.ExecuteAsync(null);
     }
 
-    private async void PlaceManagementPage_OnUnloaded(object sender, RoutedEventArgs e)
+    private async void PlaceManagementView_OnUnloaded(object sender, RoutedEventArgs e)
     {
         ViewModel.DetachMap();
         if (_mapController is not null)

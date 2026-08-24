@@ -14,6 +14,7 @@ public static class DependencyInjection
         services.AddSingleton<IImportJobSessionStore, ImportJobSessionStore>();
         services.AddTransient<MediaService>();
         services.AddTransient<GalleryHierarchyService>();
+        services.AddTransient<PhotoExportService>();
         services.AddTransient<RecentSearchQueryService>();
         services.AddTransient<MediaImportService>();
         services.AddTransient<UploadMonitorService>();
@@ -23,6 +24,7 @@ public static class DependencyInjection
         services.AddTransient<PlaceService>();
         services.AddTransient<MemoryKeeperPlaceService>();
         services.AddTransient<MemoryKeeperWriteService>();
+        services.AddTransient<MemoryKeeperOperationsService>();
         services.AddTransient<PlacePickerService>();
         services.AddTransient<VisitRecordService>();
         services.AddTransient<MemoryGroupingService>();

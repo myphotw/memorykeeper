@@ -97,7 +97,14 @@ public sealed partial class MainWindow : Window
 
         try
         {
-            await _backendChangeMonitor.CheckForChangesAsync();
+            var changed = await _backendChangeMonitor.CheckForChangesAsync();
+            if (changed
+                && (_backendChangeMonitor.LastAffectedSurfaces & CatalogSurface.AllMemoryKeeper)
+                == CatalogSurface.AllMemoryKeeper)
+            {
+                _navigation.Clear();
+                SelectNavigationItem("home");
+            }
         }
         catch (Exception ex)
         {
@@ -350,7 +357,9 @@ public sealed partial class MainWindow : Window
             {
                 var section = currentTag switch
                 {
-                    "import" or "pending" or "place" => "photo-import",
+                    "import" => "photo-management",
+                    "pending" => "pending-memories",
+                    "place" => "places",
                     "tag" => "tags",
                     "storage" => "storage",
                     "logs" => "logs",
@@ -868,10 +877,8 @@ public sealed partial class MainWindow : Window
         var targetSection = string.IsNullOrWhiteSpace(section) ? "overview" : section;
         Track("settings", targetSection);
         DetachHandlers();
-        var page = _serviceProvider.GetRequiredService<SettingsPage>();
-        page.ViewModel.OpenImportRequested += OnSettingsOpenImportRequested;
-        page.ViewModel.OpenPlaceRequested += OnSettingsOpenPlaceRequested;
-        page.ViewModel.OpenPendingRequested += OnSettingsOpenPendingRequested;
+        var page = GetOrCreatePage<SettingsPage>("settings");
+        page.ViewModel.ResetCompleted += OnSettingsResetCompleted;
         _settingsPage = page;
         ContentFrame.Content = page;
         _ = page.ViewModel.LoadCommand.ExecuteAsync(targetSection);
@@ -880,22 +887,10 @@ public sealed partial class MainWindow : Window
     private void NavigateToSettingsSection(string section) =>
         NavigateToSettings(section);
 
-    private void OnSettingsOpenImportRequested(object? sender, EventArgs e)
+    private void OnSettingsResetCompleted(object? sender, EventArgs e)
     {
-        _navigation.ReplaceCurrent(NavigationEntry.Of("settings", "photo-import"));
-        SelectNavigationItem("import");
-    }
-
-    private void OnSettingsOpenPlaceRequested(object? sender, EventArgs e)
-    {
-        _navigation.ReplaceCurrent(NavigationEntry.Of("settings", "photo-import"));
-        SelectNavigationItem("place");
-    }
-
-    private void OnSettingsOpenPendingRequested(object? sender, EventArgs e)
-    {
-        _navigation.ReplaceCurrent(NavigationEntry.Of("settings", "photo-import"));
-        SelectNavigationItem("pending");
+        _navigation.Clear();
+        SelectNavigationItem("home");
     }
 
     private void OnShellBackRequested(object? sender, EventArgs e) =>
@@ -1009,9 +1004,7 @@ public sealed partial class MainWindow : Window
 
         if (_settingsPage is not null)
         {
-            _settingsPage.ViewModel.OpenImportRequested -= OnSettingsOpenImportRequested;
-            _settingsPage.ViewModel.OpenPlaceRequested -= OnSettingsOpenPlaceRequested;
-            _settingsPage.ViewModel.OpenPendingRequested -= OnSettingsOpenPendingRequested;
+            _settingsPage.ViewModel.ResetCompleted -= OnSettingsResetCompleted;
             _settingsPage = null;
         }
 

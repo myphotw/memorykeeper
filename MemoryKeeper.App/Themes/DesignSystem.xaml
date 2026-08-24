@@ -16,6 +16,7 @@
         <ResourceDictionary Source="ms-appx:///Themes/Styles/Text.xaml" />
         <ResourceDictionary Source="ms-appx:///Themes/Styles/Buttons.xaml" />
         <ResourceDictionary Source="ms-appx:///Themes/Styles/Cards.xaml" />
+        <ResourceDictionary Source="ms-appx:///Themes/Styles/Layout.xaml" />
         <ResourceDictionary Source="ms-appx:///Themes/Styles/Inputs.xaml" />
         <ResourceDictionary Source="ms-appx:///Themes/Styles/Images.xaml" />
         <ResourceDictionary Source="ms-appx:///Themes/Styles/Icons.xaml" />

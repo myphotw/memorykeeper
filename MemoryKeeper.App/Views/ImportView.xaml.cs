@@ -1,15 +1,14 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Navigation;
 using MemoryKeeper.App.ViewModels;
 
 namespace MemoryKeeper.App.Views;
 
-public sealed partial class ImportPage : Page
+public sealed partial class ImportView : UserControl
 {
     public ImportViewModel ViewModel { get; }
 
-    public ImportPage(ImportViewModel viewModel)
+    public ImportView(ImportViewModel viewModel)
     {
         ViewModel = viewModel;
         DataContext = viewModel;
@@ -17,9 +16,9 @@ public sealed partial class ImportPage : Page
         Loaded += (_, _) => ViewModel.HostXamlRoot = XamlRoot;
     }
 
-    protected override void OnNavigatedTo(NavigationEventArgs e)
+    public void ConfigureEmbedded(bool isEmbedded)
     {
-        base.OnNavigatedTo(e);
-        ViewModel.HostXamlRoot = XamlRoot;
+        StoragePathPanel.Visibility = isEmbedded ? Visibility.Collapsed : Visibility.Visible;
+        SourceFolderPanel.Visibility = isEmbedded ? Visibility.Collapsed : Visibility.Visible;
     }
 }

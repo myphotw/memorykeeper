@@ -4,11 +4,11 @@ using Microsoft.UI.Xaml.Controls;
 
 namespace MemoryKeeper.App.Views;
 
-public sealed partial class TagManagementPage : Page
+public sealed partial class TagManagementView : UserControl
 {
     public TagManagementViewModel ViewModel { get; }
 
-    public TagManagementPage(TagManagementViewModel viewModel)
+    public TagManagementView(TagManagementViewModel viewModel)
     {
         ViewModel = viewModel;
         DataContext = viewModel;

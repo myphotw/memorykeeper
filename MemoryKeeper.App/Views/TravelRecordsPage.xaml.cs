@@ -61,7 +61,6 @@ public sealed partial class TravelRecordsPage : Page
 
     private void ApplyResponsiveLayout(LayoutBreakpoint breakpoint)
     {
-        ContentHost.MaxWidth = ResponsiveLayoutRules.ContentMaxWidth(breakpoint);
         ContentHost.HorizontalAlignment = HorizontalAlignment.Center;
     }
 

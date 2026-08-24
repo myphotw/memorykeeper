@@ -31,9 +31,9 @@
     <Grid Background="{ThemeResource MkBrushBackground}">
         <!-- Main layout (suggestions do not participate — overlay sibling below) -->
         <Grid
+            Style="{StaticResource MkFullPageContainerStyle}"
             RowDefinitions="Auto,*,Auto"
-            RowSpacing="{StaticResource MkSectionSpacing}"
-            Padding="{StaticResource MkPagePaddingThickness}">
+            RowSpacing="{StaticResource MkSectionSpacing}">
 
             <!-- Title + fixed-width search (no expanding result row) -->
             <StackPanel Spacing="12">

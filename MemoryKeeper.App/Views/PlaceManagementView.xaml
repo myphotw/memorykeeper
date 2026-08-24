@@ -1,5 +1,5 @@
-<Page
-    x:Class="MemoryKeeper.App.Views.PlaceManagementPage"
+<UserControl
+    x:Class="MemoryKeeper.App.Views.PlaceManagementView"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -7,33 +7,25 @@
     xmlns:converters="using:MemoryKeeper.App.Converters"
     xmlns:dto="using:MemoryKeeper.Application.DTOs"
     mc:Ignorable="d"
-    Loaded="PlaceManagementPage_OnLoaded"
-    Unloaded="PlaceManagementPage_OnUnloaded">
+    Loaded="PlaceManagementView_OnLoaded"
+    Unloaded="PlaceManagementView_OnUnloaded">
 
-    <Page.Resources>
+    <UserControl.Resources>
         <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
-    </Page.Resources>
+    </UserControl.Resources>
 
     <Grid RowDefinitions="Auto,*" ColumnDefinitions="2*,3*" ColumnSpacing="14" RowSpacing="8">
         <!-- Header -->
-        <Grid Grid.ColumnSpan="2" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                <Button Content="뒤로" Command="{Binding GoBackCommand}" Padding="10,4" />
-                <TextBlock VerticalAlignment="Center" Opacity="0.75" FontSize="13">
-                    <Run Text="설정 › " />
-                    <Run Text="장소관리" FontWeight="SemiBold" />
-                </TextBlock>
-                <TextBlock Text="장소 관리" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center" Margin="8,0,0,0" />
-            </StackPanel>
+        <Grid Grid.ColumnSpan="2" ColumnDefinitions="*,Auto" ColumnSpacing="10">
             <InfoBar
-                Grid.Column="1"
+                Grid.Column="0"
                 Margin="8,0"
                 IsOpen="{Binding IsInfoBarOpen, Mode=TwoWay}"
                 Severity="{Binding InfoBarSeverity, Mode=OneWay}"
                 Message="{Binding InfoBarMessage, Mode=OneWay}"
                 IsClosable="True" />
             <TextBlock
-                Grid.Column="2"
+                Grid.Column="1"
                 VerticalAlignment="Center"
                 Opacity="0.8"
                 FontSize="12"
@@ -234,4 +226,4 @@
             <WebView2 x:Name="MapWebView" />
         </Border>
     </Grid>
-</Page>
+</UserControl>

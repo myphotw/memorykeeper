@@ -5,306 +5,485 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:converters="using:MemoryKeeper.App.Converters"
-    xmlns:dto="using:MemoryKeeper.Application.DTOs"
-    mc:Ignorable="d">
+    mc:Ignorable="d"
+    SizeChanged="SettingsPage_OnSizeChanged">
 
     <Page.Resources>
         <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+        <converters:BoolNegationConverter x:Key="BoolNegationConverter" />
+        <Style x:Key="SettingsSubsectionTitleStyle" TargetType="TextBlock" BasedOn="{StaticResource MkBodyTextStyle}">
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
     </Page.Resources>
 
-    <Grid
-        Background="{ThemeResource MkBrushBackground}"
-        ColumnDefinitions="200,*"
-        ColumnSpacing="16">
-        <Border Style="{StaticResource MkCardStyle}" Margin="0" Padding="16">
-            <ScrollViewer MinWidth="140">
-                <StackPanel Spacing="6" Padding="0,4">
-                    <TextBlock Text="설정" Style="{StaticResource MkPageTitleStyle}" Margin="0,0,0,12" />
+    <Grid Background="{ThemeResource MkBrushBackground}">
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup x:Name="SettingsLayoutStates">
+                <VisualState x:Name="CompactSettings">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="0" />
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="SettingsRoot.Padding" Value="{StaticResource MkCompactPagePaddingThickness}" />
+                        <Setter Target="DetailHost.Padding" Value="0,16,0,0" />
+                    </VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="DesktopSettings">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="800" />
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="SettingsRoot.Padding" Value="{StaticResource MkDesktopPagePaddingThickness}" />
+                        <Setter Target="DetailHost.Padding" Value="{StaticResource MkSettingsDetailPaddingThickness}" />
+                    </VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
 
-                    <TextBlock Text="일반" Style="{StaticResource MkCaptionTextStyle}" FontWeight="SemiBold" Margin="0,8,0,0" />
-                    <Button Content="MemoryKeeper 저장소" HorizontalAlignment="Stretch"
-                            Style="{StaticResource MkSecondaryButtonStyle}"
-                            Command="{Binding ShowStorageCommand}" />
-                    <Button Content="집(Home) 위치" HorizontalAlignment="Stretch"
-                            Style="{StaticResource MkSecondaryButtonStyle}"
-                            Command="{Binding ShowHomeCommand}" />
-                    <TextBlock Text="사진" Style="{StaticResource MkCaptionTextStyle}" FontWeight="SemiBold" Margin="0,16,0,0" />
-                    <Button Content="사진관리" HorizontalAlignment="Stretch"
-                            Style="{StaticResource MkSecondaryButtonStyle}"
-                            Command="{Binding ShowPhotoImportCommand}" />
-                    <Button Content="태그 관리" HorizontalAlignment="Stretch"
-                            Style="{StaticResource MkSecondaryButtonStyle}"
-                            Command="{Binding ShowTagsCommand}" />
+        <Grid
+            x:Name="SettingsRoot"
+            Style="{StaticResource MkWidePageContainerStyle}"
+            RowDefinitions="Auto,Auto,*"
+            RowSpacing="16"
+            Visibility="{Binding IsSettingsDashboardVisible, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
 
-                    <TextBlock Text="자동 태그" Style="{StaticResource MkCaptionTextStyle}" FontWeight="SemiBold" Margin="0,16,0,0" />
-                    <Button Content="자동 태그" HorizontalAlignment="Stretch"
-                            Style="{StaticResource MkSecondaryButtonStyle}"
-                            Command="{Binding ShowAiCommand}" />
-
-                    <TextBlock Text="유지보수" Style="{StaticResource MkCaptionTextStyle}" FontWeight="SemiBold" Margin="0,16,0,0" />
-                    <Button Content="유지보수" HorizontalAlignment="Stretch"
-                            Style="{StaticResource MkSecondaryButtonStyle}"
-                            Command="{Binding ShowMaintenanceCommand}" />
-
-                    <TextBlock Text="정보" Style="{StaticResource MkCaptionTextStyle}" FontWeight="SemiBold" Margin="0,16,0,0" />
-                    <Button Content="프로그램 정보" HorizontalAlignment="Stretch"
-                            Style="{StaticResource MkSecondaryButtonStyle}"
-                            Command="{Binding ShowInfoCommand}" />
-                    <Button Content="로그 보기" HorizontalAlignment="Stretch"
-                            Style="{StaticResource MkSecondaryButtonStyle}"
-                            Command="{Binding ShowLogsCommand}" />
-                </StackPanel>
-            </ScrollViewer>
-        </Border>
-
-        <Border Grid.Column="1" Style="{StaticResource MkCardStyle}" Margin="0" Padding="20">
-            <ScrollViewer Padding="4,0,0,0">
-                <StackPanel Spacing="16" Padding="4" MaxWidth="600" HorizontalAlignment="Left">
-                <InfoBar
-                    IsOpen="{Binding IsInfoBarOpen, Mode=TwoWay}"
-                    Severity="{Binding InfoBarSeverity, Mode=OneWay}"
-                    Message="{Binding InfoBarMessage, Mode=OneWay}"
-                    IsClosable="True" />
-
-                <StackPanel
-                    Spacing="10"
-                    Visibility="{Binding IsOverviewVisible, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
-                    <TextBlock Text="설정" Style="{StaticResource MkSectionTitleStyle}" />
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                <StackPanel Spacing="6">
+                    <TextBlock Text="설정" Style="{StaticResource MkPageTitleStyle}" Margin="0" />
                     <TextBlock
-                        Text="왼쪽 메뉴에서 항목을 선택하세요."
-                        Opacity="0.75"
-                        TextWrapping="Wrap" />
+                        Text="사진과 MemoryKeeper의 동작을 관리합니다."
+                        Style="{StaticResource MkCaptionTextStyle}" />
                 </StackPanel>
+                <ProgressRing
+                    Grid.Column="1"
+                    IsActive="{Binding IsBusy, Mode=OneWay}"
+                    Width="28"
+                    Height="28"
+                    VerticalAlignment="Center" />
+            </Grid>
 
-                <!-- 일반 -->
-                <StackPanel
-                    Spacing="10"
-                    Visibility="{Binding IsGeneralVisible, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
-                    <StackPanel
-                        Spacing="10"
-                        Visibility="{Binding IsStoragePanelVisible, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
-                        <TextBlock Text="MemoryKeeper 저장소" Style="{StaticResource MkSectionTitleStyle}" />
-                        <TextBlock Text="현재 위치" FontWeight="SemiBold" Margin="{StaticResource MkLabelSpacing}" />
-                        <TextBlock
-                            Text="{Binding Storage.PhotoRootPath, Mode=OneWay}"
-                            TextWrapping="Wrap"
-                            IsTextSelectionEnabled="True"
-                            Opacity="0.85"
-                            MaxWidth="{StaticResource MkInputMaxWidth}" />
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button Content="폴더 변경" Style="{StaticResource MkButtonStyle}" Command="{Binding ChangeStorageFolderCommand}" />
-                            <Button Content="연결 확인" Style="{StaticResource MkButtonStyle}" Command="{Binding CheckStorageConnectionCommand}" />
-                        </StackPanel>
-                        <TextBlock
-                            Text="접근할 수 없습니다."
-                            Visibility="{Binding Storage.ShowConnectionError, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                            Foreground="#C42B1C" />
-                        <StackPanel
-                            Spacing="4"
-                            Visibility="{Binding Storage.ShowConnectionDetails, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
-                            <TextBlock Text="{Binding Storage.ReadableStatusText, Mode=OneWay}" />
-                            <TextBlock Text="{Binding Storage.WritableStatusText, Mode=OneWay}" />
-                        </StackPanel>
-                    </StackPanel>
+            <InfoBar
+                Grid.Row="1"
+                IsOpen="{Binding IsInfoBarOpen, Mode=TwoWay}"
+                Severity="{Binding InfoBarSeverity, Mode=OneWay}"
+                Message="{Binding InfoBarMessage, Mode=OneWay}"
+                IsClosable="True" />
 
-                    <StackPanel
-                        Spacing="10"
-                        Visibility="{Binding IsHomePanelVisible, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
-                        <TextBlock Text="집(Home) 위치" Style="{StaticResource MkSectionTitleStyle}" />
-                        <TextBlock
-                            Text="주소나 장소를 검색한 뒤 결과에서 집 위치를 선택하세요."
-                            Opacity="0.75"
-                            TextWrapping="Wrap" />
-                        <TextBox
-                            x:Name="HomeAddressBox"
-                            Style="{StaticResource MkTextBoxStyle}"
-                            Header="주소 검색"
-                            Text="{Binding HomeAddress, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                            PlaceholderText="예: 구일로" />
+            <NavigationView
+                x:Name="SettingsNavigation"
+                Grid.Row="2"
+                Background="Transparent"
+                PaneDisplayMode="Left"
+                OpenPaneLength="{StaticResource MkSettingsNavigationWidth}"
+                CompactPaneLength="48"
+                IsPaneOpen="True"
+                IsPaneToggleButtonVisible="False"
+                IsBackButtonVisible="Collapsed"
+                IsSettingsVisible="False"
+                AlwaysShowHeader="False"
+                SelectionChanged="SettingsNavigation_OnSelectionChanged">
+                <NavigationView.MenuItems>
+                    <NavigationViewItem x:Name="PhotoMenuItem" Content="사진 관리" Tag="photo-management" IsExpanded="True" IsSelected="True">
+                        <NavigationViewItem.Icon>
+                            <FontIcon Glyph="&#xE91B;" />
+                        </NavigationViewItem.Icon>
+                        <NavigationViewItem.MenuItems>
+                            <NavigationViewItem x:Name="PendingMemoriesMenuItem" Content="미완성 추억" Tag="pending-memories" />
+                            <NavigationViewItem x:Name="PlacesMenuItem" Content="장소 관리" Tag="places" />
+                            <NavigationViewItem x:Name="TagsMenuItem" Content="태그 관리" Tag="tag-management" />
+                            <NavigationViewItem x:Name="HomeLocationMenuItem" Content="집 위치" Tag="home-location" />
+                        </NavigationViewItem.MenuItems>
+                    </NavigationViewItem>
+
+                    <NavigationViewItem x:Name="AutoTagsMenuItem" Content="자동 태그" Tag="auto-tags">
+                        <NavigationViewItem.Icon>
+                            <FontIcon Glyph="&#xE945;" />
+                        </NavigationViewItem.Icon>
+                    </NavigationViewItem>
+
+                    <NavigationViewItem x:Name="DataMenuItem" Content="데이터 관리" Tag="data" IsExpanded="True">
+                        <NavigationViewItem.Icon>
+                            <FontIcon Glyph="&#xE74E;" />
+                        </NavigationViewItem.Icon>
+                        <NavigationViewItem.MenuItems>
+                            <NavigationViewItem x:Name="PhotoExportMenuItem" Content="사진 내보내기" Tag="photo-export" />
+                            <NavigationViewItem x:Name="PreviewCacheMenuItem" Content="미리보기 캐시" Tag="preview-cache" />
+                        </NavigationViewItem.MenuItems>
+                    </NavigationViewItem>
+
+                    <NavigationViewItem x:Name="AdvancedMenuItem" Content="고급 관리" Tag="advanced" IsExpanded="True" Foreground="{ThemeResource MkBrushWarning}">
+                        <NavigationViewItem.Icon>
+                            <FontIcon Glyph="&#xE713;" />
+                        </NavigationViewItem.Icon>
+                        <NavigationViewItem.MenuItems>
+                            <NavigationViewItem x:Name="ResetMenuItem" Content="처음부터 다시 구성" Tag="reset" />
+                        </NavigationViewItem.MenuItems>
+                    </NavigationViewItem>
+
+                    <NavigationViewItem x:Name="AppInfoMenuItem" Content="앱 정보" Tag="app-info">
+                        <NavigationViewItem.Icon>
+                            <FontIcon Glyph="&#xE946;" />
+                        </NavigationViewItem.Icon>
+                    </NavigationViewItem>
+                </NavigationView.MenuItems>
+
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <Grid x:Name="DetailHost" HorizontalAlignment="Stretch" Padding="{StaticResource MkSettingsDetailPaddingThickness}">
+
+                        <!-- 사진 관리: 원본 폴더 + 등록 workflow -->
                         <Border
-                            x:Name="HomeSuggestionsPanel"
-                            Style="{StaticResource MkSuggestionPanelStyle}"
-                            MaxWidth="{StaticResource MkInputMaxWidth}"
-                            HorizontalAlignment="Left"
-                            Visibility="{Binding HasHomeSuggestions, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
-                            <StackPanel Spacing="4">
-                                <TextBlock Text="검색 결과" Style="{StaticResource MkSuggestionHeaderStyle}" />
-                                <ListView
-                                    ItemsSource="{Binding HomeSuggestions, Mode=OneWay}"
-                                    IsItemClickEnabled="True"
-                                    ItemClick="HomeSuggestion_OnItemClick"
-                                    MaxHeight="200"
-                                    SelectionMode="None">
-                                    <ListView.ItemTemplate>
-                                        <DataTemplate>
-                                            <StackPanel Spacing="2" Padding="4,6">
-                                                <TextBlock Text="{Binding PrimaryText}" FontWeight="SemiBold" TextWrapping="Wrap" />
-                                                <TextBlock Text="{Binding SecondaryText}" Opacity="0.7" TextWrapping="Wrap" />
-                                            </StackPanel>
-                                        </DataTemplate>
-                                    </ListView.ItemTemplate>
-                                </ListView>
+                            x:Name="PhotoManagementDetail"
+                            Style="{StaticResource MkWideSettingsCardStyle}"
+                            Margin="0"
+                            AutomationProperties.Name="사진 관리 상세"
+                            Visibility="{Binding IsPhotoManagementDetailVisible, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <StackPanel Spacing="20">
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="사진 관리" Style="{StaticResource MkSectionTitleStyle}" Margin="0" />
+                                    <TextBlock
+                                        Text="MemoryKeeper가 읽어올 원본 사진 위치를 관리합니다. 원본 파일은 이동하거나 수정하지 않습니다."
+                                        Style="{StaticResource MkCaptionTextStyle}" />
+                                </StackPanel>
+                                <Border Height="1" Background="{ThemeResource MkBrushDivider}" />
+                                <TextBlock Text="원본 사진 폴더" Style="{StaticResource SettingsSubsectionTitleStyle}" />
+                                <Border
+                                    MinHeight="40"
+                                    Padding="12,8"
+                                    CornerRadius="{StaticResource MkInputCornerRadius}"
+                                    BorderBrush="{ThemeResource MkBrushBorder}"
+                                    BorderThickness="1"
+                                    Background="{ThemeResource MkBrushSurfaceMuted}"
+                                    ToolTipService.ToolTip="{Binding Storage.PhotoRootPath, Mode=OneWay}">
+                                    <TextBlock
+                                        Text="{Binding Storage.PhotoRootPath, Mode=OneWay}"
+                                        TextTrimming="CharacterEllipsis"
+                                        TextWrapping="NoWrap"
+                                        IsTextSelectionEnabled="True" />
+                                </Border>
+                                <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                                    <Button
+                                        Content="폴더 선택"
+                                        Style="{StaticResource MkPrimaryButtonStyle}"
+                                        Command="{Binding ChangeStorageFolderCommand}"
+                                        IsEnabled="{Binding IsBusy, Converter={StaticResource BoolNegationConverter}}" />
+                                    <Button
+                                        Content="연결 확인"
+                                        Style="{StaticResource MkSecondaryButtonStyle}"
+                                        Command="{Binding CheckStorageConnectionCommand}"
+                                        IsEnabled="{Binding IsBusy, Converter={StaticResource BoolNegationConverter}}" />
+                                </StackPanel>
+                                <TextBlock
+                                    Text="폴더에 접근할 수 없습니다. 위치를 다시 확인해 주세요."
+                                    Foreground="{ThemeResource MkBrushError}"
+                                    Style="{StaticResource MkCaptionTextStyle}"
+                                    Visibility="{Binding Storage.ShowConnectionError, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                <TextBlock
+                                    Text="연결 상태: 정상"
+                                    Foreground="{ThemeResource MkBrushSuccess}"
+                                    Style="{StaticResource MkCaptionTextStyle}"
+                                    Visibility="{Binding Storage.ShowConnectionDetails, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                <Border Height="1" Background="{ThemeResource MkBrushDivider}" />
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="사진 등록" Style="{StaticResource SettingsSubsectionTitleStyle}" />
+                                    <TextBlock Text="원본 사진 폴더에서 새 사진을 찾아 등록합니다." Style="{StaticResource MkCaptionTextStyle}" />
+                                </StackPanel>
+                                <ContentControl x:Name="ImportHost" HorizontalContentAlignment="Stretch" />
                             </StackPanel>
                         </Border>
-                        <TextBlock
-                            Text="{Binding HomeResolvedSummary, Mode=OneWay}"
-                            TextWrapping="Wrap"
-                            Opacity="0.85"
-                            MaxWidth="{StaticResource MkInputMaxWidth}" />
-                        <Button Content="선택 위치 저장" Style="{StaticResource MkButtonStyle}" Command="{Binding SaveHomeCommand}" />
-                    </StackPanel>
 
-                </StackPanel>
+                        <!-- 미완성 추억 -->
+                        <Border
+                            x:Name="PendingMemoriesDetail"
+                            Style="{StaticResource MkWideSettingsCardStyle}"
+                            Margin="0"
+                            MinHeight="720"
+                            AutomationProperties.Name="미완성 추억 상세"
+                            Visibility="{Binding IsPendingMemoriesDetailVisible, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <Grid RowDefinitions="Auto,*" RowSpacing="16">
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="미완성 추억" Style="{StaticResource MkSectionTitleStyle}" Margin="0" />
+                                    <TextBlock Text="장소가 등록되지 않은 사진을 정리합니다." Style="{StaticResource MkCaptionTextStyle}" />
+                                </StackPanel>
+                                <ContentControl x:Name="PendingHost" Grid.Row="1" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+                            </Grid>
+                        </Border>
 
-                <!-- 사진 -->
-                <StackPanel
-                    Spacing="12"
-                    Visibility="{Binding IsPhotoVisible, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
-                    <TextBlock Text="사진관리" Style="{StaticResource MkSectionTitleStyle}" />
-                    <TextBlock
-                        Text="사진관리 화면에서 폴더를 선택하고 등록을 실행합니다. 등록 시 EXIF 촬영일·GPS는 자동 분석됩니다."
-                        Opacity="0.75"
-                        TextWrapping="Wrap" />
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <Button Content="사진등록" Command="{Binding OpenImportCommand}" Style="{StaticResource MkButtonStyle}" />
-                        <Button Content="미완성 추억" Command="{Binding OpenPendingCommand}" Style="{StaticResource MkButtonStyle}" />
-                        <Button Content="장소 관리" Command="{Binding OpenPlaceCommand}" Style="{StaticResource MkButtonStyle}" />
-                    </StackPanel>
-                    <Button
-                        Content="사본 무결성 검사"
-                        HorizontalAlignment="Left"
-                        Command="{Binding InspectLibraryCopiesCommand}" />
-                    <TextBlock
-                        Text="동일 Hash 사본 중복·경로 불일치·누락 파일을 검사하고 자동 복구합니다."
-                        Opacity="0.75"
-                        TextWrapping="Wrap" />
-                    <TextBlock
-                        Text="Debug 빌드에서는 사진 정보 화면에서 EXIF 보기를 사용할 수 있습니다."
-                        Opacity="0.75"
-                        TextWrapping="Wrap"
-                        Margin="0,8,0,0" />
-                </StackPanel>
+                        <!-- 장소 관리 -->
+                        <Border
+                            x:Name="PlacesDetail"
+                            Style="{StaticResource MkWideSettingsCardStyle}"
+                            Margin="0"
+                            MinHeight="760"
+                            AutomationProperties.Name="장소 관리 상세"
+                            Visibility="{Binding IsPlacesDetailVisible, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <Grid RowDefinitions="Auto,*" RowSpacing="16">
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="장소 관리" Style="{StaticResource MkSectionTitleStyle}" Margin="0" />
+                                    <TextBlock Text="사진을 묶는 장소와 범위를 관리합니다." Style="{StaticResource MkCaptionTextStyle}" />
+                                </StackPanel>
+                                <ContentControl x:Name="PlaceHost" Grid.Row="1" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+                            </Grid>
+                        </Border>
 
-                <!-- AI -->
-                <StackPanel
-                    Spacing="10"
-                    Visibility="{Binding IsAiVisible, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
-                    <TextBlock Text="자동 태그" Style="{StaticResource MkSectionTitleStyle}" />
-                    <TextBlock
-                        Text="자동 태그 상태와 관리 기능은 준비 중입니다."
-                        Opacity="0.75"
-                        TextWrapping="Wrap" />
-                    <InfoBar
-                        IsOpen="True"
-                        IsClosable="False"
-                        Severity="Informational"
-                        Title="준비 중"
-                        Message="자동 태그 상태와 관리 기능은 아직 제공되지 않습니다." />
-                </StackPanel>
+                        <!-- 태그 관리 -->
+                        <Border
+                            x:Name="TagsDetail"
+                            Style="{StaticResource MkWideSettingsCardStyle}"
+                            Margin="0"
+                            MinHeight="600"
+                            AutomationProperties.Name="태그 관리 상세"
+                            Visibility="{Binding IsTagsDetailVisible, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <Grid RowDefinitions="Auto,*" RowSpacing="16">
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="태그 관리" Style="{StaticResource MkSectionTitleStyle}" Margin="0" />
+                                    <TextBlock Text="사진 검색에 사용하는 태그 이름을 정리합니다." Style="{StaticResource MkCaptionTextStyle}" />
+                                </StackPanel>
+                                <ContentControl x:Name="TagHost" Grid.Row="1" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+                            </Grid>
+                        </Border>
 
-                <!-- 유지보수 -->
-                <StackPanel
-                    Spacing="12"
-                    Visibility="{Binding IsMaintenanceVisible, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
-                    <TextBlock Text="유지보수" Style="{StaticResource MkSectionTitleStyle}" />
-                    <TextBlock
-                        Text="사진 원본 파일은 삭제하지 않습니다. 작업 전 백업을 권장합니다."
-                        Opacity="0.75"
-                        TextWrapping="Wrap" />
+                        <!-- 집 위치 -->
+                        <Border
+                            x:Name="HomeLocationDetail"
+                            Style="{StaticResource MkSimpleSettingsCardStyle}"
+                            Margin="0"
+                            AutomationProperties.Name="집 위치 상세"
+                            Visibility="{Binding IsHomeLocationDetailVisible, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <StackPanel Spacing="16">
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="집 위치" Style="{StaticResource MkSectionTitleStyle}" Margin="0" />
+                                    <TextBlock Text="주소나 장소를 검색해 방문 지도의 기준이 될 집 위치를 선택합니다." Style="{StaticResource MkCaptionTextStyle}" />
+                                </StackPanel>
+                                <TextBox
+                                    x:Name="HomeAddressBox"
+                                    Style="{StaticResource MkTextBoxStyle}"
+                                    Header="주소 또는 장소 검색"
+                                    Text="{Binding HomeAddress, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                    PlaceholderText="예: 구일로" />
+                                <Border
+                                    x:Name="HomeSuggestionsPanel"
+                                    Style="{StaticResource MkSuggestionPanelStyle}"
+                                    MaxWidth="{StaticResource MkInputMaxWidth}"
+                                    HorizontalAlignment="Left"
+                                    Visibility="{Binding HasHomeSuggestions, Converter={StaticResource BoolToVisibilityConverter}}">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="검색 결과" Style="{StaticResource MkSuggestionHeaderStyle}" />
+                                        <ListView
+                                            ItemsSource="{Binding HomeSuggestions}"
+                                            IsItemClickEnabled="True"
+                                            ItemClick="HomeSuggestion_OnItemClick"
+                                            MaxHeight="200"
+                                            SelectionMode="None">
+                                            <ListView.ItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Spacing="2" Padding="4,6">
+                                                        <TextBlock Text="{Binding PrimaryText}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                                        <TextBlock Text="{Binding SecondaryText}" Style="{StaticResource MkCaptionTextStyle}" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ListView.ItemTemplate>
+                                        </ListView>
+                                    </StackPanel>
+                                </Border>
+                                <TextBlock Text="{Binding HomeResolvedSummary}" Style="{StaticResource MkCaptionTextStyle}" />
+                                <Button Content="선택한 위치 저장" Command="{Binding SaveHomeCommand}" Style="{StaticResource MkPrimaryButtonStyle}" HorizontalAlignment="Right" />
+                            </StackPanel>
+                        </Border>
 
-                    <StackPanel Spacing="4">
-                        <Button Content="등록사진 초기화" HorizontalAlignment="Left"
-                                Command="{Binding ClearImportDataCommand}" />
-                        <TextBlock
-                            Text="DB의 사진·장소·태그 등록 정보를 모두 지웁니다. 저장소의 사진 원본과 앱 설정은 유지됩니다."
-                            Opacity="0.75"
-                            TextWrapping="Wrap" />
-                    </StackPanel>
+                        <!-- 자동 태그 -->
+                        <Border
+                            x:Name="AutoTagsDetail"
+                            Style="{StaticResource MkSimpleSettingsCardStyle}"
+                            Margin="0"
+                            AutomationProperties.Name="자동 태그 상세"
+                            Visibility="{Binding IsAutoTagsDetailVisible, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <StackPanel Spacing="20">
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="자동 태그" Style="{StaticResource MkSectionTitleStyle}" Margin="0" />
+                                    <TextBlock Text="사진 내용을 분석해 검색에 도움이 되는 태그를 자동으로 추가합니다." Style="{StaticResource MkCaptionTextStyle}" />
+                                </StackPanel>
+                                <InfoBar
+                                    IsOpen="True"
+                                    IsClosable="False"
+                                    Severity="{Binding AutoTagInfoSeverity}"
+                                    Title="{Binding AutoTagStateText}"
+                                    Message="{Binding AutoTagSummary}" />
+                                <StackPanel Spacing="8" MaxWidth="720" HorizontalAlignment="Stretch">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Text="이번 달 분석" Style="{StaticResource SettingsSubsectionTitleStyle}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding AutoTagMonthlyUsageText}" Style="{StaticResource MkCaptionTextStyle}" />
+                                    </Grid>
+                                    <ProgressBar
+                                        Minimum="0"
+                                        Maximum="{Binding AutoTagMonthlyLimitForProgress}"
+                                        Value="{Binding AutoTagMonthlyUsage}"
+                                        Height="8" />
+                                </StackPanel>
+                                <TextBlock
+                                    Text="{Binding AutoTagQuotaWaitingText}"
+                                    Style="{StaticResource MkBodyTextStyle}"
+                                    Visibility="{Binding HasAutoTagQuotaWaiting, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="12">
+                                    <Border Padding="14,12" CornerRadius="12" Background="{ThemeResource MkBrushSurfaceMuted}">
+                                        <StackPanel Spacing="4"><TextBlock Text="대기 중" Style="{StaticResource MkCaptionTextStyle}" /><TextBlock Text="{Binding AutoTagWaitingCount}" Style="{StaticResource MkCardTitleStyle}" Margin="0" /></StackPanel>
+                                    </Border>
+                                    <Border Grid.Column="1" Padding="14,12" CornerRadius="12" Background="{ThemeResource MkBrushSurfaceMuted}">
+                                        <StackPanel Spacing="4"><TextBlock Text="처리 중" Style="{StaticResource MkCaptionTextStyle}" /><TextBlock Text="{Binding AutoTagProcessingCount}" Style="{StaticResource MkCardTitleStyle}" Margin="0" /></StackPanel>
+                                    </Border>
+                                    <Border Grid.Row="1" Padding="14,12" CornerRadius="12" Background="{ThemeResource MkBrushSurfaceMuted}">
+                                        <StackPanel Spacing="4"><TextBlock Text="실패" Style="{StaticResource MkCaptionTextStyle}" /><TextBlock Text="{Binding AutoTagFailedCount}" Style="{StaticResource MkCardTitleStyle}" Margin="0" /></StackPanel>
+                                    </Border>
+                                    <Border Grid.Row="1" Grid.Column="1" Padding="14,12" CornerRadius="12" Background="{ThemeResource MkBrushSurfaceMuted}">
+                                        <StackPanel Spacing="4"><TextBlock Text="오늘 완료" Style="{StaticResource MkCaptionTextStyle}" /><TextBlock Text="{Binding AutoTagTodayCompletedCount}" Style="{StaticResource MkCardTitleStyle}" Margin="0" /></StackPanel>
+                                    </Border>
+                                </Grid>
+                                <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                                    <Button Content="상태 새로고침" Command="{Binding RefreshAutoTagStatusCommand}" Style="{StaticResource MkSecondaryButtonStyle}" />
+                                    <Button
+                                        Content="다시 시도"
+                                        Command="{Binding RetryFailedAutoTagsCommand}"
+                                        Style="{StaticResource MkPrimaryButtonStyle}"
+                                        Visibility="{Binding HasAutoTagFailures, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
 
-                    <StackPanel Spacing="4">
-                        <Button Content="장소/여행기록 재생성" HorizontalAlignment="Left"
-                                Command="{Binding RegeneratePlacesCommand}" />
-                        <TextBlock
-                            Text="기존 장소를 모두 지운 뒤, GPS가 있는 사진마다 위치 조회·반경 매칭으로 장소를 다시 만들고 연결합니다. 방문지도·여행기록은 장소/사진 기준으로 다시 집계됩니다."
-                            Opacity="0.75"
-                            TextWrapping="Wrap" />
-                    </StackPanel>
+                        <!-- 사진 내보내기 -->
+                        <Border
+                            x:Name="PhotoExportDetail"
+                            Style="{StaticResource MkWideSettingsCardStyle}"
+                            Margin="0"
+                            AutomationProperties.Name="사진 내보내기 상세"
+                            Visibility="{Binding IsPhotoExportDetailVisible, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <StackPanel Spacing="16">
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="사진 내보내기" Style="{StaticResource MkSectionTitleStyle}" Margin="0" />
+                                    <TextBlock Text="MemoryKeeper에서 정리한 사진을 연도·국가·지역·장소 폴더 구조로 복사합니다." Style="{StaticResource MkCaptionTextStyle}" />
+                                </StackPanel>
+                                <TextBlock Text="원본 사진은 변경되지 않으며 장소·태그·메모 등 MemoryKeeper 정보도 함께 보존됩니다." Style="{StaticResource MkBodyTextStyle}" />
+                                <Button
+                                    Content="사진 내보내기"
+                                    Command="{Binding ExportPhotosCommand}"
+                                    Style="{StaticResource MkPrimaryButtonStyle}"
+                                    HorizontalAlignment="Right"
+                                    IsEnabled="{Binding IsBusy, Converter={StaticResource BoolNegationConverter}}" />
+                                <StackPanel
+                                    Spacing="8"
+                                    MaxWidth="720"
+                                    HorizontalAlignment="Stretch"
+                                    Visibility="{Binding HasExportActivity, Converter={StaticResource BoolToVisibilityConverter}}">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Text="내보내기 진행" Style="{StaticResource MkCaptionTextStyle}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding ExportProgressText}" Style="{StaticResource MkCaptionTextStyle}" />
+                                    </Grid>
+                                    <ProgressBar Minimum="0" Maximum="{Binding ExportProgressMaximum}" Value="{Binding ExportCompleted}" Height="8" />
+                                    <TextBlock Text="{Binding ExportCurrentFile}" Style="{StaticResource MkCaptionTextStyle}" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{Binding ExportCurrentFile}" />
+                                </StackPanel>
+                                <Grid
+                                    ColumnDefinitions="*,*,*"
+                                    ColumnSpacing="12"
+                                    Visibility="{Binding HasExportResult, Converter={StaticResource BoolToVisibilityConverter}}">
+                                    <Border Padding="12" CornerRadius="12" Background="{ThemeResource MkBrushSurfaceMuted}">
+                                        <StackPanel Spacing="4"><TextBlock Text="완료" Style="{StaticResource MkCaptionTextStyle}" /><TextBlock Text="{Binding ExportSucceededCount}" Style="{StaticResource MkCardTitleStyle}" Margin="0" /></StackPanel>
+                                    </Border>
+                                    <Border Grid.Column="1" Padding="12" CornerRadius="12" Background="{ThemeResource MkBrushSurfaceMuted}">
+                                        <StackPanel Spacing="4"><TextBlock Text="정보 일부 미기록" Style="{StaticResource MkCaptionTextStyle}" /><TextBlock Text="{Binding ExportMetadataPartialCount}" Style="{StaticResource MkCardTitleStyle}" Margin="0" /></StackPanel>
+                                    </Border>
+                                    <Border Grid.Column="2" Padding="12" CornerRadius="12" Background="{ThemeResource MkBrushSurfaceMuted}">
+                                        <StackPanel Spacing="4"><TextBlock Text="복사 실패" Style="{StaticResource MkCaptionTextStyle}" /><TextBlock Text="{Binding ExportCopyFailedCount}" Style="{StaticResource MkCardTitleStyle}" Margin="0" /></StackPanel>
+                                    </Border>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
 
-                    <StackPanel Spacing="4">
-                        <Button Content="장소 재정규화" HorizontalAlignment="Left"
-                                Command="{Binding RenormalizePlacesCommand}" />
-                        <TextBlock
-                            Text="장소 이름은 유지한 채 Canonical 이름을 다시 맞추고, Osaka / Osaka-shi / 大阪市처럼 같은 지역을 하나로 병합합니다. 연결된 사진은 대표 장소로 재연결됩니다."
-                            Opacity="0.75"
-                            TextWrapping="Wrap" />
-                    </StackPanel>
+                        <!-- 미리보기 캐시 -->
+                        <Border
+                            x:Name="PreviewCacheDetail"
+                            Style="{StaticResource MkSimpleSettingsCardStyle}"
+                            Margin="0"
+                            AutomationProperties.Name="미리보기 캐시 상세"
+                            Visibility="{Binding IsPreviewCacheDetailVisible, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <StackPanel Spacing="20">
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="미리보기 캐시 정리" Style="{StaticResource MkSectionTitleStyle}" Margin="0" />
+                                    <TextBlock Text="PC에 저장된 임시 미리보기 데이터를 삭제하여 저장 공간을 확보합니다." Style="{StaticResource MkCaptionTextStyle}" />
+                                </StackPanel>
+                                <TextBlock Text="원본 사진과 MemoryKeeper 정보는 삭제되지 않습니다." Style="{StaticResource MkBodyTextStyle}" FontWeight="SemiBold" />
+                                <Button
+                                    Content="캐시 정리"
+                                    Command="{Binding ClearThumbnailCacheCommand}"
+                                    Style="{StaticResource MkSecondaryButtonStyle}"
+                                    HorizontalAlignment="Right"
+                                    IsEnabled="{Binding IsBusy, Converter={StaticResource BoolNegationConverter}}" />
+                            </StackPanel>
+                        </Border>
 
-                    <StackPanel Spacing="4">
-                        <Button Content="썸네일 캐시 삭제" HorizontalAlignment="Left"
-                                Command="{Binding ClearThumbnailCacheCommand}" />
-                        <TextBlock
-                            Text="미리보기용 썸네일 캐시만 삭제합니다. 다음에 화면을 열 때 다시 생성됩니다. 원본·DB·앱 설정은 유지됩니다."
-                            Opacity="0.75"
-                            TextWrapping="Wrap" />
-                    </StackPanel>
+                        <!-- 처음부터 다시 구성 -->
+                        <Border
+                            x:Name="ResetDetail"
+                            Style="{StaticResource MkSimpleSettingsOutlinedCardStyle}"
+                            Margin="0"
+                            BorderBrush="{ThemeResource MkBrushWarning}"
+                            AutomationProperties.Name="처음부터 다시 구성 상세"
+                            Visibility="{Binding IsResetDetailVisible, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <StackPanel Spacing="20">
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="처음부터 다시 구성" Style="{StaticResource MkSectionTitleStyle}" Margin="0" />
+                                    <TextBlock Text="현재 MemoryKeeper의 정리 결과를 초기화하고 원본 사진을 다시 등록할 수 있습니다." Style="{StaticResource MkCaptionTextStyle}" />
+                                </StackPanel>
+                                <TextBlock Text="원본 사진은 삭제되지 않습니다." Style="{StaticResource MkBodyTextStyle}" FontWeight="SemiBold" Foreground="{ThemeResource MkBrushSuccess}" />
+                                <Button
+                                    Content="처음부터 다시 구성"
+                                    Command="{Binding RestartMemoryKeeperCommand}"
+                                    Style="{StaticResource MkDangerButtonStyle}"
+                                    HorizontalAlignment="Right"
+                                    IsEnabled="{Binding IsBusy, Converter={StaticResource BoolNegationConverter}}" />
+                            </StackPanel>
+                        </Border>
 
-                    <StackPanel Spacing="4">
-                        <Button Content="전체 초기화" HorizontalAlignment="Left"
-                                Command="{Binding ResetDatabaseCommand}" />
-                        <TextBlock
-                            Text="데이터베이스·설정·썸네일 캐시를 초기화합니다. 사진 원본만 남고, 앱을 다시 시작하면 초기 설정이 표시됩니다."
-                            Opacity="0.75"
-                            TextWrapping="Wrap" />
-                    </StackPanel>
+                        <!-- 앱 정보 -->
+                        <Border
+                            x:Name="AppInfoDetail"
+                            Style="{StaticResource MkSimpleSettingsCardStyle}"
+                            Margin="0"
+                            AutomationProperties.Name="앱 정보 상세"
+                            Visibility="{Binding IsAppInfoDetailVisible, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <StackPanel Spacing="20">
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="MemoryKeeper" Style="{StaticResource MkSectionTitleStyle}" Margin="0" />
+                                    <TextBlock Text="소중한 사진과 방문 기록을 한곳에서 정리하고 돌아보는 앱입니다." Style="{StaticResource MkCaptionTextStyle}" />
+                                </StackPanel>
+                                <Grid ColumnDefinitions="*,Auto" Padding="0,4">
+                                    <TextBlock Text="버전" Style="{StaticResource MkBodyTextStyle}" />
+                                    <TextBlock Grid.Column="1" Text="{Binding AppVersionText}" Style="{StaticResource MkCaptionTextStyle}" />
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </ScrollViewer>
+            </NavigationView>
+        </Grid>
 
-                    <StackPanel Spacing="4" Margin="0,8,0,0">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button Content="백업" Command="{Binding BackupCommand}" />
-                            <Button Content="복원" Command="{Binding RestoreCommand}" />
-                        </StackPanel>
-                        <TextBlock
-                            Text="백업: DB 등을 zip으로 저장합니다. 복원: 선택한 zip으로 현재 DB를 덮어씁니다."
-                            Opacity="0.75"
-                            TextWrapping="Wrap" />
-                    </StackPanel>
-                </StackPanel>
-
-                <!-- 정보 -->
-                <StackPanel
-                    Spacing="10"
-                    Visibility="{Binding IsInfoVisible, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
-                    <TextBlock Text="정보" Style="{StaticResource MkSectionTitleStyle}" />
-                    <TextBlock Text="프로그램 버전" FontWeight="SemiBold" />
-                    <TextBlock Text="{Binding AppVersionText, Mode=OneWay}" Style="{StaticResource MkBodyTextStyle}" />
-                    <StackPanel
-                        Spacing="10"
-                        Visibility="{Binding IsLogsVisible, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
-                        <Grid ColumnDefinitions="*,Auto">
-                            <TextBlock Text="로그" FontWeight="SemiBold" VerticalAlignment="Center" />
-                            <Button Grid.Column="1" Content="새로고침" Style="{StaticResource MkSecondaryButtonStyle}" Command="{Binding RefreshLogsCommand}" />
-                        </Grid>
-                        <TextBox
-                            Style="{StaticResource MkTextBoxStyle}"
-                            Text="{Binding LogText, Mode=OneWay}"
-                            IsReadOnly="True"
-                            AcceptsReturn="True"
-                            TextWrapping="Wrap"
-                            MinHeight="360"
-                            MaxWidth="720"
-                            FontFamily="Consolas"
-                            FontSize="12" />
-                    </StackPanel>
-                </StackPanel>
-
-                <Grid
-                    MinHeight="480"
-                    Visibility="{Binding IsTagsVisible, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
-                    <ContentControl x:Name="TagHost" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+        <Grid
+            Style="{StaticResource MkWidePageContainerStyle}"
+            Visibility="{Binding IsLogsVisible, Converter={StaticResource BoolToVisibilityConverter}}">
+            <StackPanel Spacing="16">
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                    <Button Content="설정으로 돌아가기" Command="{Binding GoBackCommand}" Style="{StaticResource MkSecondaryButtonStyle}" />
+                    <TextBlock Grid.Column="1" Text="진단 기록" Style="{StaticResource MkPageTitleStyle}" Margin="0" VerticalAlignment="Center" />
+                    <Button Grid.Column="2" Content="새로고침" Command="{Binding RefreshLogsCommand}" Style="{StaticResource MkSecondaryButtonStyle}" />
                 </Grid>
-
-                <ProgressRing IsActive="{Binding IsBusy, Mode=OneWay}" Width="32" Height="32" HorizontalAlignment="Left" />
+                <TextBox
+                    Style="{StaticResource MkTextBoxStyle}"
+                    Text="{Binding LogText}"
+                    IsReadOnly="True"
+                    AcceptsReturn="True"
+                    TextWrapping="Wrap"
+                    MinHeight="420"
+                    HorizontalAlignment="Stretch"
+                    FontFamily="Consolas"
+                    FontSize="12" />
             </StackPanel>
-            </ScrollViewer>
-        </Border>
+        </Grid>
     </Grid>
 </Page>

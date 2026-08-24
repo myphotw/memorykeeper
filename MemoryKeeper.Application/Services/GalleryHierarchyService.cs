@@ -94,6 +94,29 @@ public sealed class GalleryHierarchyService
         return result;
     }
 
+    public async Task<IReadOnlyList<PhotoExportCatalogItemDto>> GetExportCatalogAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var photos = await LoadPhotosAsync(cancellationToken).ConfigureAwait(false);
+        return photos.Select(photo =>
+        {
+            var hasPlace = HasPlace(photo);
+            return new PhotoExportCatalogItemDto
+            {
+                FileId = photo.Photo.FileId,
+                Filename = photo.Photo.Filename,
+                Year = ResolveYear(photo.Photo)?.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                       ?? UnclassifiedTitle,
+                Country = hasPlace ? CountryLabel(photo) : UnclassifiedTitle,
+                Region = hasPlace ? CityLabel(photo) : UnclassifiedTitle,
+                Place = hasPlace ? PlaceDisplayName(photo) : UnclassifiedTitle,
+                CaptureDatetime = photo.Photo.CaptureDatetime,
+                Latitude = photo.Latitude,
+                Longitude = photo.Longitude,
+            };
+        }).ToList();
+    }
+
     public async Task<IReadOnlyList<GalleryTreeChildDto>> GetCitiesAsync(
         int year,
         string country,

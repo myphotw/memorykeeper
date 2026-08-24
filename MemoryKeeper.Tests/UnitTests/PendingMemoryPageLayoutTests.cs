@@ -5,7 +5,7 @@ public sealed class PendingMemoryPageLayoutTests
     [Fact]
     public void PendingThumbnails_UseFullImageUniformLayoutForLandscapeAndPortrait()
     {
-        var sourcePath = FindSourceFile("MemoryKeeper.App", "Views", "PendingMemoryPage.xaml");
+        var sourcePath = FindSourceFile("MemoryKeeper.App", "Views", "PendingMemoryView.xaml");
         var xaml = File.ReadAllText(sourcePath);
 
         Assert.DoesNotContain("UniformToFill", xaml, StringComparison.Ordinal);
@@ -35,7 +35,7 @@ public sealed class PendingMemoryPageLayoutTests
             directory = directory.Parent;
         }
 
-        throw new FileNotFoundException("PendingMemoryPage.xaml source file was not found.");
+        throw new FileNotFoundException("PendingMemoryView.xaml source file was not found.");
     }
 
     private static int CountOccurrences(string value, string search)
