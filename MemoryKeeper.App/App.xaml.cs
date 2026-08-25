@@ -258,11 +258,13 @@ public partial class App : Microsoft.UI.Xaml.Application
                         sp.GetRequiredService<ILogger<MemoryKeeper.Infrastructure.Database.PrototypeMaintenanceService>>());
                 });
                 services.AddTransient<MainViewModel>();
-                services.AddTransient<StorageManagementViewModel>();
+                services.AddSingleton<StorageManagementViewModel>();
                 services.AddTransient<StorageManagementPage>();
-                services.AddTransient<ImportViewModel>();
+                services.AddSingleton<ImportViewModel>();
                 services.AddTransient<ImportView>();
                 services.AddTransient<ImportPage>();
+                services.AddTransient<PhotoManagementView>();
+                services.AddTransient<PhotoManagementPage>();
                 services.AddTransient<PlaceManagementViewModel>();
                 services.AddTransient<PlaceManagementView>();
                 services.AddTransient<PlaceManagementPage>();
@@ -286,6 +288,7 @@ public partial class App : Microsoft.UI.Xaml.Application
                 services.AddTransient<PendingMemoryView>();
                 services.AddTransient<PendingMemoryPage>();
                 services.AddTransient<PhotoDetailViewModel>();
+                services.AddTransient<PhotoDetailView>();
                 services.AddTransient<PhotoDetailPage>();
                 services.AddTransient<PhotoViewerViewModel>();
                 services.AddTransient<PhotoViewerPage>();

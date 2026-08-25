@@ -1,0 +1,75 @@
+<UserControl
+    x:Class="MemoryKeeper.App.Views.PhotoManagementView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:converters="using:MemoryKeeper.App.Converters"
+    mc:Ignorable="d">
+
+    <UserControl.Resources>
+        <converters:BoolNegationConverter x:Key="BoolNegationConverter" />
+        <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+        <Style x:Key="PhotoManagementSubsectionTitleStyle" TargetType="TextBlock" BasedOn="{StaticResource MkBodyTextStyle}">
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+    </UserControl.Resources>
+
+    <Border
+        Style="{StaticResource MkWideSettingsCardStyle}"
+        Margin="0"
+        AutomationProperties.Name="사진 관리">
+        <StackPanel Spacing="20">
+            <StackPanel Spacing="6">
+                <TextBlock Text="사진 관리" Style="{StaticResource MkSectionTitleStyle}" Margin="0" />
+                <TextBlock
+                    Text="MemoryKeeper가 읽어올 원본 사진 위치를 관리합니다. 원본 파일은 이동하거나 수정하지 않습니다."
+                    Style="{StaticResource MkCaptionTextStyle}" />
+            </StackPanel>
+            <Border Height="1" Background="{ThemeResource MkBrushDivider}" />
+            <TextBlock Text="원본 사진 폴더" Style="{StaticResource PhotoManagementSubsectionTitleStyle}" />
+            <Border
+                MinHeight="40"
+                Padding="12,8"
+                CornerRadius="{StaticResource MkInputCornerRadius}"
+                BorderBrush="{ThemeResource MkBrushBorder}"
+                BorderThickness="1"
+                Background="{ThemeResource MkBrushSurfaceMuted}"
+                ToolTipService.ToolTip="{Binding Storage.PhotoRootPath, Mode=OneWay}">
+                <TextBlock
+                    Text="{Binding Storage.PhotoRootPath, Mode=OneWay}"
+                    TextTrimming="CharacterEllipsis"
+                    TextWrapping="NoWrap"
+                    IsTextSelectionEnabled="True" />
+            </Border>
+            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                <Button
+                    Content="폴더 선택"
+                    Style="{StaticResource MkPrimaryButtonStyle}"
+                    Command="{Binding Storage.ChangeFolderCommand}"
+                    IsEnabled="{Binding Storage.IsBusy, Converter={StaticResource BoolNegationConverter}}" />
+                <Button
+                    Content="연결 확인"
+                    Style="{StaticResource MkSecondaryButtonStyle}"
+                    Command="{Binding Storage.CheckConnectionCommand}"
+                    IsEnabled="{Binding Storage.IsBusy, Converter={StaticResource BoolNegationConverter}}" />
+            </StackPanel>
+            <TextBlock
+                Text="폴더에 접근할 수 없습니다. 위치를 다시 확인해 주세요."
+                Foreground="{ThemeResource MkBrushError}"
+                Style="{StaticResource MkCaptionTextStyle}"
+                Visibility="{Binding Storage.ShowConnectionError, Converter={StaticResource BoolToVisibilityConverter}}" />
+            <TextBlock
+                Text="연결 상태: 정상"
+                Foreground="{ThemeResource MkBrushSuccess}"
+                Style="{StaticResource MkCaptionTextStyle}"
+                Visibility="{Binding Storage.ShowConnectionDetails, Converter={StaticResource BoolToVisibilityConverter}}" />
+            <Border Height="1" Background="{ThemeResource MkBrushDivider}" />
+            <StackPanel Spacing="6">
+                <TextBlock Text="사진 등록" Style="{StaticResource PhotoManagementSubsectionTitleStyle}" />
+                <TextBlock Text="원본 사진 폴더에서 새 사진을 찾아 등록합니다." Style="{StaticResource MkCaptionTextStyle}" />
+            </StackPanel>
+            <ContentControl x:Name="ImportHost" HorizontalContentAlignment="Stretch" />
+        </StackPanel>
+    </Border>
+</UserControl>

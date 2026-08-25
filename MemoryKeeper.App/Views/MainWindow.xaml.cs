@@ -34,7 +34,7 @@ public sealed partial class MainWindow : Window
     private PlaceManagementViewModel? _placeManagementViewModel;
     private TagManagementViewModel? _tagManagementViewModel;
     private PendingMemoryViewModel? _pendingMemoryViewModel;
-    private ImportPage? _importPage;
+    private PhotoManagementPage? _photoManagementPage;
     private FavoritesViewModel? _favoritesViewModel;
     private GalleryPage? _galleryPage;
     private GalleryViewModel? _galleryViewModel;
@@ -320,13 +320,19 @@ public sealed partial class MainWindow : Window
             "photo-viewer" => _photoNavigationState.ReturnSourceTag,
             "photo" when _photoNavigationState.DetailOpenedFromViewer => "photo-viewer",
             "photo" => "gallery",
-            "import" or "pending" or "place" or "tag" or "storage" or "logs" => "settings",
+            "import" => "home",
+            "pending" or "place" or "tag" or "storage" or "logs" => "settings",
             _ => "home"
         };
 
     private void NavigateBack()
     {
         LogNavigation("NavigateBack requested");
+        if (ContentFrame.Content is GalleryPage gallery && gallery.TryCloseDetailPanel())
+        {
+            return;
+        }
+
         if (_navigation.TryGoBack(out var entry))
         {
             _navigatingBack = true;
@@ -444,6 +450,25 @@ public sealed partial class MainWindow : Window
         // Photo viewer often lacks keyboard focus (chrome / frame). Forward keys from the window root.
         if (ContentFrame.Content is PhotoViewerPage viewer
             && viewer.TryHandleKey(e.Key))
+        {
+            e.Handled = true;
+        }
+        else if (e.Key == Windows.System.VirtualKey.Escape
+                 && ContentFrame.Content is PhotoDetailPage detail)
+        {
+            detail.ViewModel.CloseCommand.Execute(null);
+            e.Handled = true;
+        }
+        else if (e.Key == Windows.System.VirtualKey.Escape
+                 && ContentFrame.Content is VisitRecordPage visit
+                 && visit.ViewModel.IsContextualCloseVisible)
+        {
+            visit.ViewModel.GoBackCommand.Execute(null);
+            e.Handled = true;
+        }
+        else if (e.Key == Windows.System.VirtualKey.Escape
+                 && ContentFrame.Content is GalleryPage gallery
+                 && gallery.TryCloseDetailPanel())
         {
             e.Handled = true;
         }
@@ -751,6 +776,7 @@ public sealed partial class MainWindow : Window
             _galleryViewModel.BackRequested += OnShellBackRequested;
             page.OpenImportRequested += OnGalleryOpenImportRequested;
             page.OpenPendingRequested += OnGalleryOpenPendingRequested;
+            page.OpenMapRequested += OnPhotoDetailOpenMapRequested;
             ContentFrame.Content = page;
             if (ShouldReload("gallery", CatalogSurface.Gallery))
             {
@@ -839,26 +865,10 @@ public sealed partial class MainWindow : Window
     {
         Track("import");
         DetachHandlers();
-        var page = _serviceProvider.GetRequiredService<ImportPage>();
-        page.ViewModel.ImportCompletedNavigateHome += OnImportCompletedNavigateHome;
+        var page = _serviceProvider.GetRequiredService<PhotoManagementPage>();
         page.ViewModel.BackRequested += OnShellBackRequested;
-        _importPage = page;
+        _photoManagementPage = page;
         ContentFrame.Content = page;
-        _ = page.ViewModel.LoadCommand.ExecuteAsync(null);
-    }
-
-    private void OnImportCompletedNavigateHome(object? sender, EventArgs e)
-    {
-        _navigation.Clear();
-        _navigatingBack = true;
-        try
-        {
-            SelectNavigationItem("home");
-        }
-        finally
-        {
-            _navigatingBack = false;
-        }
     }
 
     private void NavigateToPlace()
@@ -922,8 +932,11 @@ public sealed partial class MainWindow : Window
         NavigateBack();
     }
 
-    private void OnPhotoDetailOpenMapRequested(object? sender, EventArgs e) =>
+    private void OnPhotoDetailOpenMapRequested(object? sender, EventArgs e)
+    {
+        _pendingVisitNavSource = VisitMapNavigationSource.PhotoDetail;
         SelectNavigationItem("visits");
+    }
 
     private void OnGalleryOpenTravelRequested(object? sender, EventArgs e) =>
         SelectNavigationItem("travel-detail");
@@ -1025,11 +1038,10 @@ public sealed partial class MainWindow : Window
             _pendingMemoryViewModel = null;
         }
 
-        if (_importPage is not null)
+        if (_photoManagementPage is not null)
         {
-            _importPage.ViewModel.ImportCompletedNavigateHome -= OnImportCompletedNavigateHome;
-            _importPage.ViewModel.BackRequested -= OnShellBackRequested;
-            _importPage = null;
+            _photoManagementPage.ViewModel.BackRequested -= OnShellBackRequested;
+            _photoManagementPage = null;
         }
 
         if (_favoritesViewModel is not null)
@@ -1042,6 +1054,7 @@ public sealed partial class MainWindow : Window
         {
             _galleryPage.OpenImportRequested -= OnGalleryOpenImportRequested;
             _galleryPage.OpenPendingRequested -= OnGalleryOpenPendingRequested;
+            _galleryPage.OpenMapRequested -= OnPhotoDetailOpenMapRequested;
             _galleryPage = null;
         }
 
@@ -1147,7 +1160,7 @@ public sealed partial class MainWindow : Window
             "visits" => ContentFrame.Content is VisitRecordPage,
             "pending" => ContentFrame.Content is PendingMemoryPage,
             "favorites" => ContentFrame.Content is FavoritesPage,
-            "import" => ContentFrame.Content is ImportPage,
+            "import" => ContentFrame.Content is PhotoManagementPage,
             "place" => ContentFrame.Content is PlaceManagementPage,
             "travel" => ContentFrame.Content is TravelRecordsPage,
             "travel-detail" => ContentFrame.Content is TravelRecordsDetailPage,

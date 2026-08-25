@@ -8,7 +8,7 @@ namespace MemoryKeeper.App.Views;
 
 public sealed partial class SettingsPage : Page
 {
-    private readonly ImportView _importView;
+    private readonly PhotoManagementView _photoManagementView;
     private readonly PendingMemoryView _pendingView;
     private readonly PlaceManagementView _placeView;
     private readonly TagManagementView _tagView;
@@ -21,21 +21,20 @@ public sealed partial class SettingsPage : Page
 
     public SettingsPage(
         SettingsViewModel viewModel,
-        ImportView importView,
+        PhotoManagementView photoManagementView,
         PendingMemoryView pendingView,
         PlaceManagementView placeView,
         TagManagementView tagView)
     {
         ViewModel = viewModel;
         DataContext = viewModel;
-        _importView = importView;
+        _photoManagementView = photoManagementView;
         _pendingView = pendingView;
         _placeView = placeView;
         _tagView = tagView;
         InitializeComponent();
 
-        _importView.ConfigureEmbedded(isEmbedded: true);
-        ImportHost.Content = _importView;
+        PhotoManagementHost.Content = _photoManagementView;
         PendingHost.Content = _pendingView;
         PlaceHost.Content = _placeView;
         TagHost.Content = _tagView;
@@ -43,7 +42,6 @@ public sealed partial class SettingsPage : Page
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
         ViewModel.PropertyChanged += OnViewModelPropertyChanged;
-        ViewModel.Storage.PropertyChanged += OnStoragePropertyChanged;
     }
 
     private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -72,7 +70,6 @@ public sealed partial class SettingsPage : Page
     {
         _isLoaded = true;
         ViewModel.HostXamlRoot = XamlRoot;
-        SetImportSourceFromPhotoRoot();
         ApplyResponsiveNavigation(ActualWidth);
         SyncNavigationSelection();
         _ = ActivateSelectedSectionAsync();
@@ -85,21 +82,6 @@ public sealed partial class SettingsPage : Page
         base.OnNavigatedTo(e);
         ViewModel.HostXamlRoot = XamlRoot;
         // MainWindow calls LoadCommand with the target section; avoid overwriting with null.
-    }
-
-    private void OnStoragePropertyChanged(
-        object? sender,
-        System.ComponentModel.PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName is nameof(ViewModel.Storage.PhotoRootPath))
-        {
-            SetImportSourceFromPhotoRoot();
-        }
-    }
-
-    private void SetImportSourceFromPhotoRoot()
-    {
-        _importView.ViewModel.SourceFolderPath = ViewModel.Storage.PhotoRootPath;
     }
 
     private async Task ActivateSelectedSectionAsync()
@@ -125,8 +107,7 @@ public sealed partial class SettingsPage : Page
             switch (section)
             {
                 case SettingsSection.PhotoManagement:
-                    SetImportSourceFromPhotoRoot();
-                    await _importView.ViewModel.LoadCommand.ExecuteAsync(null);
+                    await _photoManagementView.ActivateAsync();
                     break;
                 case SettingsSection.PendingMemories:
                     await _pendingView.ViewModel.LoadCommand.ExecuteAsync(null);

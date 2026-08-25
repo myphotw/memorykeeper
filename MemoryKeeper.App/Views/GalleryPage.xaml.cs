@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 using System.Collections.ObjectModel;
 using System.Numerics;
 
@@ -14,17 +15,23 @@ public sealed partial class GalleryPage : Page
 {
     private GalleryItem? _pageSelectedItem;
     private ObservableCollection<GalleryItem>? _subscribedItems;
+    private readonly PhotoDetailView _photoDetailView;
+    private bool _detailViewHosted;
 
     public event EventHandler? OpenImportRequested;
 
     public event EventHandler? OpenPendingRequested;
 
+    public event EventHandler? OpenMapRequested;
+
     public GalleryViewModel ViewModel { get; }
 
-    public GalleryPage(GalleryViewModel viewModel)
+    public GalleryPage(GalleryViewModel viewModel, PhotoDetailView photoDetailView)
     {
         GalleryDiagnostics.WriteStep("GalleryPage constructor start");
         ViewModel = viewModel;
+        _photoDetailView = photoDetailView;
+        _photoDetailView.ConfigurePanelMode();
         DataContext = viewModel;
         try
         {
@@ -41,7 +48,11 @@ public sealed partial class GalleryPage : Page
         ViewModel.ScrollToMediaRequested += OnScrollToMediaRequested;
         ViewModel.ScrollOffsetRequested += OnScrollOffsetRequested;
         ViewModel.PropertyChanged += ViewModel_OnPropertyChanged;
+        _photoDetailView.ViewModel.Closed += OnDetailClosed;
+        _photoDetailView.ViewModel.PhotoDeleted += OnPhotoDeleted;
+        _photoDetailView.ViewModel.OpenMapRequested += OnDetailOpenMapRequested;
         Loaded += GalleryPage_OnLoaded;
+        SizeChanged += GalleryPage_OnSizeChanged;
         ResubscribeItems();
         GalleryDiagnostics.WriteStep("GalleryPage constructor complete");
     }
@@ -142,7 +153,10 @@ public sealed partial class GalleryPage : Page
 
         SelectItemForDisplay(item);
         ViewModel.CaptureFocusState(GetGridScrollOffset(), item.MediaId);
-        ViewModel.OpenPhotoViewerCommand.Execute(item);
+        if (ViewModel.IsDetailPanelOpen)
+        {
+            _ = ShowDetailPanelAsync(item, toggle: false);
+        }
     }
 
     private void SelectItemForDisplay(GalleryItem item)
@@ -267,6 +281,146 @@ public sealed partial class GalleryPage : Page
 
     private void ImportPhotos_OnClick(object sender, RoutedEventArgs e) =>
         OpenImportRequested?.Invoke(this, EventArgs.Empty);
+
+    private void ToggleDetailPanel_OnClick(object sender, RoutedEventArgs e)
+    {
+        var selected = ViewModel.SelectedItem ?? _pageSelectedItem ?? ViewModel.Items.FirstOrDefault();
+        if (selected is not null)
+        {
+            _ = ShowDetailPanelAsync(selected, toggle: true);
+        }
+    }
+
+    private void PhotoCard_OnDoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+    {
+        if (sender is Border { Tag: GalleryItem item })
+        {
+            SelectItemForDisplay(item);
+            ViewModel.CaptureFocusState(GetGridScrollOffset(), item.MediaId);
+            ViewModel.OpenPhotoViewerCommand.Execute(item);
+            e.Handled = true;
+        }
+    }
+
+    private void OpenPhotoViewer_OnClick(object sender, RoutedEventArgs e)
+    {
+        var selected = ViewModel.SelectedItem ?? _pageSelectedItem ?? ViewModel.Items.FirstOrDefault();
+        if (selected is null)
+        {
+            return;
+        }
+
+        ViewModel.CaptureFocusState(GetGridScrollOffset(), selected.MediaId);
+        ViewModel.OpenPhotoViewerCommand.Execute(selected);
+    }
+
+    private async Task ShowDetailPanelAsync(GalleryItem item, bool toggle)
+    {
+        if (toggle && ViewModel.IsDetailPanelOpen)
+        {
+            await CloseDetailPanelAsync();
+            return;
+        }
+
+        SelectItemForDisplay(item);
+        ViewModel.PreparePhotoDetail(item);
+        ApplyDetailPanelLayout(ActualWidth);
+
+        Task detailLoad;
+        if (!_detailViewHosted)
+        {
+            PhotoDetailHost.Content = _photoDetailView;
+            _detailViewHosted = true;
+            detailLoad = Task.CompletedTask;
+        }
+        else
+        {
+            detailLoad = _photoDetailView.LoadMediaAsync(item.MediaId);
+        }
+
+        DetailPanel.Visibility = Visibility.Visible;
+        ViewModel.IsDetailPanelOpen = true;
+        await Task.WhenAll(AnimateDetailPanelAsync(0), detailLoad);
+    }
+
+    public bool TryCloseDetailPanel()
+    {
+        if (!ViewModel.IsDetailPanelOpen)
+        {
+            return false;
+        }
+
+        _ = CloseDetailPanelAsync();
+        return true;
+    }
+
+    private async Task CloseDetailPanelAsync()
+    {
+        if (!ViewModel.IsDetailPanelOpen)
+        {
+            return;
+        }
+
+        await AnimateDetailPanelAsync(440);
+        DetailPanel.Visibility = Visibility.Collapsed;
+        ViewModel.IsDetailPanelOpen = false;
+        ApplyDetailPanelLayout(ActualWidth);
+    }
+
+    private Task AnimateDetailPanelAsync(double destination)
+    {
+        var completion = new TaskCompletionSource();
+        var animation = new DoubleAnimation
+        {
+            To = destination,
+            Duration = new Duration(TimeSpan.FromMilliseconds(180)),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+            EnableDependentAnimation = true,
+        };
+        var storyboard = new Storyboard();
+        storyboard.Children.Add(animation);
+        Storyboard.SetTarget(animation, DetailPanelTransform);
+        Storyboard.SetTargetProperty(animation, "X");
+        storyboard.Completed += (_, _) => completion.TrySetResult();
+        storyboard.Begin();
+        return completion.Task;
+    }
+
+    private void GalleryPage_OnSizeChanged(object sender, SizeChangedEventArgs e) =>
+        ApplyDetailPanelLayout(e.NewSize.Width);
+
+    private void ApplyDetailPanelLayout(double width)
+    {
+        var useOverlay = width < 1450;
+        DetailColumn.Width = useOverlay ? new GridLength(0) : GridLength.Auto;
+        Grid.SetColumn(DetailPanel, useOverlay ? 1 : 2);
+        Grid.SetColumnSpan(DetailPanel, useOverlay ? 2 : 1);
+        Canvas.SetZIndex(DetailPanel, useOverlay ? 10 : 0);
+    }
+
+    private void OnDetailClosed(object? sender, EventArgs e) => _ = CloseDetailPanelAsync();
+
+    private void OnDetailOpenMapRequested(object? sender, EventArgs e) =>
+        OpenMapRequested?.Invoke(this, EventArgs.Empty);
+
+    private void OnPhotoDeleted(object? sender, Guid mediaId)
+    {
+        var deleted = ViewModel.Items.FirstOrDefault(item => item.MediaId == mediaId);
+        if (deleted is not null)
+        {
+            ViewModel.Items.Remove(deleted);
+        }
+
+        if (ViewModel.SelectedItem?.MediaId == mediaId)
+        {
+            ViewModel.SelectedItem = ViewModel.Items.FirstOrDefault();
+            _pageSelectedItem = ViewModel.SelectedItem;
+        }
+
+        UpdateEmptyState();
+        RefreshDetail();
+        _ = ViewModel.LoadCommand.ExecuteAsync(null);
+    }
 
     private void OnScrollToMediaRequested(object? sender, Guid mediaId)
     {

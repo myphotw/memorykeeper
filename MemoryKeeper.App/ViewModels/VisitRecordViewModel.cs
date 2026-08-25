@@ -106,6 +106,9 @@ public partial class VisitRecordViewModel : ObservableObject
     [ObservableProperty]
     private bool isMapReady;
 
+    [ObservableProperty]
+    private bool isContextualCloseVisible;
+
     public event EventHandler? OpenGalleryRequested;
 
     public event EventHandler? OpenPlaceManagementRequested;
@@ -171,6 +174,7 @@ public partial class VisitRecordViewModel : ObservableObject
         bool reloadData,
         CancellationToken cancellationToken = default)
     {
+        IsContextualCloseVisible = source == VisitMapNavigationSource.PhotoDetail;
         _activationCts?.Cancel();
         _activationCts?.Dispose();
         _activationCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

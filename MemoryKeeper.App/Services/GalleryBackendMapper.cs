@@ -65,12 +65,20 @@ public static class GalleryBackendMapper
             // Viewer/display: preview only (not original). Thumbnail is separate fallback.
             AbsoluteLibraryPath = preview ?? string.Empty,
             FileName = detail.Filename,
-            CapturedAt = GetDate(metadata, "datetime_original"),
-            Country = GetString(metadata, "country") ?? string.Empty,
-            Province = GetString(metadata, "province") ?? string.Empty,
-            City = GetString(metadata, "city") ?? string.Empty,
-            District = GetString(metadata, "district") ?? string.Empty,
-            Address = rawPlaceName,
+            CapturedAt = GetFirstDate(
+                metadata,
+                "datetime_original",
+                "datetime_digitized",
+                "datetime",
+                "capture_datetime"),
+            Country = GetFirstString(metadata, "country", "reverse_geocoded_country"),
+            Province = GetFirstString(metadata, "province", "state", "administrative_area_level_1"),
+            City = GetFirstString(metadata, "city", "locality", "administrative_area_level_2"),
+            District = GetFirstString(metadata, "district", "sublocality", "administrative_area_level_3"),
+            Address = FirstNotEmpty(
+                rawPlaceName,
+                GetString(metadata, "address"),
+                GetString(metadata, "formatted_address")),
             Latitude = lat,
             Longitude = lon,
             PlaceId = detail.MemorykeeperPlaceId ?? GetGuid(metadata, "memorykeeper_place_id"),
@@ -89,9 +97,9 @@ public static class GalleryBackendMapper
             IsFavorite = detail.Favorite,
             Width = detail.Width ?? GetInt(metadata, "image_width"),
             Height = detail.Height ?? GetInt(metadata, "image_height"),
-            CameraMaker = GetString(metadata, "camera_make"),
-            CameraModel = GetString(metadata, "camera_model"),
-            Lens = GetString(metadata, "lens"),
+            CameraMaker = FirstNotEmpty(GetString(metadata, "camera_make"), GetString(metadata, "make")),
+            CameraModel = FirstNotEmpty(GetString(metadata, "camera_model"), GetString(metadata, "model")),
+            Lens = FirstNotEmpty(GetString(metadata, "lens_model"), GetString(metadata, "lens")),
             Iso = GetString(metadata, "iso"),
             Exposure = GetString(metadata, "exposure_time"),
             FNumber = GetString(metadata, "f_number"),
@@ -213,9 +221,32 @@ public static class GalleryBackendMapper
     private static string FirstNotEmpty(params string?[] values) =>
         values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? string.Empty;
 
-    private static DateTimeOffset? GetDate(Dictionary<string, JsonElement> metadata, string key)
+    private static string GetFirstString(Dictionary<string, JsonElement> metadata, params string[] keys) =>
+        FirstNotEmpty(keys.Select(key => GetString(metadata, key)).ToArray());
+
+    private static DateTimeOffset? GetFirstDate(
+        Dictionary<string, JsonElement> metadata,
+        params string[] keys)
     {
-        var text = GetString(metadata, key);
-        return DateTimeOffset.TryParse(text, out var value) ? value : null;
+        foreach (var key in keys)
+        {
+            var text = GetString(metadata, key);
+            if (DateTimeOffset.TryParse(text, out var value))
+            {
+                return value;
+            }
+
+            if (DateTime.TryParseExact(
+                    text,
+                    "yyyy:MM:dd HH:mm:ss",
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.AssumeLocal,
+                    out var exifDate))
+            {
+                return new DateTimeOffset(exifDate);
+            }
+        }
+
+        return null;
     }
 }

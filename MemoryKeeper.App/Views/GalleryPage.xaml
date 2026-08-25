@@ -46,10 +46,15 @@
     <Grid
         Style="{StaticResource MkWidePageContainerStyle}"
         Background="{ThemeResource MkBrushBackground}"
-        ColumnDefinitions="0.22*,0.78*"
         ColumnSpacing="{StaticResource MkPageColumnGap}"
         MinWidth="640"
         MinHeight="360">
+
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="0.22*" />
+            <ColumnDefinition Width="0.78*" />
+            <ColumnDefinition x:Name="DetailColumn" Width="Auto" />
+        </Grid.ColumnDefinitions>
 
         <!-- Quiet filter column (not the visual hero) -->
         <Grid
@@ -201,6 +206,7 @@
                                 Tag="{Binding}"
                                 PointerEntered="PhotoCard_OnPointerEntered"
                                 PointerExited="PhotoCard_OnPointerExited"
+                                DoubleTapped="PhotoCard_OnDoubleTapped"
                                 Loaded="PhotoCard_OnLoaded">
                                 <Grid>
                                     <Border Style="{StaticResource MkThumbnailBorderStyle}">
@@ -264,7 +270,7 @@
                 Grid.Row="2"
                 Style="{StaticResource MkCardStyle}"
                 Visibility="Collapsed">
-                <Grid ColumnDefinitions="96,*" ColumnSpacing="{StaticResource MkComponentSpacing}">
+                <Grid ColumnDefinitions="96,*,Auto" ColumnSpacing="{StaticResource MkComponentSpacing}">
                     <Border Width="96" Height="96" Style="{StaticResource MkThumbnailBorderStyle}">
                         <Image
                             x:Name="DetailThumbImage"
@@ -285,8 +291,41 @@
                             <Run x:Name="DetailPlace" />
                         </TextBlock>
                     </StackPanel>
+                    <StackPanel Grid.Column="2" Spacing="6" VerticalAlignment="Center">
+                        <Button Content="사진 보기" Style="{StaticResource MkSecondaryButtonStyle}" Click="OpenPhotoViewer_OnClick" />
+                        <Button Content="상세" Style="{StaticResource MkSecondaryButtonStyle}" Click="ToggleDetailPanel_OnClick" />
+                    </StackPanel>
                 </Grid>
             </Border>
         </Grid>
+
+        <!-- Gallery-local reusable photo detail. Auto column is zero while collapsed. -->
+        <Border
+            x:Name="DetailPanel"
+            Grid.Column="2"
+            Width="420"
+            MinWidth="380"
+            MaxWidth="440"
+            HorizontalAlignment="Right"
+            Margin="8,0,0,0"
+            Padding="16"
+            Background="{ThemeResource MkBrushSurface}"
+            BorderBrush="{ThemeResource MkBrushBorder}"
+            BorderThickness="1,0,0,0"
+            CornerRadius="16,0,0,16"
+            Visibility="Collapsed">
+            <Border.RenderTransform>
+                <TranslateTransform x:Name="DetailPanelTransform" X="440" />
+            </Border.RenderTransform>
+            <Border.Transitions>
+                <TransitionCollection>
+                    <PaneThemeTransition Edge="Right" />
+                </TransitionCollection>
+            </Border.Transitions>
+            <ContentControl
+                x:Name="PhotoDetailHost"
+                HorizontalContentAlignment="Stretch"
+                VerticalContentAlignment="Stretch" />
+        </Border>
     </Grid>
 </Page>

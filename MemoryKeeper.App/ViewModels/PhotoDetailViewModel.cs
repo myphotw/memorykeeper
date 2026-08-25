@@ -164,6 +164,7 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
 #endif
 
     public event EventHandler? Closed;
+    public event EventHandler<Guid>? PhotoDeleted;
     public event EventHandler? OpenMapRequested;
     public event EventHandler? OpenPlaceRegistrationRequested;
     public event EventHandler? OpenTagManagerRequested;
@@ -508,12 +509,14 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
                     _thumbnailService.DeleteThumbnail(MediaId);
                     _photoNavigationState.RemoveFromPlaylist(MediaId);
                     StatusMessage = "MemoryKeeper에서 사진을 삭제했습니다.";
+                    PhotoDeleted?.Invoke(this, MediaId);
                     Closed?.Invoke(this, EventArgs.Empty);
                 }
                 catch (ApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
                 {
                     _photoNavigationState.RemoveFromPlaylist(MediaId);
                     StatusMessage = "이미 삭제된 사진입니다.";
+                    PhotoDeleted?.Invoke(this, MediaId);
                     Closed?.Invoke(this, EventArgs.Empty);
                 }
                 catch (ApiException ex) when (ex.StatusCode is System.Net.HttpStatusCode.Conflict or System.Net.HttpStatusCode.ServiceUnavailable)
@@ -532,6 +535,7 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
             _thumbnailService.DeleteThumbnail(MediaId);
             _photoNavigationState.RemoveFromPlaylist(MediaId);
             StatusMessage = "MemoryKeeper에서 사진을 삭제했습니다.";
+            PhotoDeleted?.Invoke(this, MediaId);
             Closed?.Invoke(this, EventArgs.Empty);
         });
     }
@@ -1648,16 +1652,23 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
 
     private async Task ApplyDetailAsync(PhotoDetailDto detail)
     {
+        Places = new ObservableCollection<PlaceDto>(
+            (await _placeService.GetPlaceListAsync()).Where(place => place.IsActive));
+        SelectedPlace = detail.PlaceId is Guid id
+            ? Places.FirstOrDefault(place => place.Id == id)
+            : null;
+        var geography = PhotoDetailGeographyProjection.Resolve(detail, SelectedPlace);
+
         IsBackendOnlyMedia = detail.IsBackendOnly;
         MediaId = detail.MediaId;
         FileName = detail.FileName;
         CapturedAtText = detail.CapturedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "촬영일 정보 없음";
         PlaceName = string.IsNullOrWhiteSpace(detail.PlaceName) ? "장소 미지정" : detail.PlaceName;
-        Country = string.IsNullOrWhiteSpace(detail.Country) ? "-" : detail.Country;
-        Province = string.IsNullOrWhiteSpace(detail.Province) ? "-" : detail.Province;
-        City = string.IsNullOrWhiteSpace(detail.City) ? "-" : detail.City;
-        District = string.IsNullOrWhiteSpace(detail.District) ? "-" : detail.District;
-        Address = detail.Address;
+        Country = string.IsNullOrWhiteSpace(geography.Country) ? "-" : geography.Country;
+        Province = string.IsNullOrWhiteSpace(geography.Province) ? "-" : geography.Province;
+        City = string.IsNullOrWhiteSpace(geography.City) ? "-" : geography.City;
+        District = string.IsNullOrWhiteSpace(geography.District) ? "-" : geography.District;
+        Address = geography.Address;
         CanonicalName = string.IsNullOrWhiteSpace(detail.CanonicalName) ? "-" : detail.CanonicalName!;
         GooglePlaceIdText = string.IsNullOrWhiteSpace(detail.GooglePlaceId) ? "-" : detail.GooglePlaceId!;
         Latitude = detail.Latitude;
@@ -1687,12 +1698,6 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
         ResolutionText = detail.Width is int w && detail.Height is int h ? $"{w}×{h}" : "-";
         FileSizeText = detail.FileSizeBytes is long bytes ? FormatFileSize(bytes) : "-";
         Tags = new ObservableCollection<TagChipItem>(detail.Tags.Select(tag => new TagChipItem(tag)));
-
-        Places = new ObservableCollection<PlaceDto>(
-            (await _placeService.GetPlaceListAsync()).Where(place => place.IsActive));
-        SelectedPlace = PlaceId is Guid id
-            ? Places.FirstOrDefault(place => place.Id == id)
-            : null;
 
         var imagePath = PhotoViewerViewModel.ResolveDisplayUrl(detail);
         PhotoImage = HttpImageLoader.TryCreate(

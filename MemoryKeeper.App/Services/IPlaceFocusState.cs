@@ -18,6 +18,8 @@ public enum VisitMapNavigationSource
 
     ShellNav = 3,
 
+    PhotoDetail = 4,
+
 }
 
 

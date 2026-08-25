@@ -29,7 +29,9 @@ public sealed class SettingsPageLayoutTests
             Assert.Contains($"x:Name=\"{detail}\"", xaml, StringComparison.Ordinal);
         }
 
-        Assert.Equal(5, Count(xaml, "Style=\"{StaticResource MkWideSettingsCardStyle}\""));
+        var photoManagement = LoadSource("MemoryKeeper.App", "Views", "PhotoManagementView.xaml");
+        Assert.Equal(5, Count(xaml, "Style=\"{StaticResource MkWideSettingsCardStyle}\"")
+                        + Count(photoManagement, "Style=\"{StaticResource MkWideSettingsCardStyle}\""));
         Assert.Equal(4, Count(xaml, "Style=\"{StaticResource MkSimpleSettingsCardStyle}\""));
         Assert.Equal(1, Count(xaml, "Style=\"{StaticResource MkSimpleSettingsOutlinedCardStyle}\""));
     }
@@ -76,14 +78,16 @@ public sealed class SettingsPageLayoutTests
     public void Detail_Cards_Are_Selected_By_Visibility_And_Preserve_Function_Commands()
     {
         var xaml = LoadSource("MemoryKeeper.App", "Views", "SettingsPage.xaml");
+        var photoManagement = LoadSource("MemoryKeeper.App", "Views", "PhotoManagementView.xaml");
 
         Assert.Contains("Visibility=\"{Binding IsPhotoManagementDetailVisible", xaml, StringComparison.Ordinal);
         Assert.Contains("Visibility=\"{Binding IsAutoTagsDetailVisible", xaml, StringComparison.Ordinal);
         Assert.Contains("Visibility=\"{Binding IsPhotoExportDetailVisible", xaml, StringComparison.Ordinal);
         Assert.Contains("Visibility=\"{Binding IsResetDetailVisible", xaml, StringComparison.Ordinal);
-        Assert.Contains("Command=\"{Binding ChangeStorageFolderCommand}\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Command=\"{Binding CheckStorageConnectionCommand}\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"ImportHost\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Command=\"{Binding Storage.ChangeFolderCommand}\"", photoManagement, StringComparison.Ordinal);
+        Assert.Contains("Command=\"{Binding Storage.CheckConnectionCommand}\"", photoManagement, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"PhotoManagementHost\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"ImportHost\"", photoManagement, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"PendingHost\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"PlaceHost\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"TagHost\"", xaml, StringComparison.Ordinal);
@@ -104,7 +108,7 @@ public sealed class SettingsPageLayoutTests
         var settingsCode = LoadSource("MemoryKeeper.App", "Views", "SettingsPage.xaml.cs");
         var appCode = LoadSource("MemoryKeeper.App", "App.xaml.cs");
 
-        foreach (var view in new[] { "ImportView", "PendingMemoryView", "PlaceManagementView", "TagManagementView" })
+        foreach (var view in new[] { "PhotoManagementView", "PendingMemoryView", "PlaceManagementView", "TagManagementView" })
         {
             Assert.Contains($"AddTransient<{view}>()", appCode, StringComparison.Ordinal);
             Assert.Contains($"{view} ", settingsCode, StringComparison.Ordinal);
@@ -120,10 +124,12 @@ public sealed class SettingsPageLayoutTests
     public void Photo_Registration_Commands_And_Card_Progress_Are_Embedded()
     {
         var settings = LoadSource("MemoryKeeper.App", "Views", "SettingsPage.xaml");
+        var management = LoadSource("MemoryKeeper.App", "Views", "PhotoManagementView.xaml");
         var import = LoadSource("MemoryKeeper.App", "Views", "ImportView.xaml");
 
-        Assert.Contains("Text=\"사진 관리\"", settings, StringComparison.Ordinal);
-        Assert.Contains("Text=\"사진 등록\"", settings, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"PhotoManagementHost\"", settings, StringComparison.Ordinal);
+        Assert.Contains("Text=\"사진 관리\"", management, StringComparison.Ordinal);
+        Assert.Contains("Text=\"사진 등록\"", management, StringComparison.Ordinal);
         Assert.Contains("Command=\"{Binding BrowseFolderCommand}\"", import, StringComparison.Ordinal);
         Assert.Contains("Command=\"{Binding ImportCommand}\"", import, StringComparison.Ordinal);
         Assert.Contains("Command=\"{Binding CancelImportCommand}\"", import, StringComparison.Ordinal);
@@ -171,7 +177,8 @@ public sealed class SettingsPageLayoutTests
 
         Assert.Contains("GetOrCreatePage<PendingMemoryPage>", mainWindow, StringComparison.Ordinal);
         Assert.Contains("GetRequiredService<PlaceManagementPage>", mainWindow, StringComparison.Ordinal);
-        Assert.Contains("GetRequiredService<ImportPage>", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("GetRequiredService<PhotoManagementPage>", mainWindow, StringComparison.Ordinal);
+        Assert.DoesNotContain("GetRequiredService<ImportPage>", mainWindow, StringComparison.Ordinal);
     }
 
     [Fact]

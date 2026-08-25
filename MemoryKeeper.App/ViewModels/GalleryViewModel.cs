@@ -60,6 +60,9 @@ public partial class GalleryViewModel : ObservableObject
     [ObservableProperty]
     private bool isBusy;
 
+    [ObservableProperty]
+    private bool isDetailPanelOpen;
+
     /// <summary>0 = 연도 보기, 1 = 장소 보기.</summary>
     [ObservableProperty]
     private int browseModeIndex;
@@ -223,6 +226,12 @@ public partial class GalleryViewModel : ObservableObject
 
         var playlist = Items.Select(galleryItem => galleryItem.MediaId).Distinct().ToList();
         _photoNavigationState.RequestOpenViewer(item.MediaId, playlist, "gallery");
+    }
+
+    public void PreparePhotoDetail(GalleryItem item)
+    {
+        _photoNavigationState.SetPlaylist(Items.Select(galleryItem => galleryItem.MediaId).ToList());
+        _photoNavigationState.FocusMediaId = item.MediaId;
     }
 
     partial void OnSearchTextChanged(string value) => _ = DebouncedSearchAsync();

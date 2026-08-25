@@ -37,10 +37,20 @@
 
             <!-- Title + fixed-width search (no expanding result row) -->
             <StackPanel Spacing="12">
-                <TextBlock
-                    Text="방문지도"
-                    Style="{StaticResource MkPageTitleStyle}"
-                    Margin="0" />
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock
+                        Text="방문지도"
+                        Style="{StaticResource MkPageTitleStyle}"
+                        Margin="0" />
+                    <Button
+                        Grid.Column="1"
+                        Content="✕"
+                        AutomationProperties.Name="닫기"
+                        Command="{Binding GoBackCommand}"
+                        MinWidth="40"
+                        Padding="10,4"
+                        Visibility="{Binding IsContextualCloseVisible, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                </Grid>
                 <TextBlock
                     Text="{Binding StatusMessage, Mode=OneWay}"
                     Style="{StaticResource MkCaptionTextStyle}"

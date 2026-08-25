@@ -17,7 +17,7 @@ using System.Globalization;
 
 namespace MemoryKeeper.App.Views;
 
-public sealed partial class PhotoDetailPage : Page
+public sealed partial class PhotoDetailView : UserControl
 {
     private readonly ILoggerFactory _loggerFactory;
     private readonly ISettingRepository _settingRepository;
@@ -25,10 +25,13 @@ public sealed partial class PhotoDetailPage : Page
     private bool _isSplitting;
     private double _splitStartX;
     private double _splitStartWidth;
+    private bool _handlersAttached;
+
+    public bool IsPanelMode { get; private set; }
 
     public PhotoDetailViewModel ViewModel { get; }
 
-    public PhotoDetailPage(
+    public PhotoDetailView(
         PhotoDetailViewModel viewModel,
         ILoggerFactory loggerFactory,
         ISettingRepository settingRepository)
@@ -38,17 +41,42 @@ public sealed partial class PhotoDetailPage : Page
         _loggerFactory = loggerFactory;
         _settingRepository = settingRepository;
         InitializeComponent();
-        ViewModel.OpenPlaceRegistrationRequested += OnOpenPlaceRegistrationRequested;
-        ViewModel.OpenTagManagerRequested += OnOpenTagManagerRequested;
-        ViewModel.OpenMemoEditorRequested += OnOpenMemoEditorRequested;
-        ViewModel.OpenRawLocationEditorRequested += OnOpenRawLocationEditorRequested;
-        ViewModel.OpenMapPickRequested += OnOpenMapPickRequested;
-        ViewModel.ToastRequested += OnToastRequested;
     }
 
-    private async void PhotoDetailPage_OnLoaded(object sender, RoutedEventArgs e)
+    public void ConfigurePanelMode()
     {
-        InfoColumn.Width = new GridLength(ViewModel.PanelWidth);
+        IsPanelMode = true;
+        TitleText.Text = "사진 상세";
+        PhotoColumn.Width = new GridLength(0);
+        SplitterColumn.Width = new GridLength(0);
+        InfoColumn.Width = new GridLength(1, GridUnitType.Star);
+        PhotoPane.Visibility = Visibility.Collapsed;
+        Splitter.Visibility = Visibility.Collapsed;
+        ZoomFitButton.Visibility = Visibility.Collapsed;
+        ZoomInButton.Visibility = Visibility.Collapsed;
+        ZoomOutButton.Visibility = Visibility.Collapsed;
+        ActionStack.Orientation = Orientation.Vertical;
+        ActionScrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+        ActionScrollViewer.VerticalScrollBarVisibility = ScrollBarVisibility.Disabled;
+        KeyboardHint.Visibility = Visibility.Collapsed;
+    }
+
+    public async Task LoadMediaAsync(Guid mediaId)
+    {
+        await ViewModel.LoadMediaCommand.ExecuteAsync(mediaId);
+        if (!IsPanelMode)
+        {
+            FitPhotoToPane();
+        }
+    }
+
+    private async void PhotoDetailView_OnLoaded(object sender, RoutedEventArgs e)
+    {
+        AttachHandlers();
+        if (!IsPanelMode)
+        {
+            InfoColumn.Width = new GridLength(ViewModel.PanelWidth);
+        }
         if (_mapController is null)
         {
             _mapController = new GoogleMapController(
@@ -67,22 +95,28 @@ public sealed partial class PhotoDetailPage : Page
             }
         }
 
-        await ViewModel.LoadCommand.ExecuteAsync(null);
-        InfoColumn.Width = new GridLength(ViewModel.PanelWidth);
-        FitPhotoToPane();
+        if (ViewModel.MediaId == Guid.Empty)
+        {
+            await ViewModel.LoadCommand.ExecuteAsync(null);
+        }
+
+        if (!IsPanelMode)
+        {
+            InfoColumn.Width = new GridLength(ViewModel.PanelWidth);
+            FitPhotoToPane();
+        }
         Focus(FocusState.Programmatic);
     }
 
-    private async void PhotoDetailPage_OnUnloaded(object sender, RoutedEventArgs e)
+    private async void PhotoDetailView_OnUnloaded(object sender, RoutedEventArgs e)
     {
-        ViewModel.PanelWidth = InfoColumn.Width.Value;
-        await ViewModel.SavePanelWidthAsync();
-        ViewModel.OpenPlaceRegistrationRequested -= OnOpenPlaceRegistrationRequested;
-        ViewModel.OpenTagManagerRequested -= OnOpenTagManagerRequested;
-        ViewModel.OpenMemoEditorRequested -= OnOpenMemoEditorRequested;
-        ViewModel.OpenRawLocationEditorRequested -= OnOpenRawLocationEditorRequested;
-        ViewModel.OpenMapPickRequested -= OnOpenMapPickRequested;
-        ViewModel.ToastRequested -= OnToastRequested;
+        if (!IsPanelMode)
+        {
+            ViewModel.PanelWidth = InfoColumn.Width.Value;
+            await ViewModel.SavePanelWidthAsync();
+        }
+
+        DetachHandlers();
         ViewModel.DetachMap();
         if (_mapController is not null)
         {
@@ -91,7 +125,39 @@ public sealed partial class PhotoDetailPage : Page
         }
     }
 
-    private async void PhotoDetailPage_OnKeyDown(object sender, KeyRoutedEventArgs e)
+    private void AttachHandlers()
+    {
+        if (_handlersAttached)
+        {
+            return;
+        }
+
+        ViewModel.OpenPlaceRegistrationRequested += OnOpenPlaceRegistrationRequested;
+        ViewModel.OpenTagManagerRequested += OnOpenTagManagerRequested;
+        ViewModel.OpenMemoEditorRequested += OnOpenMemoEditorRequested;
+        ViewModel.OpenRawLocationEditorRequested += OnOpenRawLocationEditorRequested;
+        ViewModel.OpenMapPickRequested += OnOpenMapPickRequested;
+        ViewModel.ToastRequested += OnToastRequested;
+        _handlersAttached = true;
+    }
+
+    private void DetachHandlers()
+    {
+        if (!_handlersAttached)
+        {
+            return;
+        }
+
+        ViewModel.OpenPlaceRegistrationRequested -= OnOpenPlaceRegistrationRequested;
+        ViewModel.OpenTagManagerRequested -= OnOpenTagManagerRequested;
+        ViewModel.OpenMemoEditorRequested -= OnOpenMemoEditorRequested;
+        ViewModel.OpenRawLocationEditorRequested -= OnOpenRawLocationEditorRequested;
+        ViewModel.OpenMapPickRequested -= OnOpenMapPickRequested;
+        ViewModel.ToastRequested -= OnToastRequested;
+        _handlersAttached = false;
+    }
+
+    private async void PhotoDetailView_OnKeyDown(object sender, KeyRoutedEventArgs e)
     {
         switch (e.Key)
         {
