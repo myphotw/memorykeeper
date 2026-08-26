@@ -142,6 +142,9 @@ public partial class HomeViewModel : ObservableObject
     private string pendingSummaryText = string.Empty;
 
     [ObservableProperty]
+    private string pendingQuickActionText = "정보 보완이 필요한 사진 · 0장";
+
+    [ObservableProperty]
     private string pendingLatestImportedText = string.Empty;
 
     [ObservableProperty]
@@ -372,6 +375,9 @@ public partial class HomeViewModel : ObservableObject
     private void QuickImport() => OpenImportRequested?.Invoke(this, EventArgs.Empty);
 
     [RelayCommand]
+    private void QuickPending() => OpenPendingRequested?.Invoke(this, EventArgs.Empty);
+
+    [RelayCommand]
     private void QuickGallery() => OpenGalleryRequested?.Invoke(this, EventArgs.Empty);
 
     [RelayCommand]
@@ -456,6 +462,7 @@ public partial class HomeViewModel : ObservableObject
         RecentQueries = [];
         PendingSummary = new PendingSummaryDto();
         PendingSummaryText = string.Empty;
+        PendingQuickActionText = "정보 보완이 필요한 사진 · 0장";
         PendingLatestImportedText = string.Empty;
         PendingThumbnailImage = null;
         StatisticsSummaryText = "시간을 따라 여행을 다시 만나 보세요.";
@@ -561,6 +568,7 @@ public partial class HomeViewModel : ObservableObject
         Statistics = dashboard.Statistics;
         PendingSummaryText =
             $"아직 장소를 정하지 못한 사진이 있어요";
+        PendingQuickActionText = $"정보 보완이 필요한 사진 · {PendingSummary.Total:N0}장";
         PendingLatestImportedText = PendingSummary.LatestImportedAt.HasValue
             ? $"최근 담은 날 {PendingSummary.LatestImportedAt.Value.ToLocalTime():yyyy.MM.dd}"
             : string.Empty;

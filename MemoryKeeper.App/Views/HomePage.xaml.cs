@@ -86,19 +86,6 @@ public sealed partial class HomePage : Page
             Grid.SetRow(SummaryCard, 0);
             Grid.SetColumn(SummaryCard, 1);
 
-            QuickActionsPanel.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
-            QuickActionsPanel.ColumnDefinitions[1].Width = new GridLength(1, GridUnitType.Star);
-            QuickActionsPanel.ColumnDefinitions[2].Width = new GridLength(1, GridUnitType.Star);
-            QuickActionsPanel.ColumnDefinitions[3].Width = new GridLength(1, GridUnitType.Star);
-            Grid.SetRow(QuickImportCard, 0);
-            Grid.SetColumn(QuickImportCard, 0);
-            Grid.SetRow(QuickOrganizeCard, 0);
-            Grid.SetColumn(QuickOrganizeCard, 1);
-            Grid.SetRow(QuickMapCard, 0);
-            Grid.SetColumn(QuickMapCard, 2);
-            Grid.SetRow(QuickTravelCard, 0);
-            Grid.SetColumn(QuickTravelCard, 3);
-
             HeroStatsPanel.Visibility = Visibility.Visible;
         }
         else
@@ -132,19 +119,24 @@ public sealed partial class HomePage : Page
             Grid.SetRow(SummaryCard, 1);
             Grid.SetColumn(SummaryCard, 0);
 
-            QuickActionsPanel.ColumnDefinitions[2].Width = new GridLength(0);
-            QuickActionsPanel.ColumnDefinitions[3].Width = new GridLength(0);
-            Grid.SetRow(QuickImportCard, 0);
-            Grid.SetColumn(QuickImportCard, 0);
-            Grid.SetRow(QuickOrganizeCard, 0);
-            Grid.SetColumn(QuickOrganizeCard, 1);
-            Grid.SetRow(QuickMapCard, 1);
-            Grid.SetColumn(QuickMapCard, 0);
-            Grid.SetRow(QuickTravelCard, 1);
-            Grid.SetColumn(QuickTravelCard, 1);
-
             HeroStatsPanel.Visibility = Visibility.Collapsed;
         }
+
+        ApplyQuickActionsLayout(ActualWidth >= 560);
+    }
+
+    private void ApplyQuickActionsLayout(bool sideBySide)
+    {
+        QuickActionsPanel.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
+        QuickActionsPanel.ColumnDefinitions[1].Width = sideBySide
+            ? new GridLength(1, GridUnitType.Star)
+            : new GridLength(0);
+        QuickActionsPanel.RowDefinitions[0].Height = GridLength.Auto;
+        QuickActionsPanel.RowDefinitions[1].Height = sideBySide ? new GridLength(0) : GridLength.Auto;
+        Grid.SetRow(QuickImportCard, 0);
+        Grid.SetColumn(QuickImportCard, 0);
+        Grid.SetRow(QuickPendingCard, sideBySide ? 0 : 1);
+        Grid.SetColumn(QuickPendingCard, sideBySide ? 1 : 0);
     }
 
     private void ApplyCardShadows()
@@ -441,30 +433,6 @@ public sealed partial class HomePage : Page
     }
 
     private void StatCountries_OnTapped(object sender, TappedRoutedEventArgs e)
-    {
-        e.Handled = true;
-        ViewModel.OpenStatisticsCommand.Execute(null);
-    }
-
-    private void QuickImport_OnTapped(object sender, TappedRoutedEventArgs e)
-    {
-        e.Handled = true;
-        ViewModel.QuickImportCommand.Execute(null);
-    }
-
-    private void QuickOrganize_OnTapped(object sender, TappedRoutedEventArgs e)
-    {
-        e.Handled = true;
-        ViewModel.OpenPendingCommand.Execute(null);
-    }
-
-    private void QuickMap_OnTapped(object sender, TappedRoutedEventArgs e)
-    {
-        e.Handled = true;
-        ViewModel.QuickVisitRecordCommand.Execute(null);
-    }
-
-    private void QuickTravel_OnTapped(object sender, TappedRoutedEventArgs e)
     {
         e.Handled = true;
         ViewModel.OpenStatisticsCommand.Execute(null);

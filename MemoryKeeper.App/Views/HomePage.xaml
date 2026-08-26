@@ -613,10 +613,13 @@
                     PointerExited="Card_OnPointerExited">
                     <StackPanel Spacing="14">
                         <TextBlock Text="빠른 작업" Style="{StaticResource HomeSectionTitleStyle}" Margin="0" />
-                        <Grid x:Name="QuickActionsPanel" ColumnSpacing="12" RowSpacing="12">
+                        <Grid
+                            x:Name="QuickActionsPanel"
+                            MaxWidth="840"
+                            HorizontalAlignment="Left"
+                            ColumnSpacing="12"
+                            RowSpacing="12">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
@@ -625,14 +628,18 @@
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
-                            <Border
+                            <Button
                                 x:Name="QuickImportCard"
                                 Background="#FAFAFA"
                                 BorderBrush="#E5E5EA"
                                 BorderThickness="1"
                                 CornerRadius="12"
                                 Padding="14,12"
-                                Tapped="QuickImport_OnTapped">
+                                MinHeight="64"
+                                HorizontalContentAlignment="Stretch"
+                                VerticalContentAlignment="Stretch"
+                                AutomationProperties.Name="사진 가져오기, 새 사진 추가"
+                                Command="{Binding QuickImportCommand}">
                                 <Grid ColumnSpacing="12">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />
@@ -646,17 +653,21 @@
                                         <TextBlock Text="새 사진 추가" FontSize="12" Foreground="{StaticResource HomeMutedTextBrush}" />
                                     </StackPanel>
                                 </Grid>
-                            </Border>
+                            </Button>
 
-                            <Border
-                                x:Name="QuickOrganizeCard"
+                            <Button
+                                x:Name="QuickPendingCard"
                                 Grid.Column="1"
                                 Background="#FAFAFA"
                                 BorderBrush="#E5E5EA"
                                 BorderThickness="1"
                                 CornerRadius="12"
                                 Padding="14,12"
-                                Tapped="QuickOrganize_OnTapped">
+                                MinHeight="64"
+                                HorizontalContentAlignment="Stretch"
+                                VerticalContentAlignment="Stretch"
+                                AutomationProperties.Name="미완성 추억, 정보 보완이 필요한 사진"
+                                Command="{Binding QuickPendingCommand}">
                                 <Grid ColumnSpacing="12">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />
@@ -666,59 +677,11 @@
                                         <FontIcon Glyph="&#xE8B7;" FontSize="16" Foreground="{StaticResource HomeIconOrange}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                     </Border>
                                     <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                                        <TextBlock Text="사진 정리" FontSize="14" FontWeight="SemiBold" Foreground="#1C1C1E" />
-                                        <TextBlock Text="정리 및 분류" FontSize="12" Foreground="{StaticResource HomeMutedTextBrush}" />
+                                        <TextBlock Text="미완성 추억" FontSize="14" FontWeight="SemiBold" Foreground="#1C1C1E" />
+                                        <TextBlock Text="{Binding PendingQuickActionText, Mode=OneWay}" FontSize="12" Foreground="{StaticResource HomeMutedTextBrush}" TextTrimming="CharacterEllipsis" />
                                     </StackPanel>
                                 </Grid>
-                            </Border>
-
-                            <Border
-                                x:Name="QuickMapCard"
-                                Grid.Column="2"
-                                Background="#FAFAFA"
-                                BorderBrush="#E5E5EA"
-                                BorderThickness="1"
-                                CornerRadius="12"
-                                Padding="14,12"
-                                Tapped="QuickMap_OnTapped">
-                                <Grid ColumnSpacing="12">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <Border Width="40" Height="40" CornerRadius="10" Background="{StaticResource HomeIconGreenBg}">
-                                        <FontIcon Glyph="&#xE1C4;" FontSize="16" Foreground="{StaticResource HomeIconGreen}" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                    </Border>
-                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                                        <TextBlock Text="방문지도" FontSize="14" FontWeight="SemiBold" Foreground="#1C1C1E" />
-                                        <TextBlock Text="장소별 확인" FontSize="12" Foreground="{StaticResource HomeMutedTextBrush}" />
-                                    </StackPanel>
-                                </Grid>
-                            </Border>
-
-                            <Border
-                                x:Name="QuickTravelCard"
-                                Grid.Column="3"
-                                Background="#FAFAFA"
-                                BorderBrush="#E5E5EA"
-                                BorderThickness="1"
-                                CornerRadius="12"
-                                Padding="14,12"
-                                Tapped="QuickTravel_OnTapped">
-                                <Grid ColumnSpacing="12">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <Border Width="40" Height="40" CornerRadius="10" Background="{StaticResource HomeIconPurpleBg}">
-                                        <FontIcon Glyph="&#xE82D;" FontSize="16" Foreground="{StaticResource HomeIconPurple}" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                    </Border>
-                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                                        <TextBlock Text="여행기록" FontSize="14" FontWeight="SemiBold" Foreground="#1C1C1E" />
-                                        <TextBlock Text="여행 추억 보기" FontSize="12" Foreground="{StaticResource HomeMutedTextBrush}" />
-                                    </StackPanel>
-                                </Grid>
-                            </Border>
+                            </Button>
                         </Grid>
                     </StackPanel>
                 </Border>
