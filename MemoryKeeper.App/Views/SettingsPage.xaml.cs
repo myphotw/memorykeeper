@@ -151,6 +151,11 @@ public sealed partial class SettingsPage : Page
             return;
         }
 
+        if (tag == "photo-group")
+        {
+            return;
+        }
+
         tag = tag switch
         {
             "photo" => "photo-management",
@@ -165,7 +170,7 @@ public sealed partial class SettingsPage : Page
     {
         var item = ViewModel.SelectedSettingsSection switch
         {
-            SettingsSection.PhotoManagement => PhotoMenuItem,
+            SettingsSection.PhotoManagement => PhotoRegistrationMenuItem,
             SettingsSection.PendingMemories => PendingMemoriesMenuItem,
             SettingsSection.Places => PlacesMenuItem,
             SettingsSection.Tags => TagsMenuItem,
@@ -175,7 +180,7 @@ public sealed partial class SettingsPage : Page
             SettingsSection.PreviewCache => PreviewCacheMenuItem,
             SettingsSection.Reset => ResetMenuItem,
             SettingsSection.AppInfo => AppInfoMenuItem,
-            _ => PhotoMenuItem,
+            _ => PhotoRegistrationMenuItem,
         };
 
         _syncingNavigation = true;

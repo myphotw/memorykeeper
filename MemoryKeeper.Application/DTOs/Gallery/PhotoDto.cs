@@ -54,7 +54,7 @@ public sealed class PhotoDto
     public double? PlaceMatchDistanceM { get; init; }
 
     [JsonPropertyName("place_revision")]
-    public int PlaceRevision { get; init; }
+    public int? PlaceRevision { get; init; }
 
     [JsonPropertyName("gps_lat")]
     public double? GpsLatitude { get; init; }

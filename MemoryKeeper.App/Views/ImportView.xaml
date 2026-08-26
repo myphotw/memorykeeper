@@ -19,12 +19,13 @@
     <UserControl.Resources>
 
         <converters:BoolNegationConverter x:Key="BoolNegationConverter" />
+        <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
 
     </UserControl.Resources>
 
 
 
-    <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" RowSpacing="16">
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,*" RowSpacing="16">
         <StackPanel x:Name="StoragePathPanel" Spacing="4">
 
             <TextBlock Text="MemoryKeeper 저장소" FontWeight="SemiBold" />
@@ -90,27 +91,59 @@
 
 
 
-        <Grid Grid.Row="3" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="10">
+        <Border
+            Grid.Row="3"
+            Padding="14"
+            CornerRadius="10"
+            Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}"
+            Visibility="{Binding HasExistingSession, Converter={StaticResource BoolToVisibilityConverter}}">
+            <StackPanel Spacing="6">
+                <TextBlock Text="진행 중인 기존 사진 등록 작업" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding ProgressSummary}" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding LastStatusCheckedText}" FontSize="12" Opacity="0.7" />
+                <TextBlock
+                    Text="NAS 접수는 완료됐지만 이 PC의 진행 정보 저장이 지연되고 있습니다."
+                    Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                    TextWrapping="Wrap"
+                    Visibility="{Binding HasPersistenceWarning, Converter={StaticResource BoolToVisibilityConverter}}" />
+            </StackPanel>
+        </Border>
+
+        <Grid Grid.Row="4" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="10">
 
             <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Text="등록 진행" FontWeight="SemiBold" />
+                <TextBlock Text="사진 등록 진행" FontWeight="SemiBold" />
                 <TextBlock Grid.Column="1" Text="{Binding ProgressCountText, Mode=OneWay}" FontWeight="SemiBold" />
             </Grid>
 
-            <ProgressBar
-                Grid.Row="1"
-                Minimum="0"
-                Maximum="1"
-                Value="{Binding ProgressValue, Mode=OneWay}"
-                Height="8" />
+            <TextBlock Grid.Row="1" Text="PC → NAS 전송" FontWeight="SemiBold" />
+            <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                <ProgressBar
+                    Minimum="0"
+                    Maximum="1"
+                    Value="{Binding UploadProgressValue, Mode=OneWay}"
+                    Height="8" />
+                <TextBlock Grid.Column="1" Text="{Binding UploadProgressText}" />
+            </Grid>
+            <TextBlock Grid.Row="3" Text="{Binding UploadCompletionMessage}" TextWrapping="Wrap" Opacity="0.8" />
+
+            <TextBlock Grid.Row="4" Text="NAS 처리/분석" FontWeight="SemiBold" Margin="0,6,0,0" />
+            <Grid Grid.Row="5" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                <ProgressBar
+                    Minimum="0"
+                    Maximum="1"
+                    Value="{Binding AnalysisProgressValue, Mode=OneWay}"
+                    Height="8" />
+                <TextBlock Grid.Column="1" Text="{Binding AnalysisProgressText}" />
+            </Grid>
 
             <TextBlock
-                Grid.Row="2"
+                Grid.Row="6"
                 Text="{Binding CurrentStage, Mode=OneWay}"
                 FontWeight="SemiBold"
                 Opacity="0.85" />
 
-            <Grid Grid.Row="3" ColumnDefinitions="*,*,*" ColumnSpacing="8">
+            <Grid Grid.Row="7" ColumnDefinitions="*,*,*" ColumnSpacing="8">
                 <Border Padding="12,10" CornerRadius="8" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}">
                     <TextBlock Text="{Binding RegisteredCountText, Mode=OneWay}" FontWeight="SemiBold" />
                 </Border>
@@ -122,32 +155,44 @@
                 </Border>
             </Grid>
 
-            <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="16">
-                <TextBlock Text="{Binding UploadProgressText, Mode=OneWay}" Opacity="0.75" />
-                <TextBlock Text="{Binding WaitingCountText, Mode=OneWay}" Opacity="0.75" />
-                <TextBlock Text="{Binding ProcessingCountText, Mode=OneWay}" Opacity="0.75" />
-                <TextBlock Text="{Binding AnalysisProgressText, Mode=OneWay}" Opacity="0.75" />
-            </StackPanel>
-
-            <StackPanel Grid.Row="5" Spacing="2">
-                <TextBlock Text="현재 파일" Opacity="0.65" FontSize="12" />
-                <TextBlock
-                    Text="{Binding CurrentFileName, Mode=OneWay}"
-                    Opacity="0.75"
-                    TextWrapping="Wrap" />
+            <StackPanel Grid.Row="8" Spacing="6">
+                <StackPanel Orientation="Horizontal" Spacing="16">
+                    <TextBlock Text="{Binding WaitingCountText, Mode=OneWay}" Opacity="0.75" />
+                    <TextBlock Text="{Binding ProcessingCountText, Mode=OneWay}" Opacity="0.75" />
+                </StackPanel>
+                <TextBlock Text="{Binding CurrentFileName, Mode=OneWay}" Opacity="0.75" TextWrapping="Wrap" />
+                <Border
+                    Padding="12"
+                    CornerRadius="8"
+                    Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}"
+                    Visibility="{Binding HasFailureDetails, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="최근 실패 상세" FontWeight="SemiBold" />
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Text="파일:" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding FailureFileName}" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Text="분류:" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding FailureCategory}" />
+                        </StackPanel>
+                        <TextBlock Text="{Binding FailureMessage}" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
             </StackPanel>
 
             <Button
-                Grid.Row="6"
+                Grid.Row="9"
                 Content="실패 항목 다시 시도"
                 Command="{Binding RetryImportCommand}"
                 IsEnabled="{Binding IsRetryReady, Mode=OneWay}"
                 HorizontalAlignment="Left"
                 Padding="10,4" />
+
         </Grid>
 
         <TextBlock
-            Grid.Row="4"
+            Grid.Row="5"
             Text="{Binding StatusMessage, Mode=OneWay}"
             TextWrapping="Wrap"
             VerticalAlignment="Top"

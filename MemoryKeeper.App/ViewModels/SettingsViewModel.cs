@@ -584,7 +584,12 @@ public partial class SettingsViewModel : ObservableObject
 
         if (preview.ResetBlocked)
         {
-            ShowError("현재 사진 등록 또는 분석이 진행 중입니다. 완료된 뒤 다시 시도해 주세요.");
+            ShowError(
+                $"진행 중인 사진 등록 작업 {preview.ActiveUploadJobCount:N0}건" +
+                (preview.ProcessingVisionJobCount > 0
+                    ? $"과 사진 분석 작업 {preview.ProcessingVisionJobCount:N0}건"
+                    : string.Empty) +
+                "이 있어 초기화할 수 없습니다. 작업이 완료된 뒤 다시 시도해 주세요.");
             return;
         }
 

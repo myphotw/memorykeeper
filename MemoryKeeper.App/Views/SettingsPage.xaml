@@ -83,11 +83,12 @@
                 AlwaysShowHeader="False"
                 SelectionChanged="SettingsNavigation_OnSelectionChanged">
                 <NavigationView.MenuItems>
-                    <NavigationViewItem x:Name="PhotoMenuItem" Content="사진 관리" Tag="photo-management" IsExpanded="True" IsSelected="True">
+                    <NavigationViewItem x:Name="PhotoMenuItem" Content="사진 관리" Tag="photo-group" IsExpanded="True" SelectsOnInvoked="False">
                         <NavigationViewItem.Icon>
                             <FontIcon Glyph="&#xE91B;" />
                         </NavigationViewItem.Icon>
                         <NavigationViewItem.MenuItems>
+                            <NavigationViewItem x:Name="PhotoRegistrationMenuItem" Content="사진 등록" Tag="photo-management" IsSelected="True" />
                             <NavigationViewItem x:Name="PendingMemoriesMenuItem" Content="미완성 추억" Tag="pending-memories" />
                             <NavigationViewItem x:Name="PlacesMenuItem" Content="장소 관리" Tag="places" />
                             <NavigationViewItem x:Name="TagsMenuItem" Content="태그 관리" Tag="tag-management" />

@@ -79,3 +79,5 @@ Release/
 Debug/
 
 .vs/
+
+artifacts/

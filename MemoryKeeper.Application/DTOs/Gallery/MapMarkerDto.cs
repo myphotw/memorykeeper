@@ -36,7 +36,7 @@ public sealed class MapMarkerDto
     public double? PlaceMatchDistanceM { get; init; }
 
     [JsonPropertyName("place_revision")]
-    public int PlaceRevision { get; init; }
+    public int? PlaceRevision { get; init; }
 
     [JsonPropertyName("country")]
     public string? Country { get; init; }

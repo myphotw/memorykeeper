@@ -19,4 +19,6 @@ public sealed class MediaImportItemResult
     public string? RelativePath { get; init; }
 
     public string? ErrorMessage { get; init; }
+
+    public string? ErrorCategory { get; init; }
 }

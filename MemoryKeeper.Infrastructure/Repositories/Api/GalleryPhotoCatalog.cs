@@ -250,7 +250,7 @@ public sealed class GalleryPhotoCatalog : IGalleryPhotoCatalog
             GeocodedPlaceName = geocodedPlaceName,
             PlaceMatchSource = detail.PlaceMatchSource ?? GetString(metadata, "place_match_source"),
             PlaceMatchDistanceM = detail.PlaceMatchDistanceM ?? GetDouble(metadata, "place_match_distance_m"),
-            PlaceRevision = detail.PlaceRevision > 0 ? detail.PlaceRevision : GetInt(metadata, "place_revision") ?? 0,
+            PlaceRevision = detail.PlaceRevision is > 0 ? detail.PlaceRevision.Value : GetInt(metadata, "place_revision") ?? 0,
         };
     }
 

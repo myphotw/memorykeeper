@@ -17,6 +17,10 @@ public sealed class ImportFileState
 
     public string? ErrorMessage { get; set; }
 
+    public string? ErrorCategory { get; set; }
+
+    public bool HasPersistenceWarning { get; set; }
+
     public DateTimeOffset? UploadedAt { get; set; }
 
     public DateTimeOffset? CompletedAt { get; set; }

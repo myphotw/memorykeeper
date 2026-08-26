@@ -89,6 +89,21 @@ public sealed class GalleryApiRepositoryUnitTests
     }
 
     [Fact]
+    public async Task Gallery_Search_Allows_Null_PlaceRevision_From_Backend_Contract()
+    {
+        var handler = new StubHandler();
+        handler.Map["GET /api/common/gallery?page=1&page_size=20&sort=capture_datetime_desc&service_name=MemoryKeeper"] =
+            """{"items":[{"file_id":"11111111-1111-1111-1111-111111111111","filename":"no-place.jpg","place_revision":null,"service_name":"MemoryKeeper"}],"page":1,"page_size":20,"total":1,"sort":"capture_datetime_desc"}""";
+        using var provider = BuildProvider(handler);
+        var repo = provider.GetRequiredService<IGalleryApiRepository>();
+
+        var result = await repo.GetPhotosAsync();
+
+        Assert.Single(result.Items);
+        Assert.Null(result.Items[0].PlaceRevision);
+    }
+
+    [Fact]
     public async Task Gallery_Backend_Error_Is_Classified()
     {
         var handler = new StubHandler();

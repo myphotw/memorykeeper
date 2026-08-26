@@ -48,7 +48,7 @@ public sealed class SettingsPageLayoutTests
 
         foreach (var child in new[]
                  {
-                     "미완성 추억", "장소 관리", "태그 관리", "집 위치",
+                     "사진 등록", "미완성 추억", "장소 관리", "태그 관리", "집 위치",
                      "사진 내보내기", "미리보기 캐시", "처음부터 다시 구성",
                  })
         {
@@ -61,12 +61,13 @@ public sealed class SettingsPageLayoutTests
     }
 
     [Fact]
-    public void Photo_Management_Parent_Is_Default_And_Maps_To_One_Detail()
+    public void Photo_Management_Parent_Only_Expands_And_Registration_Is_Default()
     {
         var xaml = LoadSource("MemoryKeeper.App", "Views", "SettingsPage.xaml");
         var viewModel = LoadSource("MemoryKeeper.App", "ViewModels", "SettingsViewModel.cs");
 
-        Assert.Contains("x:Name=\"PhotoMenuItem\" Content=\"사진 관리\" Tag=\"photo-management\" IsExpanded=\"True\" IsSelected=\"True\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"PhotoMenuItem\" Content=\"사진 관리\" Tag=\"photo-group\" IsExpanded=\"True\" SelectsOnInvoked=\"False\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"PhotoRegistrationMenuItem\" Content=\"사진 등록\" Tag=\"photo-management\" IsSelected=\"True\"", xaml, StringComparison.Ordinal);
         Assert.Contains("private SettingsSection selectedSettingsSection = SettingsSection.PhotoManagement", viewModel, StringComparison.Ordinal);
         Assert.Contains("IsPhotoManagementDetailVisible => SelectedSettingsSection == SettingsSection.PhotoManagement", viewModel, StringComparison.Ordinal);
         Assert.Contains("IsResetDetailVisible => SelectedSettingsSection == SettingsSection.Reset", viewModel, StringComparison.Ordinal);
@@ -134,7 +135,8 @@ public sealed class SettingsPageLayoutTests
         Assert.Contains("Command=\"{Binding ImportCommand}\"", import, StringComparison.Ordinal);
         Assert.Contains("Command=\"{Binding CancelImportCommand}\"", import, StringComparison.Ordinal);
         Assert.Contains("Command=\"{Binding RetryImportCommand}\"", import, StringComparison.Ordinal);
-        Assert.Contains("Value=\"{Binding ProgressValue, Mode=OneWay}\"", import, StringComparison.Ordinal);
+        Assert.Contains("Value=\"{Binding UploadProgressValue, Mode=OneWay}\"", import, StringComparison.Ordinal);
+        Assert.Contains("Value=\"{Binding AnalysisProgressValue, Mode=OneWay}\"", import, StringComparison.Ordinal);
         Assert.Contains("Text=\"{Binding CurrentFileName, Mode=OneWay}\"", import, StringComparison.Ordinal);
     }
 

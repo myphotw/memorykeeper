@@ -74,6 +74,9 @@ public partial class ImportViewModel : ObservableObject
     private int uploadFinishedCount;
 
     [ObservableProperty]
+    private int uploadedCount;
+
+    [ObservableProperty]
     private int analysisFinishedCount;
 
     [ObservableProperty]
@@ -107,6 +110,27 @@ public partial class ImportViewModel : ObservableObject
     private string? failureMessage;
 
     [ObservableProperty]
+    private string failureFileName = string.Empty;
+
+    [ObservableProperty]
+    private string failureCategory = string.Empty;
+
+    [ObservableProperty]
+    private bool hasFailureDetails;
+
+    [ObservableProperty]
+    private bool hasExistingSession;
+
+    [ObservableProperty]
+    private bool isStalled;
+
+    [ObservableProperty]
+    private bool hasPersistenceWarning;
+
+    [ObservableProperty]
+    private string lastStatusCheckedText = string.Empty;
+
+    [ObservableProperty]
     private string progressSummary = string.Empty;
 
     /// <summary>Retry prepared after FAILED.</summary>
@@ -136,6 +160,11 @@ public partial class ImportViewModel : ObservableObject
 
     public string AnalysisProgressText =>
         TotalCount <= 0 ? string.Empty : $"분석 {AnalysisFinishedCount} / {TotalCount}";
+
+    public string UploadCompletionMessage =>
+        TotalCount > 0 && UploadFinishedCount >= TotalCount
+            ? "PC 전송 완료 — 앱/PC를 종료해도 NAS 처리는 계속됩니다."
+            : "PC에서 NAS로 사진을 전송하고 있습니다.";
 
     public string BackendProgressText =>
         string.IsNullOrWhiteSpace(BackendStatus)
@@ -175,11 +204,13 @@ public partial class ImportViewModel : ObservableObject
 
             MemoryKeeperStoragePath = storage?.PhotoRoot ?? string.Empty;
 
-            var resumed = await mediaImportService.ResumePersistedJobsAsync();
+            var resumeProgress = new Progress<ImportProgressDto>(ApplyProgress);
+            var resumed = await mediaImportService.ResumePersistedJobsAsync(resumeProgress);
+            HasExistingSession = resumed > 0;
             StatusMessage = storage is null
                 ? "MemoryKeeper 저장소가 설정되지 않았습니다. 설정에서 폴더를 지정하세요."
                 : resumed > 0
-                    ? $"사진 등록 준비 완료. 이전 세션 Job {resumed}건 상태를 갱신했습니다."
+                    ? $"기존 사진 등록 작업 {resumed:N0}건을 발견했습니다. NAS 상태를 확인하고 있습니다."
                     : "사진 등록 준비가 완료되었습니다.";
         }, markBusy: false);
     }
@@ -273,7 +304,7 @@ public partial class ImportViewModel : ObservableObject
     private void CancelImport()
     {
         _importCancellation?.Cancel();
-        StatusMessage = "사진 등록 취소가 요청되었습니다. 이미 접수된 Job은 서버에서 계속 처리됩니다.";
+        StatusMessage = $"추가 파일 전송을 중단합니다. 이미 NAS에 접수된 {UploadedCount:N0}건은 서버에서 계속 처리됩니다.";
     }
 
     private void ApplyImportResult(MediaImportResult result)
@@ -287,6 +318,9 @@ public partial class ImportViewModel : ObservableObject
                 item.Status == MediaStatus.Failed && !string.IsNullOrWhiteSpace(item.ErrorMessage));
             FailureMessage = failed?.ErrorMessage
                 ?? $"사진 등록 실패 {result.FailedCount}건.";
+            FailureFileName = failed?.FileName ?? string.Empty;
+            FailureCategory = failed?.ErrorCategory ?? "확인 필요";
+            HasFailureDetails = true;
             LastJobId = failed?.ContentHash;
             IsRetryReady = true;
             CurrentStage = UploadJobStatusDto.Failed;
@@ -306,6 +340,7 @@ public partial class ImportViewModel : ObservableObject
 
         IsRetryReady = false;
         FailureMessage = null;
+        HasFailureDetails = false;
         CurrentStage = UploadJobStatusDto.Completed;
         BackendStatus = UploadJobStatusDto.Completed;
         StatusMessage =
@@ -353,12 +388,19 @@ public partial class ImportViewModel : ObservableObject
         CompletedCount = progress.CompletedCount;
         CancelledCount = progress.CancelledCount;
         UploadFinishedCount = progress.UploadFinishedCount;
+        UploadedCount = progress.UploadedCount;
         AnalysisFinishedCount = progress.AnalysisFinishedCount;
         CurrentFileName = progress.CurrentFileName ?? string.Empty;
         BackendStatus = progress.BackendStatus ?? string.Empty;
         BackendProgress = progress.BackendProgress ?? 0;
         CurrentPlugin = progress.CurrentPlugin ?? string.Empty;
         ProgressSummary = progress.StatusSummary ?? string.Empty;
+        HasExistingSession = progress.IsResumedSession;
+        IsStalled = progress.IsStalled;
+        HasPersistenceWarning = progress.HasPersistenceWarning;
+        LastStatusCheckedText = progress.LastStatusCheckedAt is null
+            ? string.Empty
+            : $"마지막 확인 {progress.LastStatusCheckedAt.Value.LocalDateTime:yyyy-MM-dd HH:mm:ss}";
         UploadProgressValue = progress.UploadProgressRatio;
         AnalysisProgressValue = progress.AnalysisProgressRatio;
         if (!string.IsNullOrWhiteSpace(progress.JobId))
@@ -366,9 +408,12 @@ public partial class ImportViewModel : ObservableObject
             LastJobId = progress.JobId;
         }
 
-        if (progress.IsFailed)
+        if (!string.IsNullOrWhiteSpace(progress.LastError))
         {
             FailureMessage = progress.LastError;
+            FailureFileName = progress.LastFailureFileName ?? CurrentFileName;
+            FailureCategory = progress.LastErrorCategory ?? "확인 필요";
+            HasFailureDetails = true;
             IsRetryReady = true;
         }
 
@@ -400,6 +445,7 @@ public partial class ImportViewModel : ObservableObject
         CompletedCount = 0;
         CancelledCount = 0;
         UploadFinishedCount = 0;
+        UploadedCount = 0;
         AnalysisFinishedCount = 0;
         CurrentFileName = string.Empty;
         CurrentStage = string.Empty;
@@ -412,6 +458,12 @@ public partial class ImportViewModel : ObservableObject
         CurrentPlugin = string.Empty;
         LastJobId = null;
         FailureMessage = null;
+        FailureFileName = string.Empty;
+        FailureCategory = string.Empty;
+        HasFailureDetails = false;
+        IsStalled = false;
+        HasPersistenceWarning = false;
+        LastStatusCheckedText = string.Empty;
         IsRetryReady = false;
         NotifyProgressTexts();
     }
@@ -429,6 +481,7 @@ public partial class ImportViewModel : ObservableObject
         OnPropertyChanged(nameof(ProgressCountText));
         OnPropertyChanged(nameof(UploadProgressText));
         OnPropertyChanged(nameof(AnalysisProgressText));
+        OnPropertyChanged(nameof(UploadCompletionMessage));
         OnPropertyChanged(nameof(BackendProgressText));
         RetryImportCommand.NotifyCanExecuteChanged();
     }
@@ -455,7 +508,7 @@ public partial class ImportViewModel : ObservableObject
         }
         catch (OperationCanceledException)
         {
-            StatusMessage = "사진 등록이 취소되었습니다. 이미 접수된 Job은 서버에서 계속 처리됩니다.";
+            StatusMessage = $"추가 파일 전송을 중단했습니다. 이미 NAS에 접수된 {UploadedCount:N0}건은 서버에서 계속 처리됩니다.";
         }
         catch (Exception ex)
         {

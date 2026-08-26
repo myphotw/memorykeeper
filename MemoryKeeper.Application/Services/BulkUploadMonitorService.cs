@@ -39,6 +39,7 @@ public sealed class BulkUploadMonitorService
         ConcurrentDictionary<Guid, byte> activeJobIds,
         Func<bool> isProducerComplete,
         Action<UploadJobStatusDto> onStatus,
+        Action<Guid, Exception>? onError = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(activeJobIds);
@@ -88,6 +89,11 @@ public sealed class BulkUploadMonitorService
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "Bulk monitor poll failed. JobId={JobId}", jobId);
+                    onError?.Invoke(jobId, ex);
+                    if (IsNotFound(ex))
+                    {
+                        activeJobIds.TryRemove(jobId, out _);
+                    }
                 }
                 finally
                 {
@@ -127,7 +133,7 @@ public sealed class BulkUploadMonitorService
                     last = status;
                     progress?.Report(status);
                 },
-                cancellationToken)
+                cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
         return last ?? throw new InvalidOperationException($"No status for job {jobId}.");
@@ -137,4 +143,10 @@ public sealed class BulkUploadMonitorService
         status.IsCompleted
         && !string.IsNullOrWhiteSpace(status.ProcessingLog)
         && status.ProcessingLog.Contains("DUPLICATE_FOUND", StringComparison.OrdinalIgnoreCase);
+
+    public static bool IsNotFound(Exception exception)
+    {
+        var statusCode = exception.GetType().GetProperty("StatusCode")?.GetValue(exception);
+        return statusCode is not null && Convert.ToInt32(statusCode) == 404;
+    }
 }

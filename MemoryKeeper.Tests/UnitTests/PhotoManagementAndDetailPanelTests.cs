@@ -32,7 +32,7 @@ public sealed class PhotoManagementAndDetailPanelTests
             Assert.Contains(command, import, StringComparison.Ordinal);
         }
 
-        foreach (var state in new[] { "ProgressValue", "DuplicateCountText", "FailedCountText", "CurrentFileName" })
+        foreach (var state in new[] { "UploadProgressValue", "AnalysisProgressValue", "DuplicateCountText", "FailedCountText", "CurrentFileName" })
         {
             Assert.Contains(state, import, StringComparison.Ordinal);
         }

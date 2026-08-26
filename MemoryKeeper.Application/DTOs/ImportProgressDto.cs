@@ -53,6 +53,18 @@ public sealed class ImportProgressDto
 
     public string? LastError { get; init; }
 
+    public string? LastFailureFileName { get; init; }
+
+    public string? LastErrorCategory { get; init; }
+
+    public bool IsResumedSession { get; init; }
+
+    public bool IsStalled { get; init; }
+
+    public bool HasPersistenceWarning { get; init; }
+
+    public DateTimeOffset? LastStatusCheckedAt { get; init; }
+
     public bool IsFailed { get; init; }
 
     public string? StatusSummary { get; init; }

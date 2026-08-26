@@ -89,8 +89,8 @@ public static class GalleryBackendMapper
                 GetString(metadata, "place_canonical_name")),
             PlaceMatchSource = detail.PlaceMatchSource ?? GetString(metadata, "place_match_source"),
             PlaceMatchDistanceM = detail.PlaceMatchDistanceM ?? GetDouble(metadata, "place_match_distance_m"),
-            PlaceRevision = detail.PlaceRevision > 0
-                ? detail.PlaceRevision
+            PlaceRevision = detail.PlaceRevision is > 0
+                ? detail.PlaceRevision.Value
                 : GetInt(metadata, "place_revision") ?? 0,
             MetadataRevision = detail.MetadataRevision,
             HasGps = lat is not null && lon is not null,

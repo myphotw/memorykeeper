@@ -64,7 +64,7 @@ public sealed class PhotoDetailDto
     public double? PlaceMatchDistanceM { get; init; }
 
     [JsonPropertyName("place_revision")]
-    public int PlaceRevision { get; init; }
+    public int? PlaceRevision { get; init; }
 
     [JsonPropertyName("preview_url")]
     public string? PreviewUrl { get; init; }
