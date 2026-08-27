@@ -9,6 +9,8 @@ public sealed class ImportFileState
 
     public Guid? JobId { get; set; }
 
+    public string? ContentHash { get; set; }
+
     public ImportFileStatus Status { get; set; } = ImportFileStatus.Pending;
 
     public int Progress { get; set; }

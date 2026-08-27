@@ -12,11 +12,14 @@ public static class DependencyInjection
         services.AddSingleton<ICatalogInvalidation, CatalogInvalidation>();
         services.AddSingleton<BackendChangeMonitorService>();
         services.AddSingleton<IImportJobSessionStore, ImportJobSessionStore>();
+        services.AddSingleton<IImportFileIdentityStore, ImportFileIdentityStore>();
         services.AddTransient<MediaService>();
         services.AddTransient<GalleryHierarchyService>();
         services.AddTransient<PhotoExportService>();
         services.AddTransient<RecentSearchQueryService>();
         services.AddTransient<MediaImportService>();
+        services.AddTransient<IImportBackendIdentityProvider, ImportBackendIdentityProvider>();
+        services.AddTransient<IncrementalImportPreflightService>();
         services.AddTransient<UploadMonitorService>();
         services.AddTransient<BulkUploadMonitorService>();
         services.AddTransient<StorageService>();

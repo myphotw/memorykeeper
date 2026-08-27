@@ -44,6 +44,18 @@ public sealed class UploadJobStatusDto
     [JsonPropertyName("updated_at")]
     public DateTimeOffset? UpdatedAt { get; init; }
 
+    [JsonPropertyName("service_name")]
+    public string? ServiceName { get; init; }
+
+    [JsonPropertyName("client_file_id")]
+    public string? ClientFileId { get; init; }
+
+    [JsonPropertyName("backend_file_id")]
+    public string? BackendFileId { get; init; }
+
+    [JsonPropertyName("common_file_id")]
+    public int? CommonFileId { get; init; }
+
     public bool IsTerminal =>
         string.Equals(Status, Completed, StringComparison.OrdinalIgnoreCase)
         || string.Equals(Status, Failed, StringComparison.OrdinalIgnoreCase);

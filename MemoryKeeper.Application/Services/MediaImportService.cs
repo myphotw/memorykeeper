@@ -95,6 +95,40 @@ public sealed class MediaImportService
             .ConfigureAwait(false);
     }
 
+    /// <summary>Uploads only the preflight items classified as new.</summary>
+    public async Task<MediaImportResult> ImportPreparedAsync(
+        MediaImportRequest request,
+        IncrementalImportPreflightResult preflight,
+        IProgress<ImportProgressDto>? progress,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(preflight);
+        if (!string.Equals(
+                Path.GetFullPath(request.SourceFolderPath),
+                Path.GetFullPath(preflight.SourceFolderPath),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("사진 폴더가 변경되어 등록 사전 검사가 다시 필요합니다.");
+        }
+
+        var storage = await RequireStorageAsync(request.StorageId, cancellationToken).ConfigureAwait(false);
+        var states = preflight.UploadTargets.Select(item => new ImportFileState
+        {
+            LocalFilePath = item.FilePath,
+            FileName = item.FileName,
+            ContentHash = item.ContentHash,
+            Status = ImportFileStatus.Pending,
+        }).ToList();
+
+        return await RunParallelImportAsync(
+            states,
+            storage,
+            request.SourceFolderPath,
+            progress,
+            cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary>
     /// Retries failed items only. Existing job_ids are re-checked before any re-upload.
     /// </summary>
@@ -118,9 +152,13 @@ public sealed class MediaImportService
                 FileName = item.FileName,
                 Status = ImportFileStatus.Pending,
                 IncomingPath = item.RelativePath,
+                ContentHash = ImportBackendIdentityProvider.IsSha256(item.ContentHash)
+                    ? item.ContentHash
+                    : null,
             };
 
-            if (Guid.TryParse(item.ContentHash, out var jobId))
+            var savedJobId = item.JobId ?? item.ContentHash;
+            if (Guid.TryParse(savedJobId, out var jobId))
             {
                 try
                 {
@@ -211,6 +249,7 @@ public sealed class MediaImportService
             LocalFilePath = pair.Value.LocalFilePath,
             FileName = pair.Value.FileName,
             UploadedAt = pair.Value.UploadedAt,
+            ContentHash = pair.Value.ContentHash,
             Status = ParsePersistedStatus(pair.Value.Status),
         }).ToList();
 
@@ -510,9 +549,16 @@ public sealed class MediaImportService
             state.Status = ImportFileStatus.Uploading;
             ReportFromStates(progress, allStates, state.FileName, isCompleted: false);
 
-            var upload = await _uploadApiRepository
-                .UploadAsync(state.LocalFilePath, cancellationToken)
-                .ConfigureAwait(false);
+            var upload = ImportBackendIdentityProvider.IsSha256(state.ContentHash)
+                ? await _uploadApiRepository.UploadWithIdentityAsync(
+                        state.LocalFilePath,
+                        state.ContentHash!,
+                        state.ContentHash!,
+                        cancellationToken)
+                    .ConfigureAwait(false)
+                : await _uploadApiRepository
+                    .UploadAsync(state.LocalFilePath, cancellationToken)
+                    .ConfigureAwait(false);
             var accepted = UploadStatusDto.FromResponse(upload);
 
             if (!Guid.TryParse(accepted.JobId, out var jobId))
@@ -713,6 +759,7 @@ public sealed class MediaImportService
                 LocalFilePath = s.LocalFilePath,
                 Status = s.Status.ToString(),
                 UploadedAt = s.UploadedAt,
+                ContentHash = s.ContentHash,
             })
             .ToList();
 
@@ -767,7 +814,8 @@ public sealed class MediaImportService
             FileName = state.FileName,
             MediaType = MediaType.Photo,
             Status = mediaStatus,
-            ContentHash = state.JobId?.ToString("D"),
+            ContentHash = state.ContentHash ?? state.JobId?.ToString("D"),
+            JobId = state.JobId?.ToString("D"),
             RelativePath = state.IncomingPath,
             ErrorMessage = state.ErrorMessage,
             ErrorCategory = state.ErrorCategory,

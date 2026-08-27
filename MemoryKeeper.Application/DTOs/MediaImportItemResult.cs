@@ -16,6 +16,8 @@ public sealed class MediaImportItemResult
 
     public string? ContentHash { get; init; }
 
+    public string? JobId { get; init; }
+
     public string? RelativePath { get; init; }
 
     public string? ErrorMessage { get; init; }

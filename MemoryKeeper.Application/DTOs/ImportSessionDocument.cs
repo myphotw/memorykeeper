@@ -19,4 +19,6 @@ public sealed class ImportSessionJobDto
     public string Status { get; set; } = string.Empty;
 
     public DateTimeOffset? UploadedAt { get; set; }
+
+    public string? ContentHash { get; set; }
 }

@@ -24,6 +24,7 @@ public partial class ImportViewModel : ObservableObject
     private CancellationTokenSource? _importCancellation;
     private IReadOnlyList<MediaImportItemResult> _lastItems = [];
     private Guid? _lastStorageId;
+    private IncrementalImportPreflightResult? _preflight;
 
     [ObservableProperty]
     private string memoryKeeperStoragePath = string.Empty;
@@ -131,6 +132,42 @@ public partial class ImportViewModel : ObservableObject
     private string lastStatusCheckedText = string.Empty;
 
     [ObservableProperty]
+    private bool isPreflightRunning;
+
+    [ObservableProperty]
+    private bool hasPreflightResult;
+
+    [ObservableProperty]
+    private bool hasPreflightActivity;
+
+    [ObservableProperty]
+    private int preflightTotalCount;
+
+    [ObservableProperty]
+    private int preflightExistingCount;
+
+    [ObservableProperty]
+    private int preflightInProgressCount;
+
+    [ObservableProperty]
+    private int preflightDuplicateCount;
+
+    [ObservableProperty]
+    private int preflightNewCount;
+
+    [ObservableProperty]
+    private int preflightUncertainCount;
+
+    [ObservableProperty]
+    private string preflightProgressText = string.Empty;
+
+    [ObservableProperty]
+    private string preflightSummary = string.Empty;
+
+    [ObservableProperty]
+    private string primaryActionText = "사진 확인";
+
+    [ObservableProperty]
     private string progressSummary = string.Empty;
 
     /// <summary>Retry prepared after FAILED.</summary>
@@ -223,6 +260,7 @@ public partial class ImportViewModel : ObservableObject
         {
             SourceFolderPath = path;
             StatusMessage = $"등록 폴더: {path}";
+            await ImportCommand.ExecuteAsync(null);
         }
     }
 
@@ -232,6 +270,23 @@ public partial class ImportViewModel : ObservableObject
         if (string.IsNullOrWhiteSpace(SourceFolderPath))
         {
             StatusMessage = "등록할 폴더를 선택하세요.";
+            return;
+        }
+
+        if (_preflight is null || !HasPreflightResult)
+        {
+            await PreparePreflightAsync();
+            return;
+        }
+
+        if (_preflight.NewCount == 0)
+        {
+            StatusMessage = _preflight.UncertainCount > 0
+                ? $"NAS 상태를 확인하지 못한 사진 {_preflight.UncertainCount:N0}장은 안전을 위해 전송하지 않습니다. 다시 확인해 주세요."
+                : $"새로 등록할 사진이 없습니다. {_preflight.ExistingCount + _preflight.InProgressCount + _preflight.DuplicateCount:N0}장의 사진이 이미 등록되었거나 NAS에서 처리 중입니다.";
+            _preflight = null;
+            HasPreflightResult = false;
+            await PreparePreflightAsync();
             return;
         }
 
@@ -256,17 +311,77 @@ public partial class ImportViewModel : ObservableObject
             var progress = new Progress<ImportProgressDto>(ApplyProgress);
 
             StatusMessage = "Backend Upload 실행 중 (병렬 전송 + 분석 모니터)...";
-            var result = await mediaImportService.ImportAsync(
+            var result = await mediaImportService.ImportPreparedAsync(
                 new MediaImportRequest
                 {
                     SourceFolderPath = SourceFolderPath,
                     StorageId = storage.Id
                 },
+                _preflight,
                 progress,
                 _importCancellation.Token);
 
             ApplyImportResult(result);
+            _preflight = null;
+            HasPreflightResult = false;
+            PrimaryActionText = "사진 다시 확인";
         });
+    }
+
+    private async Task PreparePreflightAsync(bool forceRecheck = false)
+    {
+        await RunBusyAsync(async () =>
+        {
+            IsPreflightRunning = true;
+            HasPreflightActivity = true;
+            HasPreflightResult = false;
+            PrimaryActionText = "사진 확인 중...";
+            StatusMessage = "사진 폴더와 기존 NAS 등록 상태를 확인하고 있습니다.";
+            _importCancellation = new CancellationTokenSource();
+            await using var scope = _scopeFactory.CreateAsyncScope();
+            var service = scope.ServiceProvider.GetRequiredService<IncrementalImportPreflightService>();
+            var progress = new Progress<ImportPreflightProgressDto>(ApplyPreflightProgress);
+            var result = await service.InspectAsync(
+                SourceFolderPath,
+                progress,
+                forceRecheck,
+                _importCancellation.Token);
+            ApplyPreflight(result);
+        });
+    }
+
+    private void ApplyPreflight(IncrementalImportPreflightResult result)
+    {
+        _preflight = result;
+        IsPreflightRunning = false;
+        HasPreflightResult = true;
+        HasPreflightActivity = true;
+        PreflightTotalCount = result.TotalCount;
+        PreflightExistingCount = result.ExistingCount;
+        PreflightInProgressCount = result.InProgressCount;
+        PreflightDuplicateCount = result.DuplicateCount;
+        PreflightNewCount = result.NewCount;
+        PreflightUncertainCount = result.UncertainCount;
+        PreflightProgressText = $"{result.TotalCount:N0} / {result.TotalCount:N0}";
+        PreflightSummary =
+            $"전체 {result.TotalCount:N0} · 기존 {result.ExistingCount:N0} · NAS 처리 중 {result.InProgressCount:N0} · " +
+            $"중복 {result.DuplicateCount:N0} · 신규/미접수 {result.NewCount:N0}" +
+            (result.UncertainCount > 0 ? $" · 미확정 {result.UncertainCount:N0}" : string.Empty);
+        PrimaryActionText = result.NewCount > 0 ? $"{result.NewCount:N0}장 등록" : "다시 확인";
+        StatusMessage = result.NewCount > 0
+            ? $"사진 확인 완료. 새로 등록할 사진은 {result.NewCount:N0}장입니다."
+            : result.UncertainCount > 0
+                ? $"사진 확인이 완료되지 않았습니다. 미확정 {result.UncertainCount:N0}장은 전송하지 않습니다."
+                : $"새로 등록할 사진이 없습니다. {result.TotalCount:N0}장이 이미 등록되었거나 NAS에서 처리 중입니다.";
+    }
+
+    private void ApplyPreflightProgress(ImportPreflightProgressDto progress)
+    {
+        HasPreflightActivity = true;
+        PreflightTotalCount = progress.TotalCount;
+        PreflightProgressText = progress.TotalCount <= 0
+            ? progress.Stage
+            : $"{progress.Stage} {progress.ProcessedCount:N0} / {progress.TotalCount:N0}";
     }
 
     [RelayCommand(CanExecute = nameof(CanRetryImport))]
@@ -304,7 +419,9 @@ public partial class ImportViewModel : ObservableObject
     private void CancelImport()
     {
         _importCancellation?.Cancel();
-        StatusMessage = $"추가 파일 전송을 중단합니다. 이미 NAS에 접수된 {UploadedCount:N0}건은 서버에서 계속 처리됩니다.";
+        StatusMessage = IsPreflightRunning
+            ? "사진 확인을 중단합니다. 원본 사진과 NAS 데이터는 변경되지 않습니다."
+            : $"추가 파일 전송을 중단합니다. 이미 NAS에 접수된 {UploadedCount:N0}건은 서버에서 계속 처리됩니다.";
     }
 
     private void ApplyImportResult(MediaImportResult result)
@@ -468,6 +585,34 @@ public partial class ImportViewModel : ObservableObject
         NotifyProgressTexts();
     }
 
+    partial void OnSourceFolderPathChanged(string value)
+    {
+        if (_preflight is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (string.Equals(
+                    Path.GetFullPath(value),
+                    Path.GetFullPath(_preflight.SourceFolderPath),
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+        }
+        catch
+        {
+            // Invalid/new paths must invalidate the prior preflight.
+        }
+
+        _preflight = null;
+        HasPreflightResult = false;
+        HasPreflightActivity = false;
+        PrimaryActionText = "사진 확인";
+    }
+
     private void NotifyProgressTexts()
     {
         OnPropertyChanged(nameof(TotalCountText));
@@ -508,7 +653,9 @@ public partial class ImportViewModel : ObservableObject
         }
         catch (OperationCanceledException)
         {
-            StatusMessage = $"추가 파일 전송을 중단했습니다. 이미 NAS에 접수된 {UploadedCount:N0}건은 서버에서 계속 처리됩니다.";
+            StatusMessage = IsPreflightRunning
+                ? "사진 확인을 중단했습니다. 원본 사진과 NAS 데이터는 변경되지 않았습니다."
+                : $"추가 파일 전송을 중단했습니다. 이미 NAS에 접수된 {UploadedCount:N0}건은 서버에서 계속 처리됩니다.";
         }
         catch (Exception ex)
         {
@@ -524,6 +671,12 @@ public partial class ImportViewModel : ObservableObject
         }
         finally
         {
+            if (IsPreflightRunning)
+            {
+                IsPreflightRunning = false;
+                PrimaryActionText = "사진 확인";
+            }
+
             if (markBusy)
             {
                 IsBusy = false;

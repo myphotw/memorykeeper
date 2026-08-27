@@ -25,7 +25,7 @@
 
 
 
-    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,*" RowSpacing="16">
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*" RowSpacing="16">
         <StackPanel x:Name="StoragePathPanel" Spacing="4">
 
             <TextBlock Text="MemoryKeeper 저장소" FontWeight="SemiBold" />
@@ -71,7 +71,7 @@
 
             <Button
 
-                Content="사진 등록 시작"
+                Content="{Binding PrimaryActionText}"
 
                 Style="{StaticResource AccentButtonStyle}"
 
@@ -96,6 +96,29 @@
             Padding="14"
             CornerRadius="10"
             Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}"
+            Visibility="{Binding HasPreflightActivity, Converter={StaticResource BoolToVisibilityConverter}}">
+            <StackPanel Spacing="10">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Text="등록 사전 검사" FontWeight="SemiBold" />
+                    <TextBlock Grid.Column="1" Text="{Binding PreflightProgressText}" Opacity="0.75" />
+                </Grid>
+                <TextBlock Text="{Binding PreflightSummary}" TextWrapping="Wrap" />
+                <Grid ColumnDefinitions="*,*,*" RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="8">
+                    <StackPanel><TextBlock Text="전체" Opacity="0.65" /><TextBlock Text="{Binding PreflightTotalCount}" FontWeight="SemiBold" /></StackPanel>
+                    <StackPanel Grid.Column="1"><TextBlock Text="이미 등록" Opacity="0.65" /><TextBlock Text="{Binding PreflightExistingCount}" FontWeight="SemiBold" /></StackPanel>
+                    <StackPanel Grid.Column="2"><TextBlock Text="NAS 처리 중" Opacity="0.65" /><TextBlock Text="{Binding PreflightInProgressCount}" FontWeight="SemiBold" /></StackPanel>
+                    <StackPanel Grid.Row="1"><TextBlock Text="폴더 내 중복" Opacity="0.65" /><TextBlock Text="{Binding PreflightDuplicateCount}" FontWeight="SemiBold" /></StackPanel>
+                    <StackPanel Grid.Row="1" Grid.Column="1"><TextBlock Text="신규/미접수" Opacity="0.65" /><TextBlock Text="{Binding PreflightNewCount}" FontWeight="SemiBold" /></StackPanel>
+                    <StackPanel Grid.Row="1" Grid.Column="2"><TextBlock Text="미확정" Opacity="0.65" /><TextBlock Text="{Binding PreflightUncertainCount}" FontWeight="SemiBold" /></StackPanel>
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <Border
+            Grid.Row="4"
+            Padding="14"
+            CornerRadius="10"
+            Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}"
             Visibility="{Binding HasExistingSession, Converter={StaticResource BoolToVisibilityConverter}}">
             <StackPanel Spacing="6">
                 <TextBlock Text="진행 중인 기존 사진 등록 작업" FontWeight="SemiBold" />
@@ -109,7 +132,7 @@
             </StackPanel>
         </Border>
 
-        <Grid Grid.Row="4" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="10">
+        <Grid Grid.Row="5" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="10">
 
             <Grid ColumnDefinitions="*,Auto">
                 <TextBlock Text="사진 등록 진행" FontWeight="SemiBold" />
@@ -192,7 +215,7 @@
         </Grid>
 
         <TextBlock
-            Grid.Row="5"
+            Grid.Row="6"
             Text="{Binding StatusMessage, Mode=OneWay}"
             TextWrapping="Wrap"
             VerticalAlignment="Top"

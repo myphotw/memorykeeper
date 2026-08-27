@@ -48,6 +48,34 @@ public sealed class BulkImportRecoveryWorkflowTests
     }
 
     [Fact]
+    public async Task PreparedIncrementalImport_UploadsOnlyNewTargetWithContentIdentity()
+    {
+        var jobId = Guid.NewGuid();
+        var upload = new FakeUploadApi(jobId);
+        var jobs = new SequenceJobApi(jobId, Status(jobId, UploadJobStatusDto.Completed));
+        var service = CreateService(upload, jobs, new RecordingSessionStore());
+        var newHash = 3.ToString("x64");
+        var preflight = new IncrementalImportPreflightResult
+        {
+            SourceFolderPath = "synthetic",
+            Items =
+            [
+                new IncrementalImportItemDto { FilePath = "synthetic/existing.jpg", FileName = "existing.jpg", ContentHash = 1.ToString("x64"), Classification = IncrementalImportClassification.Existing },
+                new IncrementalImportItemDto { FilePath = "synthetic/waiting.jpg", FileName = "waiting.jpg", ContentHash = 2.ToString("x64"), Classification = IncrementalImportClassification.InProgress },
+                new IncrementalImportItemDto { FilePath = "synthetic/new.jpg", FileName = "new.jpg", ContentHash = newHash, Classification = IncrementalImportClassification.New },
+            ],
+            BackendSnapshotComplete = true,
+        };
+
+        var result = await service.ImportPreparedAsync(Request(), preflight, progress: null);
+
+        Assert.Equal(1, upload.CallCount);
+        Assert.Equal(1, upload.IdentityCallCount);
+        Assert.Equal(newHash, Assert.Single(result.Items).ContentHash);
+        Assert.Equal("synthetic/new.jpg", Assert.Single(upload.UploadedPaths));
+    }
+
+    [Fact]
     public async Task SessionCheckpoint_CoalescesOneThousandDirtyUpdates()
     {
         var store = new RecordingSessionStore();
@@ -256,6 +284,8 @@ public sealed class BulkImportRecoveryWorkflowTests
         private readonly Guid _jobId;
         private readonly Exception? _exception;
         public int CallCount { get; private set; }
+        public int IdentityCallCount { get; private set; }
+        public List<string> UploadedPaths { get; } = [];
 
         public FakeUploadApi(Guid jobId) => _jobId = jobId;
         public FakeUploadApi(Exception exception) => _exception = exception;
@@ -263,6 +293,7 @@ public sealed class BulkImportRecoveryWorkflowTests
         public Task<UploadResponseDto> UploadAsync(string filePath, CancellationToken cancellationToken = default)
         {
             CallCount++;
+            UploadedPaths.Add(filePath);
             if (_exception is not null)
             {
                 return Task.FromException<UploadResponseDto>(_exception);
@@ -274,6 +305,17 @@ public sealed class BulkImportRecoveryWorkflowTests
                 Status = UploadJobStatusDto.Waiting,
                 IncomingPath = $"incoming/{_jobId:N}.jpg",
             });
+        }
+
+        public Task<UploadResponseDto> UploadWithIdentityAsync(
+            string filePath,
+            string clientFileId,
+            string contentSha256,
+            CancellationToken cancellationToken = default)
+        {
+            IdentityCallCount++;
+            Assert.Equal(clientFileId, contentSha256);
+            return UploadAsync(filePath, cancellationToken);
         }
     }
 

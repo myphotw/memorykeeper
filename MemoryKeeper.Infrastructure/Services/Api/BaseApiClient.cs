@@ -134,6 +134,40 @@ public sealed class BaseApiClient
             .ConfigureAwait(false);
     }
 
+    public async Task<ApiResponse<T>> UploadWithFieldsAsync<T>(
+        string path,
+        Stream fileStream,
+        string fileName,
+        IReadOnlyDictionary<string, string> fields,
+        string fieldName = "file",
+        string? contentType = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(fileStream);
+        ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
+        ArgumentNullException.ThrowIfNull(fields);
+
+        using var form = new MultipartFormDataContent();
+        var streamContent = new StreamContent(fileStream);
+        streamContent.Headers.ContentType = new MediaTypeHeaderValue(
+            string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType);
+        form.Add(streamContent, fieldName, fileName);
+        foreach (var field in fields)
+        {
+            form.Add(new StringContent(field.Value), field.Key);
+        }
+
+        // Multipart streams are not automatically retried. Reconciliation uses client_file_id.
+        return await SendAsync<T>(
+                HttpMethod.Post,
+                path,
+                form,
+                ownsContent: false,
+                cancellationToken,
+                allowRetry: false)
+            .ConfigureAwait(false);
+    }
+
     private async Task<ApiResponse<T>> SendAsync<T>(
         HttpMethod method,
         string path,

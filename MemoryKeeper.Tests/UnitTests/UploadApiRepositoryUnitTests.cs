@@ -55,6 +55,36 @@ public sealed class UploadApiRepositoryUnitTests
         }
     }
 
+    [Fact]
+    public async Task UploadWithIdentity_SendsContentHashIdempotencyFields()
+    {
+        var tempFile = Path.Combine(Path.GetTempPath(), $"mk-upload-identity-{Guid.NewGuid():N}.jpg");
+        await File.WriteAllBytesAsync(tempFile, "fake-jpeg"u8.ToArray());
+        var hash = new string('a', 64);
+        try
+        {
+            var handler = new StubHandler
+            {
+                ResponseBody =
+                    """{"id":8,"job_id":"aaaaaaaa-bbbb-cccc-dddd-ffffffffffff","status":"WAITING","client_file_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}""",
+            };
+            using var provider = BuildProvider(handler);
+            var repo = provider.GetRequiredService<IUploadApiRepository>();
+
+            await repo.UploadWithIdentityAsync(tempFile, hash, hash);
+
+            Assert.Contains("client_file_id", handler.LastBody, StringComparison.Ordinal);
+            Assert.Contains("client_content_sha256", handler.LastBody, StringComparison.Ordinal);
+            Assert.Contains(hash, handler.LastBody, StringComparison.Ordinal);
+            Assert.Contains("service_name", handler.LastBody, StringComparison.Ordinal);
+            Assert.Contains("MemoryKeeper", handler.LastBody, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
     private static ServiceProvider BuildProvider(HttpMessageHandler handler)
     {
         var services = new ServiceCollection();
@@ -80,6 +110,7 @@ public sealed class UploadApiRepositoryUnitTests
         public string? LastPath { get; private set; }
         public string? LastContentType { get; private set; }
         public long LastBodyLength { get; private set; }
+        public string LastBody { get; private set; } = string.Empty;
 
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
@@ -92,6 +123,7 @@ public sealed class UploadApiRepositoryUnitTests
             {
                 var bytes = await request.Content.ReadAsByteArrayAsync(cancellationToken);
                 LastBodyLength = bytes.LongLength;
+                LastBody = Encoding.UTF8.GetString(bytes);
             }
 
             return new HttpResponseMessage(HttpStatusCode.OK)
