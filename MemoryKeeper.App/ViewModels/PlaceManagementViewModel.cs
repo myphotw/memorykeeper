@@ -524,7 +524,7 @@ public partial class PlaceManagementViewModel : ObservableObject
         foreach (var mediaId in mediaIds)
         {
             var detail = await _galleryApiRepository.GetPhotoAsync(mediaId);
-            await _placeService.AssignFilePlaceAsync(mediaId, placeId, detail.PlaceRevision);
+            await _placeService.AssignFilePlaceAsync(mediaId, placeId, detail.PlaceRevision ?? 0);
             assigned++;
         }
 
