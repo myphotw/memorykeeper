@@ -21,6 +21,16 @@ public enum CatalogSurface
 /// </summary>
 public interface ICatalogInvalidation
 {
+    /// <summary>
+    /// Monotonically increases for every non-empty invalidation without consuming dirty bits.
+    /// </summary>
+    long Generation { get; }
+
+    /// <summary>
+    /// Notifies non-UI caches while preserving the existing per-surface Consume contract.
+    /// </summary>
+    event EventHandler<CatalogInvalidatedEventArgs>? Invalidated;
+
     void Invalidate(CatalogSurface surfaces = CatalogSurface.AllRelated);
 
     /// <summary>
@@ -33,6 +43,20 @@ public sealed class CatalogInvalidation : ICatalogInvalidation
 {
     private readonly object _gate = new();
     private CatalogSurface _dirty;
+    private long _generation;
+
+    public long Generation
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _generation;
+            }
+        }
+    }
+
+    public event EventHandler<CatalogInvalidatedEventArgs>? Invalidated;
 
     public void Invalidate(CatalogSurface surfaces = CatalogSurface.AllRelated)
     {
@@ -41,10 +65,14 @@ public sealed class CatalogInvalidation : ICatalogInvalidation
             return;
         }
 
+        long generation;
         lock (_gate)
         {
             _dirty |= surfaces;
+            generation = ++_generation;
         }
+
+        Invalidated?.Invoke(this, new CatalogInvalidatedEventArgs(generation, surfaces));
     }
 
     public bool Consume(CatalogSurface surface)
@@ -61,4 +89,11 @@ public sealed class CatalogInvalidation : ICatalogInvalidation
             return wasDirty;
         }
     }
+}
+
+public sealed class CatalogInvalidatedEventArgs(long generation, CatalogSurface surfaces) : EventArgs
+{
+    public long Generation { get; } = generation;
+
+    public CatalogSurface Surfaces { get; } = surfaces;
 }
