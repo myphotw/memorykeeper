@@ -20,6 +20,27 @@ public enum TravelRecordsDetailKind
 
 public sealed class TravelRecordsDashboardDto
 {
+    /// <summary>
+    /// Domestic travel periods: Korean places farther than the daily-life radius from home,
+    /// merged into consecutive visit-date ranges.
+    /// </summary>
+    public int DomesticTripCount { get; init; }
+
+    /// <summary>Sum of the existing foreign country consecutive-date visit counts.</summary>
+    public int ForeignTripCount { get; init; }
+
+    /// <summary>Distinct valid places with a normalized foreign country.</summary>
+    public int ForeignPlaceCount { get; init; }
+
+    /// <summary>Unique photos with a normalized foreign country.</summary>
+    public int ForeignPhotoCount { get; init; }
+
+    /// <summary>Distinct valid places with a normalized Korean country.</summary>
+    public int DomesticPlaceCount { get; init; }
+
+    /// <summary>Unique photos with a normalized Korean country.</summary>
+    public int DomesticPhotoCount { get; init; }
+
     /// <summary>Unique photos identified by Backend file ID, then Media ID.</summary>
     public int UniquePhotoCount { get; init; }
 

@@ -469,10 +469,192 @@ public class TravelRecordsServiceTests
         Assert.All(dashboard.MemoryCards, card => Assert.InRange(card.Photos.Count, 1, 4));
     }
 
-    private static TravelRecordsService CreateService(ITravelRecordsRepository repository)
+    [Fact]
+    public async Task GetDashboardAsync_DomesticTrips_ExcludesDailyRadiusAndMergesDistantPlaceDates()
     {
+        var home = (Latitude: 37.5665d, Longitude: 126.9780d);
+        var dashboard = await CreateService(
+            new FixedAggregates(
+            [
+                CreateDomesticAggregate("집 근처", "대한민국", home.Latitude, home.Longitude,
+                    new DateTime(2024, 8, 1), new DateTime(2024, 8, 2), new DateTime(2024, 8, 3)),
+                CreateDomesticAggregate("강릉", "한국", 37.7519d, 128.8761d,
+                    new DateTime(2024, 8, 10), new DateTime(2024, 8, 11)),
+                CreateDomesticAggregate("속초", "KR", 38.2070d, 128.5918d,
+                    new DateTime(2024, 8, 11), new DateTime(2024, 8, 12)),
+                CreateDomesticAggregate("도쿄", "일본", 35.6762d, 139.6503d,
+                    new DateTime(2024, 8, 10)),
+            ]),
+            home.Latitude,
+            home.Longitude).GetDashboardAsync();
+
+        Assert.Equal(1, dashboard.DomesticTripCount);
+    }
+
+    [Fact]
+    public async Task GetDashboardAsync_DomesticTrips_UsesStrictDistanceAndSplitsDateGaps()
+    {
+        const double homeLatitude = 37.5665d;
+        const double homeLongitude = 126.9780d;
+        var dashboard = await CreateService(
+            new FixedAggregates(
+            [
+                // 0km is within the <= 2km daily-life radius and must not count.
+                CreateDomesticAggregate("경계 안", "대한민국", homeLatitude, homeLongitude,
+                    new DateTime(2024, 8, 1)),
+                // Plainly farther than 2km avoids floating-point boundary ambiguity.
+                CreateDomesticAggregate("원거리 A", "South Korea", 37.6165d, homeLongitude,
+                    new DateTime(2024, 8, 1), new DateTime(2024, 8, 2)),
+                CreateDomesticAggregate("원거리 B", "Republic of Korea", 37.6665d, homeLongitude,
+                    new DateTime(2024, 8, 4)),
+            ]),
+            homeLatitude,
+            homeLongitude).GetDashboardAsync();
+
+        Assert.Equal(2, dashboard.DomesticTripCount);
+    }
+
+    [Fact]
+    public async Task GetDashboardAsync_DomesticTrips_ExcludeInvalidCandidatesAndRequireHomeCoordinates()
+    {
+        var aggregates = new FixedAggregates(
+        [
+            CreateDomesticAggregate("좌표 없음", "대한민국", 0d, 0d,
+                new DateTime(2024, 8, 1)),
+            CreateDomesticAggregate("기타", GalleryHierarchyService.OtherTitle, 37.8d, 128.0d,
+                new DateTime(2024, 8, 2)),
+            CreateDomesticAggregate("미분류", GalleryHierarchyService.UnclassifiedTitle, 37.8d, 128.0d,
+                new DateTime(2024, 8, 3)),
+            CreateDomesticAggregate("빈 국가", null, 37.8d, 128.0d,
+                new DateTime(2024, 8, 4)),
+            CreateDomesticAggregate("유효 여행", "Korea", 37.8d, 128.0d,
+                new DateTime(2024, 8, 5)),
+        ]);
+
+        var withHome = await CreateService(aggregates, 37.5665d, 126.9780d).GetDashboardAsync();
+        var withoutHome = await CreateService(aggregates).GetDashboardAsync();
+
+        Assert.Equal(1, withHome.DomesticTripCount);
+        Assert.Equal(0, withoutHome.DomesticTripCount);
+    }
+
+    [Fact]
+    public async Task GetDashboardAsync_DomesticTrips_CountsSeparatedReturnsToTheSameDistantPlace()
+    {
+        var dashboard = await CreateService(
+            new FixedAggregates(
+            [
+                CreateDomesticAggregate("부산", "대한민국", 35.1796d, 129.0756d,
+                    new DateTime(2024, 8, 1), new DateTime(2024, 8, 5)),
+            ]),
+            37.5665d,
+            126.9780d).GetDashboardAsync();
+
+        Assert.Equal(2, dashboard.DomesticTripCount);
+    }
+
+    [Fact]
+    public async Task GetDashboardAsync_SeparatesDomesticAndForeignSummaryStatisticsWithUniquePhotos()
+    {
+        var japanPlaceId = Guid.NewGuid();
+        var domesticPlaceId = Guid.NewGuid();
+        var fallbackMediaId = Guid.NewGuid();
+        var duplicateForeignPhoto = CreateStatsCandidate("japan-1", Guid.NewGuid(), "일본", new DateTime(2024, 8, 1));
+        var repository = new FixedAggregates(
+        [
+            new TravelPlaceAggregateRaw
+            {
+                PlaceId = japanPlaceId,
+                PlaceName = "도쿄",
+                Country = "Japan",
+                Photos =
+                [
+                    duplicateForeignPhoto,
+                    CreateStatsCandidate("japan-2", Guid.NewGuid(), "일본", new DateTime(2024, 8, 3)),
+                    CreateStatsCandidate("japan-3", Guid.NewGuid(), "일본", new DateTime(2024, 8, 5)),
+                ],
+            },
+            new TravelPlaceAggregateRaw
+            {
+                PlaceId = japanPlaceId,
+                PlaceName = "도쿄 중복 집계",
+                Country = "일본",
+                Photos = [duplicateForeignPhoto],
+            },
+            new TravelPlaceAggregateRaw
+            {
+                PlaceId = Guid.NewGuid(),
+                PlaceName = "몰디브",
+                Country = "몰디브",
+                Photos = [CreateStatsCandidate("maldives-1", Guid.NewGuid(), "몰디브", new DateTime(2024, 8, 7))],
+            },
+            new TravelPlaceAggregateRaw
+            {
+                PlaceId = Guid.NewGuid(),
+                PlaceName = "도하",
+                Country = "카타르",
+                Photos = [CreateStatsCandidate("qatar-1", Guid.NewGuid(), "카타르", new DateTime(2024, 8, 8))],
+            },
+            new TravelPlaceAggregateRaw
+            {
+                PlaceId = domesticPlaceId,
+                PlaceName = "부산",
+                Country = "Korea",
+                Photos =
+                [
+                    CreateStatsCandidate("domestic-1", Guid.NewGuid(), "대한민국", new DateTime(2024, 8, 9)),
+                    CreateStatsCandidate(null, fallbackMediaId, "KR", new DateTime(2024, 8, 10)),
+                ],
+            },
+            new TravelPlaceAggregateRaw
+            {
+                PlaceId = domesticPlaceId,
+                PlaceName = "부산 중복 집계",
+                Country = "South Korea",
+                Photos = [CreateStatsCandidate("domestic-1", Guid.NewGuid(), "Republic of Korea", new DateTime(2024, 8, 9))],
+            },
+            new TravelPlaceAggregateRaw
+            {
+                PlaceId = LibraryConstants.UnclassifiedPlaceId,
+                PlaceName = GalleryHierarchyService.UnclassifiedTitle,
+                Country = GalleryHierarchyService.OtherTitle,
+                IsUnclassified = true,
+                Photos =
+                [
+                    CreateStatsCandidate("other", Guid.NewGuid(), GalleryHierarchyService.OtherTitle, new DateTime(2024, 8, 11)),
+                    CreateStatsCandidate("unknown", Guid.NewGuid(), string.Empty, new DateTime(2024, 8, 12)),
+                    CreateStatsCandidate("null", Guid.NewGuid(), null, new DateTime(2024, 8, 13)),
+                ],
+            },
+        ]);
+
+        var dashboard = await CreateService(repository, 37.5665d, 126.9780d).GetDashboardAsync();
+
+        Assert.Equal(5, dashboard.ForeignTripCount);
+        Assert.Equal(3, dashboard.VisitedForeignCountryCount);
+        Assert.Equal(3, dashboard.ForeignPlaceCount);
+        Assert.Equal(5, dashboard.ForeignPhotoCount);
+        Assert.Equal(1, dashboard.DomesticPlaceCount);
+        Assert.Equal(2, dashboard.DomesticPhotoCount);
+    }
+
+    private static TravelRecordsService CreateService(ITravelRecordsRepository repository)
+        => CreateService(repository, null, null);
+
+    private static TravelRecordsService CreateService(
+        ITravelRecordsRepository repository,
+        double? homeLatitude,
+        double? homeLongitude)
+    {
+        var settings = new Dictionary<string, string>();
+        if (homeLatitude is not null && homeLongitude is not null)
+        {
+            settings[SettingKeys.TravelHomeLatitude] = homeLatitude.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            settings[SettingKeys.TravelHomeLongitude] = homeLongitude.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
         var homeLocation = new HomeLocationService(
-            new HomeSettingRepository([]),
+            new HomeSettingRepository(settings),
             new NoOpLocationResolver(),
             NullLogger<HomeLocationService>.Instance);
         return new TravelRecordsService(
@@ -492,6 +674,34 @@ public class TravelRecordsServiceTests
         BackendFileId = id,
         ThumbnailPath = $"https://backend.example/thumbnails/{id}",
         Country = country,
+        CapturedAt = new DateTimeOffset(DateTime.SpecifyKind(capturedAt, DateTimeKind.Local)),
+    };
+
+    private static TravelPlaceAggregateRaw CreateDomesticAggregate(
+        string placeName,
+        string? country,
+        double latitude,
+        double longitude,
+        params DateTime[] visitDates) => new()
+    {
+        PlaceId = Guid.NewGuid(),
+        PlaceName = placeName,
+        Country = country ?? string.Empty,
+        Latitude = latitude,
+        Longitude = longitude,
+        PhotoCount = visitDates.Length,
+        VisitDates = visitDates,
+    };
+
+    private static TravelPhotoCandidateRaw CreateStatsCandidate(
+        string? backendFileId,
+        Guid? mediaId,
+        string? country,
+        DateTime capturedAt) => new()
+    {
+        BackendFileId = backendFileId ?? string.Empty,
+        MediaId = mediaId,
+        Country = country!,
         CapturedAt = new DateTimeOffset(DateTime.SpecifyKind(capturedAt, DateTimeKind.Local)),
     };
 

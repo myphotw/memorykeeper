@@ -13,6 +13,7 @@ public sealed class TravelRecordsService
     private const int LongUnvisitedMinVisits = 2;
     private const int LongUnvisitedMinPhotos = 20;
     private const int MemoryCardPhotoTake = 4;
+    private const double DomesticTravelMinimumDistanceKm = 2d;
 
     private readonly ITravelRecordsRepository _travelRecordsRepository;
     private readonly IMediaTagRepository _mediaTagRepository;
@@ -58,6 +59,16 @@ public sealed class TravelRecordsService
 
         return new TravelRecordsDashboardDto
         {
+            DomesticTripCount = CountDomesticTrips(aggregates, home),
+            ForeignTripCount = countryVisitStatistics.Sum(item => item.VisitCount),
+            ForeignPlaceCount = CountForeignPlaces(aggregates),
+            ForeignPhotoCount = CountUniquePhotos(
+                aggregates.SelectMany(item => item.Photos)
+                    .Where(photo => TryNormalizeForeignCountry(photo.Country) is not null)),
+            DomesticPlaceCount = CountDomesticPlaces(aggregates),
+            DomesticPhotoCount = CountUniquePhotos(
+                aggregates.SelectMany(item => item.Photos)
+                    .Where(photo => IsDomesticCountry(photo.Country))),
             UniquePhotoCount = CountUniquePhotos(aggregates),
             DistinctPlaceCount = CountDistinctPlaces(aggregates),
             VisitedForeignCountryCount = countryVisitStatistics.Count,
@@ -120,8 +131,10 @@ public sealed class TravelRecordsService
     }
 
     private static int CountUniquePhotos(IEnumerable<TravelPlaceAggregateRaw> aggregates) =>
-        aggregates
-            .SelectMany(item => item.Photos)
+        CountUniquePhotos(aggregates.SelectMany(item => item.Photos));
+
+    private static int CountUniquePhotos(IEnumerable<TravelPhotoCandidateRaw> photos) =>
+        photos
             .Select(GetPhotoIdentity)
             .OfType<string>()
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -142,6 +155,22 @@ public sealed class TravelRecordsService
     private static int CountDistinctPlaces(IEnumerable<TravelPlaceAggregateRaw> aggregates) =>
         aggregates
             .Where(item => !item.IsUnclassified && item.PlaceId != Guid.Empty)
+            .Select(item => item.PlaceId)
+            .Distinct()
+            .Count();
+
+    private static int CountForeignPlaces(IEnumerable<TravelPlaceAggregateRaw> aggregates) =>
+        aggregates
+            .Where(item => !item.IsUnclassified && item.PlaceId != Guid.Empty)
+            .Where(item => TryNormalizeForeignCountry(item.Country) is not null)
+            .Select(item => item.PlaceId)
+            .Distinct()
+            .Count();
+
+    private static int CountDomesticPlaces(IEnumerable<TravelPlaceAggregateRaw> aggregates) =>
+        aggregates
+            .Where(item => !item.IsUnclassified && item.PlaceId != Guid.Empty)
+            .Where(item => IsDomesticCountry(item.Country))
             .Select(item => item.PlaceId)
             .Distinct()
             .Count();
@@ -174,6 +203,35 @@ public sealed class TravelRecordsService
         }
 
         return visits;
+    }
+
+    private static int CountDomesticTrips(
+        IEnumerable<TravelPlaceAggregateRaw> aggregates,
+        HomeLocationDto home)
+    {
+        if (!home.IsConfigured
+            || home.Latitude is not double homeLatitude
+            || home.Longitude is not double homeLongitude
+            || !PlaceIdentity.HasValidCoordinates(homeLatitude, homeLongitude))
+        {
+            return 0;
+        }
+
+        var visitDates = aggregates
+            .Where(item => IsDomesticCountry(item.Country))
+            .Where(item => PlaceIdentity.HasValidCoordinates(item.Latitude, item.Longitude))
+            .Where(item => GeoMath.DistanceMeters(
+                               homeLatitude,
+                               homeLongitude,
+                               item.Latitude,
+                               item.Longitude) / 1000d > DomesticTravelMinimumDistanceKm)
+            .SelectMany(item => item.VisitDates)
+            .Select(date => date.Date)
+            .Distinct()
+            .OrderBy(date => date)
+            .ToList();
+
+        return CountConsecutiveDateRanges(visitDates);
     }
 
     private static IReadOnlyList<TravelMemoryCardDto> BuildMemoryCards(
@@ -453,19 +511,10 @@ public sealed class TravelRecordsService
     }
 
     private static bool IsDomesticCountry(string? country)
-    {
-        if (string.IsNullOrWhiteSpace(country))
-        {
-            return false;
-        }
-
-        var value = country.Trim();
-        return value.Equals("대한민국", StringComparison.OrdinalIgnoreCase)
-            || value.Equals("한국", StringComparison.OrdinalIgnoreCase)
-            || value.Equals("Korea", StringComparison.OrdinalIgnoreCase)
-            || value.Equals("South Korea", StringComparison.OrdinalIgnoreCase)
-            || value.Equals("Republic of Korea", StringComparison.OrdinalIgnoreCase);
-    }
+        => string.Equals(
+            PlaceNormalizer.NormalizeCountry(country),
+            "대한민국",
+            StringComparison.OrdinalIgnoreCase);
 
     private static TravelTripCardDto BuildTripCard(
         int year,

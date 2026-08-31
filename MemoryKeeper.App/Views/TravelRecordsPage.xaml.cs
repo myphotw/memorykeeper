@@ -130,18 +130,26 @@ public sealed partial class TravelRecordsPage : Page
 
     private void RefreshStats()
     {
-        var trips = ViewModel.YearChapters.SelectMany(chapter => chapter.Trips).ToList();
-        if (trips.Count == 0)
+        if (ViewModel.ForeignTripCount == 0
+            && ViewModel.VisitedForeignCountryCount == 0
+            && ViewModel.ForeignPlaceCount == 0
+            && ViewModel.ForeignPhotoCount == 0
+            && ViewModel.DomesticTripCount == 0
+            && ViewModel.DomesticPlaceCount == 0
+            && ViewModel.DomesticPhotoCount == 0)
         {
             StatsHost.Visibility = Visibility.Collapsed;
             return;
         }
 
         StatsHost.Visibility = Visibility.Visible;
-        StatTrips.Text = trips.Count.ToString();
+        StatForeignTrips.Text = ViewModel.ForeignTripCount.ToString("N0");
         StatCountries.Text = ViewModel.VisitedForeignCountryCount.ToString("N0");
-        StatPlaces.Text = ViewModel.DistinctPlaceCount.ToString("N0");
-        StatPhotos.Text = ViewModel.UniquePhotoCount.ToString("N0");
+        StatForeignPlaces.Text = ViewModel.ForeignPlaceCount.ToString("N0");
+        StatForeignPhotos.Text = ViewModel.ForeignPhotoCount.ToString("N0");
+        StatDomesticTrips.Text = ViewModel.DomesticTripCount.ToString("N0");
+        StatDomesticPlaces.Text = ViewModel.DomesticPlaceCount.ToString("N0");
+        StatDomesticPhotos.Text = ViewModel.DomesticPhotoCount.ToString("N0");
     }
 
     private void InsightCard_OnPointerEntered(object sender, PointerRoutedEventArgs e)

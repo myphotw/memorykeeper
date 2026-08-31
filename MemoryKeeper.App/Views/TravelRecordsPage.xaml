@@ -198,22 +198,39 @@
                         Style="{StaticResource MkSectionTitleStyle}"
                         FontSize="18"
                         Margin="0,0,0,4" />
+                    <TextBlock Text="해외" Style="{StaticResource MkCaptionTextStyle}" FontWeight="SemiBold" Opacity="0.75" />
                     <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="12">
                         <StackPanel Spacing="4">
-                            <TextBlock Text="총 여행" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
-                            <TextBlock x:Name="StatTrips" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
+                            <TextBlock Text="해외여행 횟수" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
+                            <TextBlock x:Name="StatForeignTrips" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
                         </StackPanel>
                         <StackPanel Grid.Column="1" Spacing="4">
                             <TextBlock Text="해외 방문 국가" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
                             <TextBlock x:Name="StatCountries" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
                         </StackPanel>
                         <StackPanel Grid.Column="2" Spacing="4">
-                            <TextBlock Text="방문 장소" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
-                            <TextBlock x:Name="StatPlaces" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
+                            <TextBlock Text="해외 방문 장소" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
+                            <TextBlock x:Name="StatForeignPlaces" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
                         </StackPanel>
                         <StackPanel Grid.Column="3" Spacing="4">
-                            <TextBlock Text="총 사진" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
-                            <TextBlock x:Name="StatPhotos" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
+                            <TextBlock Text="해외 사진" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
+                            <TextBlock x:Name="StatForeignPhotos" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
+                        </StackPanel>
+                    </Grid>
+
+                    <TextBlock Text="국내" Style="{StaticResource MkCaptionTextStyle}" FontWeight="SemiBold" Opacity="0.75" Margin="0,8,0,0" />
+                    <Grid ColumnDefinitions="*,*,*" ColumnSpacing="12">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="국내여행 횟수" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
+                            <TextBlock x:Name="StatDomesticTrips" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="4">
+                            <TextBlock Text="국내 방문 장소" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
+                            <TextBlock x:Name="StatDomesticPlaces" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2" Spacing="4">
+                            <TextBlock Text="국내 사진" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
+                            <TextBlock x:Name="StatDomesticPhotos" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
                         </StackPanel>
                     </Grid>
                 </StackPanel>

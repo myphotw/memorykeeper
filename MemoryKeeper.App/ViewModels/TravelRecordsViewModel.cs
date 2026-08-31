@@ -50,6 +50,24 @@ public partial class TravelRecordsViewModel : ObservableObject
     private ObservableCollection<TravelYearChapterItem> yearChapters = [];
 
     [ObservableProperty]
+    private int domesticTripCount;
+
+    [ObservableProperty]
+    private int foreignTripCount;
+
+    [ObservableProperty]
+    private int foreignPlaceCount;
+
+    [ObservableProperty]
+    private int foreignPhotoCount;
+
+    [ObservableProperty]
+    private int domesticPlaceCount;
+
+    [ObservableProperty]
+    private int domesticPhotoCount;
+
+    [ObservableProperty]
     private int uniquePhotoCount;
 
     [ObservableProperty]
@@ -371,6 +389,12 @@ public partial class TravelRecordsViewModel : ObservableObject
 
     private void ApplyDashboard(TravelRecordsDashboardDto dashboard)
     {
+        DomesticTripCount = dashboard.DomesticTripCount;
+        ForeignTripCount = dashboard.ForeignTripCount;
+        ForeignPlaceCount = dashboard.ForeignPlaceCount;
+        ForeignPhotoCount = dashboard.ForeignPhotoCount;
+        DomesticPlaceCount = dashboard.DomesticPlaceCount;
+        DomesticPhotoCount = dashboard.DomesticPhotoCount;
         UniquePhotoCount = dashboard.UniquePhotoCount;
         DistinctPlaceCount = dashboard.DistinctPlaceCount;
         VisitedForeignCountryCount = dashboard.VisitedForeignCountryCount;
