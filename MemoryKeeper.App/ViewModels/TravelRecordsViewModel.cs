@@ -135,6 +135,7 @@ public partial class TravelRecordsViewModel : ObservableObject
 
     public event EventHandler? OpenVisitRecordRequested;
     public event EventHandler? OpenDetailRequested;
+    public event EventHandler? OpenForeignCountriesRequested;
     public event EventHandler? BackRequested;
 
     public TravelRecordsViewModel(
@@ -275,6 +276,9 @@ public partial class TravelRecordsViewModel : ObservableObject
 
     [RelayCommand]
     private void OpenCountriesDetail() => OpenDetail(TravelRecordsDetailKind.Countries);
+
+    [RelayCommand]
+    private void OpenForeignCountries() => OpenForeignCountriesRequested?.Invoke(this, EventArgs.Empty);
 
     [RelayCommand]
     private void OpenFarthestDetail() => OpenDetail(TravelRecordsDetailKind.Farthest);
@@ -422,6 +426,7 @@ public partial class TravelRecordsViewModel : ObservableObject
             .Max();
         CountryVisitStatistics = new ObservableCollection<TravelCountryVisitItem>(
             dashboard.CountryVisitStatistics.Select(item => new TravelCountryVisitItem(item, countryMaximum)));
+        _navigationState.SetForeignCountries(dashboard.ForeignCountries);
         MemoryCards = new ObservableCollection<TravelMemoryCardItem>(
             dashboard.MemoryCards.Select(item => new TravelMemoryCardItem(item)));
 

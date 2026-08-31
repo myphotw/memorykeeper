@@ -83,6 +83,7 @@ public sealed class TravelRecordsService
             TopCountry = countries.FirstOrDefault(),
             FarthestPlace = OrderFarthest(aggregates, home).FirstOrDefault(),
             CountryVisitStatistics = countryVisitStatistics,
+            ForeignCountries = BuildForeignCountries(countryVisitStatistics, aggregates),
             MemoryCards = BuildMemoryCards(aggregates, DateOnly.FromDateTime(DateTime.Today)),
             YearChapters = BuildYearChapters(aggregates)
         };
@@ -232,6 +233,40 @@ public sealed class TravelRecordsService
             .ToList();
 
         return CountConsecutiveDateRanges(visitDates);
+    }
+
+    private static IReadOnlyList<TravelForeignCountryDto> BuildForeignCountries(
+        IReadOnlyList<TravelCountryVisitSummaryDto> statistics,
+        IReadOnlyList<TravelPlaceAggregateRaw> aggregates)
+    {
+        var photosByCountry = aggregates
+            .SelectMany(item => item.Photos)
+            .Select(photo => new { Photo = photo, Country = TryNormalizeForeignCountry(photo.Country) })
+            .Where(item => item.Country is not null)
+            .GroupBy(item => item.Country!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Select(item => item.Photo).ToList(), StringComparer.OrdinalIgnoreCase);
+
+        return statistics
+            .Select(statistic =>
+            {
+                photosByCountry.TryGetValue(statistic.Country, out var photos);
+                photos ??= [];
+                var representative = photos
+                    .Where(photo => !string.IsNullOrWhiteSpace(photo.ThumbnailPath))
+                    .OrderByDescending(photo => photo.CapturedAt)
+                    .ThenBy(photo => GetPhotoIdentity(photo), StringComparer.OrdinalIgnoreCase)
+                    .FirstOrDefault();
+
+                return new TravelForeignCountryDto
+                {
+                    Country = statistic.Country,
+                    VisitCount = statistic.VisitCount,
+                    PhotoCount = CountUniquePhotos(photos),
+                    RepresentativeMediaId = representative?.MediaId,
+                    ThumbnailPath = representative?.ThumbnailPath ?? string.Empty,
+                };
+            })
+            .ToList();
     }
 
     private static IReadOnlyList<TravelMemoryCardDto> BuildMemoryCards(

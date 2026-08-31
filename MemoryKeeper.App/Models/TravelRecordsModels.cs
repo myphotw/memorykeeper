@@ -180,6 +180,31 @@ public sealed class TravelCountryVisitItem
     public string CapturedDayText => $"촬영 {Dto.CapturedDayCount}일";
 }
 
+public partial class TravelForeignCountryItem : ObservableObject
+{
+    public TravelForeignCountryItem(TravelForeignCountryDto dto)
+    {
+        Dto = dto;
+    }
+
+    public TravelForeignCountryDto Dto { get; }
+
+    public string Country => Dto.Country;
+
+    public string VisitCountText => $"{Dto.VisitCount}회 방문";
+
+    public string PhotoCountText => $"사진 {Dto.PhotoCount:N0}장";
+
+    public Guid? RepresentativeMediaId => Dto.RepresentativeMediaId;
+
+    public string ThumbnailPath => Dto.ThumbnailPath;
+
+    public bool HasThumbnail => !string.IsNullOrWhiteSpace(ThumbnailPath);
+
+    [ObservableProperty]
+    private BitmapImage? thumbnailImage;
+}
+
 public sealed class TravelMemoryCardItem
 {
     public TravelMemoryCardItem(TravelMemoryCardDto dto)

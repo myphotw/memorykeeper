@@ -18,6 +18,8 @@ public sealed class TravelRecordsPageRegressionTests
         Assert.Contains("Text=\"국내\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"해외여행 횟수\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"해외 방문 국가\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Command=\"{Binding OpenForeignCountriesCommand}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.Name=\"해외 방문 국가 상세 보기\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"해외 방문 장소\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"해외 사진\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"국내여행 횟수\"", xaml, StringComparison.Ordinal);

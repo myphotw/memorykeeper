@@ -27,6 +27,7 @@ public sealed partial class MainWindow : Window
     private TravelRecordsViewModel? _travelRecordsViewModel;
     private TravelRecordsPage? _travelRecordsPage;
     private TravelRecordsDetailViewModel? _travelRecordsDetailViewModel;
+    private TravelCountryListViewModel? _travelCountryListViewModel;
     private VisitRecordPage? _visitRecordPage;
     private VisitRecordViewModel? _visitRecordViewModel;
     private PhotoDetailViewModel? _photoDetailViewModel;
@@ -195,6 +196,9 @@ public sealed partial class MainWindow : Window
                 break;
             case "travel-detail":
                 NavigateToTravelRecordsDetail(entry);
+                break;
+            case "travel-countries":
+                NavigateToTravelCountryList(entry);
                 break;
             case "visits":
             case "timeline":
@@ -382,6 +386,7 @@ public sealed partial class MainWindow : Window
             _ => tag switch
             {
                 "travel-detail" => "여행 상세",
+                "travel-countries" => "해외 방문 국가",
                 "photo-viewer" or "photo" => "사진",
                 "favorites" => "즐겨찾기",
                 "pending" => "미완성 추억",
@@ -412,7 +417,7 @@ public sealed partial class MainWindow : Window
         {
             null or "home" => null,
             "visits" or "gallery" or "travel" or "settings" or "search" => "home",
-            "travel-detail" => "travel",
+            "travel-detail" or "travel-countries" => "travel",
             "favorites" => "gallery",
             "photo-viewer" => _navigation.Current?.RootTag ?? "gallery",
             "photo" when _photoNavigationState.DetailOpenedFromViewer => "photo-viewer",
@@ -726,6 +731,7 @@ public sealed partial class MainWindow : Window
         _travelRecordsViewModel = page.ViewModel;
         _travelRecordsViewModel.OpenVisitRecordRequested += OnTravelOpenVisitRecordRequested;
         _travelRecordsViewModel.OpenDetailRequested += OnTravelOpenDetailRequested;
+        _travelRecordsViewModel.OpenForeignCountriesRequested += OnTravelOpenForeignCountriesRequested;
         _travelRecordsViewModel.BackRequested += OnShellBackRequested;
         page.OpenImportRequested += OnTravelOpenImportRequested;
         ContentFrame.Content = page;
@@ -819,7 +825,7 @@ public sealed partial class MainWindow : Window
             page.OpenPendingRequested += OnGalleryOpenPendingRequested;
             page.OpenMapRequested += OnPhotoDetailOpenMapRequested;
             ContentFrame.Content = page;
-            if (ShouldReload("gallery", CatalogSurface.Gallery))
+            if (ShouldReload("gallery", CatalogSurface.Gallery) || page.ViewModel.HasPendingFocusRestore)
             {
                 MemoryKeeper.App.Diagnostics.GalleryDiagnostics.WriteStep("NavigateToGallery page set, LoadAsync fire");
                 MarkLoaded("gallery");
@@ -909,6 +915,17 @@ public sealed partial class MainWindow : Window
         var page = _serviceProvider.GetRequiredService<PhotoManagementPage>();
         page.ViewModel.BackRequested += OnShellBackRequested;
         _photoManagementPage = page;
+        ContentFrame.Content = page;
+    }
+
+    private void NavigateToTravelCountryList(NavigationEntry entry)
+    {
+        Track(entry);
+        DetachHandlers();
+        var page = GetOrCreatePage<TravelCountryListPage>("travel-countries");
+        _travelCountryListViewModel = page.ViewModel;
+        _travelCountryListViewModel.OpenCountryGalleryRequested += OnTravelCountryOpenGalleryRequested;
+        _travelCountryListViewModel.BackRequested += OnShellBackRequested;
         ContentFrame.Content = page;
     }
 
@@ -1039,6 +1056,16 @@ public sealed partial class MainWindow : Window
     private void OnTravelOpenDetailRequested(object? sender, EventArgs e) =>
         SelectNavigationItem(CreateTravelDetailEntry());
 
+    private void OnTravelOpenForeignCountriesRequested(object? sender, EventArgs e) =>
+        NavigateDrillDown("travel-countries", "foreign-countries", "해외 방문 국가");
+
+    private void OnTravelCountryOpenGalleryRequested(object? sender, string country)
+    {
+        var galleryFocus = _serviceProvider.GetRequiredService<IGalleryFocusState>();
+        galleryFocus.RequestCountryFilter(country);
+        NavigateDrillDown("gallery", $"country:{country}", country);
+    }
+
     private void DetachHandlers()
     {
         if (_homeViewModel is not null)
@@ -1118,6 +1145,7 @@ public sealed partial class MainWindow : Window
         {
             _travelRecordsViewModel.OpenVisitRecordRequested -= OnTravelOpenVisitRecordRequested;
             _travelRecordsViewModel.OpenDetailRequested -= OnTravelOpenDetailRequested;
+            _travelRecordsViewModel.OpenForeignCountriesRequested -= OnTravelOpenForeignCountriesRequested;
             _travelRecordsViewModel.BackRequested -= OnShellBackRequested;
             _travelRecordsViewModel = null;
         }
@@ -1133,6 +1161,13 @@ public sealed partial class MainWindow : Window
             _travelRecordsDetailViewModel.OpenVisitRecordRequested -= OnTravelOpenVisitRecordRequested;
             _travelRecordsDetailViewModel.BackRequested -= OnShellBackRequested;
             _travelRecordsDetailViewModel = null;
+        }
+
+        if (_travelCountryListViewModel is not null)
+        {
+            _travelCountryListViewModel.OpenCountryGalleryRequested -= OnTravelCountryOpenGalleryRequested;
+            _travelCountryListViewModel.BackRequested -= OnShellBackRequested;
+            _travelCountryListViewModel = null;
         }
 
         if (_visitRecordPage is not null)
@@ -1209,6 +1244,7 @@ public sealed partial class MainWindow : Window
             "place" => ContentFrame.Content is PlaceManagementPage,
             "travel" => ContentFrame.Content is TravelRecordsPage,
             "travel-detail" => ContentFrame.Content is TravelRecordsDetailPage,
+            "travel-countries" => ContentFrame.Content is TravelCountryListPage,
             "settings" => ContentFrame.Content is SettingsPage,
             _ => false
         };
@@ -1235,7 +1271,7 @@ public sealed partial class MainWindow : Window
         {
             "search" or "timeline" or "map" or "visits" => "visits",
             "storage" or "tag" or "logs" or "import" or "pending" or "place" or "settings" => "settings",
-            "travel-detail" or "travel" => "travel",
+            "travel-detail" or "travel-countries" or "travel" => "travel",
             "gallery" or "favorites" => "gallery",
             "home" => "home",
             _ => "home"

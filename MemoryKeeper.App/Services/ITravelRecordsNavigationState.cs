@@ -17,6 +17,8 @@ public interface ITravelRecordsNavigationState
 
     Guid? PendingFocusMediaId { get; set; }
 
+    IReadOnlyList<TravelForeignCountryDto> ForeignCountries { get; }
+
     void RequestDetail(TravelRecordsDetailKind kind, TravelSeason? season = null);
 
     void RequestMemoryFocus(
@@ -24,6 +26,8 @@ public interface ITravelRecordsNavigationState
         int? year = null,
         string? placeName = null,
         Guid? mediaId = null);
+
+    void SetForeignCountries(IReadOnlyList<TravelForeignCountryDto> countries);
 }
 
 public sealed class TravelRecordsNavigationState : ITravelRecordsNavigationState
@@ -39,6 +43,8 @@ public sealed class TravelRecordsNavigationState : ITravelRecordsNavigationState
     public string? PendingFocusPlaceName { get; set; }
 
     public Guid? PendingFocusMediaId { get; set; }
+
+    public IReadOnlyList<TravelForeignCountryDto> ForeignCountries { get; private set; } = [];
 
     public void RequestDetail(TravelRecordsDetailKind kind, TravelSeason? season = null)
     {
@@ -57,4 +63,7 @@ public sealed class TravelRecordsNavigationState : ITravelRecordsNavigationState
         PendingFocusPlaceName = string.IsNullOrWhiteSpace(placeName) ? null : placeName.Trim();
         PendingFocusMediaId = mediaId;
     }
+
+    public void SetForeignCountries(IReadOnlyList<TravelForeignCountryDto> countries) =>
+        ForeignCountries = countries ?? [];
 }

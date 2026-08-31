@@ -205,8 +205,18 @@
                             <TextBlock x:Name="StatForeignTrips" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
                         </StackPanel>
                         <StackPanel Grid.Column="1" Spacing="4">
-                            <TextBlock Text="해외 방문 국가" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
-                            <TextBlock x:Name="StatCountries" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
+                            <Button
+                                AutomationProperties.Name="해외 방문 국가 상세 보기"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Command="{Binding OpenForeignCountriesCommand}"
+                                HorizontalAlignment="Left"
+                                Padding="0">
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="해외 방문 국가" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
+                                    <TextBlock x:Name="StatCountries" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
+                                </StackPanel>
+                            </Button>
                         </StackPanel>
                         <StackPanel Grid.Column="2" Spacing="4">
                             <TextBlock Text="해외 방문 장소" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />

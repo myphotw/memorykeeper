@@ -559,6 +559,7 @@ public class TravelRecordsServiceTests
         var japanPlaceId = Guid.NewGuid();
         var domesticPlaceId = Guid.NewGuid();
         var fallbackMediaId = Guid.NewGuid();
+        var japanRepresentativeMediaId = Guid.NewGuid();
         var duplicateForeignPhoto = CreateStatsCandidate("japan-1", Guid.NewGuid(), "일본", new DateTime(2024, 8, 1));
         var repository = new FixedAggregates(
         [
@@ -571,7 +572,12 @@ public class TravelRecordsServiceTests
                 [
                     duplicateForeignPhoto,
                     CreateStatsCandidate("japan-2", Guid.NewGuid(), "일본", new DateTime(2024, 8, 3)),
-                    CreateStatsCandidate("japan-3", Guid.NewGuid(), "일본", new DateTime(2024, 8, 5)),
+                    CreateStatsCandidate(
+                        "japan-3",
+                        japanRepresentativeMediaId,
+                        "일본",
+                        new DateTime(2024, 8, 5),
+                        "https://backend.example/thumbnails/japan-3"),
                 ],
             },
             new TravelPlaceAggregateRaw
@@ -636,6 +642,13 @@ public class TravelRecordsServiceTests
         Assert.Equal(5, dashboard.ForeignPhotoCount);
         Assert.Equal(1, dashboard.DomesticPlaceCount);
         Assert.Equal(2, dashboard.DomesticPhotoCount);
+        Assert.Equal(3, dashboard.ForeignCountries.Count);
+        var japan = Assert.Single(dashboard.ForeignCountries, item => item.Country == "일본");
+        Assert.Equal(3, japan.VisitCount);
+        Assert.Equal(3, japan.PhotoCount);
+        Assert.Equal(japanRepresentativeMediaId, japan.RepresentativeMediaId);
+        Assert.Equal("https://backend.example/thumbnails/japan-3", japan.ThumbnailPath);
+        Assert.All(dashboard.ForeignCountries, item => Assert.NotEqual("대한민국", item.Country));
     }
 
     private static TravelRecordsService CreateService(ITravelRecordsRepository repository)
@@ -697,12 +710,14 @@ public class TravelRecordsServiceTests
         string? backendFileId,
         Guid? mediaId,
         string? country,
-        DateTime capturedAt) => new()
+        DateTime capturedAt,
+        string? thumbnailPath = null) => new()
     {
         BackendFileId = backendFileId ?? string.Empty,
         MediaId = mediaId,
         Country = country!,
         CapturedAt = new DateTimeOffset(DateTime.SpecifyKind(capturedAt, DateTimeKind.Local)),
+        ThumbnailPath = thumbnailPath ?? string.Empty,
     };
 
     private static FixedAggregates CreateCountryRepository(params string?[] countries) =>

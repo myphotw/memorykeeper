@@ -68,6 +68,9 @@ public sealed class TravelRecordsDashboardDto
     /// </summary>
     public IReadOnlyList<TravelCountryVisitSummaryDto> CountryVisitStatistics { get; init; } = [];
 
+    /// <summary>Foreign country rows derived from <see cref="CountryVisitStatistics"/> and the same dashboard photo candidates.</summary>
+    public IReadOnlyList<TravelForeignCountryDto> ForeignCountries { get; init; } = [];
+
     public IReadOnlyList<TravelMemoryCardDto> MemoryCards { get; init; } = [];
 
     /// <summary>연도 Chapter → 여행(장소) 카드. Memory Timeline 본문.</summary>
@@ -83,6 +86,19 @@ public sealed class TravelCountryVisitSummaryDto
     public int CapturedDayCount { get; init; }
 
     public int Rank { get; init; }
+}
+
+public sealed class TravelForeignCountryDto
+{
+    public string Country { get; init; } = string.Empty;
+
+    public int VisitCount { get; init; }
+
+    public int PhotoCount { get; init; }
+
+    public Guid? RepresentativeMediaId { get; init; }
+
+    public string ThumbnailPath { get; init; } = string.Empty;
 }
 
 public enum TravelMemoryCardKind

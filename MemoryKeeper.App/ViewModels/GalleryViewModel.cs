@@ -80,6 +80,8 @@ public partial class GalleryViewModel : ObservableObject
 
     public int TotalCount => _totalCount;
 
+    public bool HasPendingFocusRestore => _galleryFocusState.HasPendingRestore;
+
     public event EventHandler? BackRequested;
 
     public event EventHandler<Guid>? ScrollToMediaRequested;
@@ -113,7 +115,11 @@ public partial class GalleryViewModel : ObservableObject
         await RunBusyAsync(async () =>
         {
             await RebuildTreeRootsAsync();
-            if (restore is not null)
+            if (!string.IsNullOrWhiteSpace(restore?.CountryFilter))
+            {
+                await SelectCountryFilterAsync(restore.CountryFilter);
+            }
+            else if (restore is not null)
             {
                 await RestoreSnapshotAsync(restore);
             }
@@ -138,8 +144,25 @@ public partial class GalleryViewModel : ObservableObject
             ExpandedNodeKeys = CollectExpandedNodeKeys(),
             FocusMediaId = mediaId ?? SelectedItem?.MediaId,
             GridScrollOffset = gridScrollOffset,
-            BrowseModeIndex = BrowseModeIndex
+            BrowseModeIndex = BrowseModeIndex,
+            CountryFilter = SelectedNode is { Kind: GalleryTreeNodeKind.Country, Year: null } node
+                ? node.Country
+                : null,
         });
+    }
+
+    private async Task SelectCountryFilterAsync(string country)
+    {
+        var node = new GalleryTreeNode
+        {
+            Kind = GalleryTreeNodeKind.Country,
+            Country = country,
+            Title = country,
+            Count = 0,
+        };
+        SelectedNode = node;
+        BreadcrumbText = BuildBreadcrumb(node);
+        await QueryForNodeAsync(node);
     }
 
     partial void OnBrowseModeIndexChanged(int value)

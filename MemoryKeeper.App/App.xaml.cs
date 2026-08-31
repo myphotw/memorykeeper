@@ -278,6 +278,8 @@ public partial class App : Microsoft.UI.Xaml.Application
                 services.AddTransient<TravelRecordsPage>();
                 services.AddTransient<TravelRecordsDetailViewModel>();
                 services.AddTransient<TravelRecordsDetailPage>();
+                services.AddTransient<TravelCountryListViewModel>();
+                services.AddTransient<TravelCountryListPage>();
                 services.AddTransient<PlaceMapViewModel>();
                 services.AddTransient<PlaceMapPage>();
                 services.AddTransient<GalleryViewModel>();

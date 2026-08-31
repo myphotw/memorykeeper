@@ -14,6 +14,9 @@ public sealed class GalleryFocusSnapshot
 
     /// <summary>0 = Year browse, 1 = Place browse.</summary>
     public int BrowseModeIndex { get; init; }
+
+    /// <summary>Optional cross-surface country selection applied through the existing hierarchy query.</summary>
+    public string? CountryFilter { get; init; }
 }
 
 public interface IGalleryFocusState
@@ -23,6 +26,8 @@ public interface IGalleryFocusState
     void Save(GalleryFocusSnapshot snapshot);
 
     GalleryFocusSnapshot? ConsumeRestore();
+
+    void RequestCountryFilter(string country);
 }
 
 public sealed class GalleryFocusState : IGalleryFocusState
@@ -38,5 +43,15 @@ public sealed class GalleryFocusState : IGalleryFocusState
         var snapshot = _snapshot;
         _snapshot = null;
         return snapshot;
+    }
+
+    public void RequestCountryFilter(string country)
+    {
+        if (string.IsNullOrWhiteSpace(country))
+        {
+            return;
+        }
+
+        _snapshot = new GalleryFocusSnapshot { CountryFilter = country.Trim() };
     }
 }
