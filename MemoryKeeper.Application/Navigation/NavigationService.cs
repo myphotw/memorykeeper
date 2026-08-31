@@ -1,14 +1,59 @@
 namespace MemoryKeeper.Application.Navigation;
 
+public enum NavigationKind
+{
+    DrillDown = 0,
+    TopLevel = 1,
+    Viewer = 2
+}
+
 /// <summary>
 /// Shared navigation entry for ContentFrame routing.
 /// </summary>
-public readonly record struct NavigationEntry(string Tag, string? SettingsSection = null)
+public readonly record struct NavigationEntry(
+    string Tag,
+    string? SettingsSection = null,
+    NavigationKind Kind = NavigationKind.DrillDown,
+    string? RootTag = null,
+    string? ContextKey = null,
+    string? DisplayLabel = null)
 {
-    public static NavigationEntry Home { get; } = new("home");
+    public static NavigationEntry Home { get; } =
+        TopLevel("home", "홈");
 
     public static NavigationEntry Of(string tag, string? settingsSection = null) =>
         new(tag, settingsSection);
+
+    public static NavigationEntry TopLevel(
+        string tag,
+        string displayLabel,
+        string? settingsSection = null) =>
+        new(tag, settingsSection, NavigationKind.TopLevel, tag, null, displayLabel);
+
+    public static NavigationEntry DrillDown(
+        string tag,
+        string rootTag,
+        string displayLabel,
+        string? contextKey = null,
+        string? settingsSection = null) =>
+        new(tag, settingsSection, NavigationKind.DrillDown, rootTag, contextKey, displayLabel);
+
+    public static NavigationEntry Viewer(
+        string tag,
+        string rootTag,
+        string displayLabel,
+        string? contextKey = null) =>
+        new(tag, null, NavigationKind.Viewer, rootTag, contextKey, displayLabel);
+
+    /// <summary>
+    /// Navigation identity excludes the user-facing label so copy changes do not create history entries.
+    /// </summary>
+    public bool HasSameIdentity(NavigationEntry other) =>
+        string.Equals(Tag, other.Tag, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(SettingsSection, other.SettingsSection, StringComparison.OrdinalIgnoreCase)
+        && Kind == other.Kind
+        && string.Equals(RootTag, other.RootTag, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(ContextKey, other.ContextKey, StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>
@@ -39,6 +84,8 @@ public interface INavigationService
     NavigationEntry? Current { get; }
 
     bool CanGoBack { get; }
+
+    NavigationEntry? BackEntry { get; }
 
     bool CanGoForward { get; }
 
@@ -88,11 +135,13 @@ public sealed class NavigationService : INavigationService
 
     public bool CanGoBack => _back.Count > 0;
 
+    public NavigationEntry? BackEntry => _back.Count > 0 ? _back.Peek() : null;
+
     public bool CanGoForward => _forward.Count > 0;
 
     public void Navigate(NavigationEntry entry)
     {
-        if (Current is { } current && !current.Equals(entry))
+        if (Current is { } current && !current.HasSameIdentity(entry))
         {
             _back.Push(current);
             TrimBack();
@@ -108,7 +157,7 @@ public sealed class NavigationService : INavigationService
     /// </summary>
     public bool NavigateIfNeeded(NavigationEntry entry)
     {
-        if (Current is { } current && current.Equals(entry))
+        if (Current is { } current && current.HasSameIdentity(entry))
         {
             return false;
         }
@@ -118,7 +167,7 @@ public sealed class NavigationService : INavigationService
     }
 
     public bool IsCurrent(NavigationEntry entry) =>
-        Current is { } current && current.Equals(entry);
+        Current is { } current && current.HasSameIdentity(entry);
 
     /// <summary>
     /// Collapses consecutive duplicate entries at the top of the back stack.
@@ -131,7 +180,7 @@ public sealed class NavigationService : INavigationService
         }
 
         var removed = 0;
-        while (_back.Count > 0 && Current is { } current && _back.Peek().Equals(current))
+        while (_back.Count > 0 && Current is { } current && _back.Peek().HasSameIdentity(current))
         {
             _back.Pop();
             removed++;

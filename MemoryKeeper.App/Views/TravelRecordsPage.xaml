@@ -30,15 +30,6 @@
             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
         </Style>
 
-        <Style x:Key="TripRowStyle" TargetType="Border">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Padding" Value="12,10" />
-            <Setter Property="MinWidth" Value="168" />
-            <Setter Property="MaxWidth" Value="220" />
-            <Setter Property="Margin" Value="0,0,8,8" />
-            <Setter Property="CornerRadius" Value="10" />
-        </Style>
     </Page.Resources>
 
     <Grid Background="{ThemeResource MkBrushBackground}">
@@ -102,32 +93,6 @@
                     Margin="0,0,0,20"
                     Visibility="{Binding NeedsHomeLocation, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}" />
 
-                <!-- Featured memory: text only (no hero photo) -->
-                <Border
-                    Margin="0,0,0,24"
-                    Padding="16,12"
-                    CornerRadius="12"
-                    Background="{ThemeResource MkBrushSurface}"
-                    BorderBrush="{ThemeResource MkBrushAccentGoldMuted}"
-                    BorderThickness="1"
-                    Visibility="{Binding HasFeaturedMemory, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                    Tapped="FeaturedMemory_OnTapped"
-                    PointerEntered="InsightCard_OnPointerEntered"
-                    PointerExited="InsightCard_OnPointerExited">
-                    <StackPanel Spacing="4">
-                        <TextBlock
-                            Text="{Binding FeaturedMemoryCaption, Mode=OneWay}"
-                            Style="{StaticResource MkCaptionTextStyle}"
-                            Opacity="0.8" />
-                        <TextBlock
-                            Text="{Binding FeaturedMemory.TripName, Mode=OneWay}"
-                            Style="{StaticResource MkPlaceNameStyle}" />
-                        <TextBlock
-                            Text="{Binding FeaturedMemory.PeriodText, Mode=OneWay}"
-                            Style="{StaticResource MkMetaTextStyle}" />
-                    </StackPanel>
-                </Border>
-
                 <!-- Memory Insight -->
                 <TextBlock
                     Text="Memory Insight"
@@ -137,7 +102,7 @@
 
                 <Grid
                     Margin="0,0,0,32"
-                    ColumnDefinitions="*,*,*,*"
+                    ColumnDefinitions="*,*,*"
                     ColumnSpacing="16"
                     RowDefinitions="Auto"
                     x:Name="InsightGrid">
@@ -220,136 +185,200 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- ④ 가장 많이 방문한 나라 -->
-                    <Border
-                        Grid.Column="3"
-                        Style="{StaticResource InsightCardStyle}"
-                        Visibility="{Binding HasTopCountry, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                        Tapped="Country_OnTapped"
-                        PointerEntered="InsightCard_OnPointerEntered"
-                        PointerExited="InsightCard_OnPointerExited">
-                        <StackPanel Spacing="4">
-                            <TextBlock Text="가장 많이 방문한 나라" Style="{StaticResource InsightLabelStyle}" />
-                            <TextBlock
-                                Text="{Binding TopCountry.Country, Mode=OneWay}"
-                                Style="{StaticResource InsightTitleStyle}" />
-                            <TextBlock
-                                Text="{Binding TopCountry.VisitCountText, Mode=OneWay}"
-                                Style="{StaticResource MkMetaTextStyle}" />
-                        </StackPanel>
-                    </Border>
-                    <Border
-                        Grid.Column="3"
-                        Style="{StaticResource InsightCardStyle}"
-                        Visibility="{Binding HasTopCountry, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}">
-                        <StackPanel Spacing="4">
-                            <TextBlock Text="가장 많이 방문한 나라" Style="{StaticResource InsightLabelStyle}" />
-                            <TextBlock Text="아직 기록이 없어요" Style="{StaticResource InsightTitleStyle}" Opacity="0.55" />
-                        </StackPanel>
-                    </Border>
                 </Grid>
 
-                <!-- Timeline -->
+                <!-- Existing summary statistics -->
+                <StackPanel
+                    x:Name="StatsHost"
+                    Margin="0,0,0,32"
+                    Spacing="12"
+                    Visibility="Collapsed">
+                    <TextBlock
+                        Text="여행 한눈에"
+                        Style="{StaticResource MkSectionTitleStyle}"
+                        FontSize="18"
+                        Margin="0,0,0,4" />
+                    <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="12">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="총 여행" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
+                            <TextBlock x:Name="StatTrips" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="4">
+                            <TextBlock Text="해외 방문 국가" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
+                            <TextBlock x:Name="StatCountries" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2" Spacing="4">
+                            <TextBlock Text="방문 장소" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
+                            <TextBlock x:Name="StatPlaces" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="3" Spacing="4">
+                            <TextBlock Text="총 사진" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
+                            <TextBlock x:Name="StatPhotos" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+
+                <!-- Country visit graph: consecutive capture-date ranges per country -->
                 <TextBlock
-                    Text="여행 타임라인"
+                    Text="국가별 방문 횟수"
                     Style="{StaticResource MkSectionTitleStyle}"
                     Margin="0,0,0,6"
                     FontSize="20" />
                 <TextBlock
-                    Text="연도별로 다녀온 여행을 시간순으로 살펴보세요."
+                    Text="같은 나라에서 연속된 날짜의 사진은 한 번의 방문으로 계산했어요."
+                    Style="{StaticResource MkCaptionTextStyle}"
+                    Margin="0,0,0,14"
+                    Opacity="0.8" />
+                <Border
+                    Style="{StaticResource MkCardStyle}"
+                    Margin="0,0,0,32"
+                    Visibility="{Binding HasCountryVisitStatistics, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <ScrollViewer MaxHeight="360" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <ItemsControl ItemsSource="{Binding CountryVisitStatistics, Mode=OneWay}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid ColumnDefinitions="140,*,Auto" ColumnSpacing="14" Margin="0,6">
+                                        <TextBlock
+                                            Text="{Binding Country, Mode=OneWay}"
+                                            Style="{StaticResource MkBodyTextStyle}"
+                                            FontWeight="SemiBold"
+                                            TextTrimming="CharacterEllipsis"
+                                            VerticalAlignment="Center" />
+                                        <ProgressBar
+                                            Grid.Column="1"
+                                            Minimum="0"
+                                            Maximum="{Binding MaximumVisitCount, Mode=OneWay}"
+                                            Value="{Binding VisitCount, Mode=OneWay}"
+                                            Height="8"
+                                            VerticalAlignment="Center" />
+                                        <TextBlock
+                                            Grid.Column="2"
+                                            Text="{Binding VisitCountText, Mode=OneWay}"
+                                            Style="{StaticResource MkMetaTextStyle}"
+                                            MinWidth="42"
+                                            TextAlignment="Right"
+                                            VerticalAlignment="Center" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Border>
+                <Border
+                    Style="{StaticResource MkEmptyStateCardStyle}"
+                    Margin="0,0,0,32"
+                    Visibility="{Binding HasCountryVisitStatistics, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}">
+                    <TextBlock
+                        Text="촬영 날짜와 국가 정보가 있는 사진이 쌓이면 방문 횟수를 보여드려요."
+                        Style="{StaticResource MkEmptyStateMessageStyle}" />
+                </Border>
+
+                <!-- MemoryKeeper-selected memories -->
+                <TextBlock
+                    Text="MemoryKeeper가 꺼내본 추억"
+                    Style="{StaticResource MkSectionTitleStyle}"
+                    Margin="0,0,0,6"
+                    FontSize="20" />
+                <TextBlock
+                    Text="오늘과 비슷한 시기의 사진을 골라 먼저 보여드려요."
                     Style="{StaticResource MkCaptionTextStyle}"
                     Margin="0,0,0,16"
                     Opacity="0.8" />
 
-                <ItemsControl
-                    ItemsSource="{Binding YearChapters, Mode=OneWay}"
-                    Visibility="{Binding HasYearChapters, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <StackPanel Margin="0,0,0,28">
-                                <TextBlock
-                                    Text="{Binding YearTitle}"
-                                    Style="{StaticResource MkSectionTitleStyle}"
-                                    FontSize="26"
-                                    Margin="0,0,0,10"
-                                    CharacterSpacing="30" />
-                                <GridView
-                                    ItemsSource="{Binding Trips}"
-                                    SelectionMode="None"
-                                    IsItemClickEnabled="True"
-                                    ItemClick="TripRow_OnItemClick">
-                                    <GridView.ItemsPanel>
-                                        <ItemsPanelTemplate>
-                                            <ItemsWrapGrid Orientation="Horizontal" MaximumRowsOrColumns="6" />
-                                        </ItemsPanelTemplate>
-                                    </GridView.ItemsPanel>
-                                    <GridView.ItemContainerStyle>
-                                        <Style TargetType="GridViewItem">
-                                            <Setter Property="Margin" Value="0" />
-                                            <Setter Property="Padding" Value="0" />
-                                            <Setter Property="MinWidth" Value="0" />
-                                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                                        </Style>
-                                    </GridView.ItemContainerStyle>
-                                    <GridView.ItemTemplate>
-                                        <DataTemplate>
-                                            <Border
-                                                Style="{StaticResource TripRowStyle}"
-                                                Tag="{Binding}"
-                                                PointerEntered="TripRow_OnPointerEntered"
-                                                PointerExited="TripRow_OnPointerExited"
-                                                Loaded="TripRow_OnLoaded">
-                                                <StackPanel Spacing="2">
-                                                    <StackPanel Orientation="Horizontal" Spacing="6">
-                                                        <TextBlock
-                                                            FontSize="16"
-                                                            Loaded="CountryEmoji_OnLoaded" />
-                                                        <TextBlock
-                                                            Text="{Binding Country, Mode=OneWay}"
-                                                            Style="{StaticResource MkBodyTextStyle}"
-                                                            FontWeight="SemiBold" />
-                                                    </StackPanel>
-                                                    <TextBlock
-                                                        Text="{Binding TripName}"
-                                                        Style="{StaticResource MkPlaceNameStyle}"
-                                                        FontSize="16"
-                                                        TextTrimming="CharacterEllipsis"
-                                                        MaxLines="1" />
-                                                    <TextBlock
-                                                        Text="{Binding PeriodText}"
-                                                        Style="{StaticResource MkMetaTextStyle}" />
-                                                    <TextBlock
-                                                        Style="{StaticResource MkCaptionTextStyle}"
-                                                        Opacity="0.75">
-                                                        <Run Text="사진 " />
-                                                        <Run Text="{Binding PhotoCount}" />
-                                                        <Run Text="장" />
-                                                    </TextBlock>
-                                                </StackPanel>
-                                            </Border>
-                                        </DataTemplate>
-                                    </GridView.ItemTemplate>
-                                </GridView>
-                                <Border
-                                    Height="1"
-                                    Margin="0,8,0,0"
-                                    Background="{ThemeResource MkBrushDivider}"
-                                    Opacity="0.45" />
-                            </StackPanel>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                <!-- Home FeaturedMemory is preserved inside the new memory area. -->
+                <Border
+                    Margin="0,0,0,16"
+                    Padding="16,12"
+                    CornerRadius="12"
+                    Background="{ThemeResource MkBrushSurface}"
+                    BorderBrush="{ThemeResource MkBrushAccentGoldMuted}"
+                    BorderThickness="1"
+                    Visibility="{Binding HasFeaturedMemory, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                    Tapped="FeaturedMemory_OnTapped"
+                    PointerEntered="InsightCard_OnPointerEntered"
+                    PointerExited="InsightCard_OnPointerExited">
+                    <StackPanel Spacing="4">
+                        <TextBlock
+                            Text="{Binding FeaturedMemoryCaption, Mode=OneWay}"
+                            Style="{StaticResource MkCaptionTextStyle}"
+                            Opacity="0.8" />
+                        <TextBlock
+                            Text="{Binding FeaturedMemory.TripName, Mode=OneWay}"
+                            Style="{StaticResource MkPlaceNameStyle}" />
+                        <TextBlock
+                            Text="{Binding FeaturedMemory.PeriodText, Mode=OneWay}"
+                            Style="{StaticResource MkMetaTextStyle}" />
+                    </StackPanel>
+                </Border>
 
-                <!-- Empty -->
+                <GridView
+                    x:Name="MemoryCardsGrid"
+                    ItemsSource="{Binding MemoryCards, Mode=OneWay}"
+                    SelectionMode="None"
+                    IsItemClickEnabled="True"
+                    ItemClick="MemoryCard_OnItemClick"
+                    ContainerContentChanging="MemoryCardsGrid_OnContainerContentChanging"
+                    SizeChanged="MemoryCardsGrid_OnSizeChanged"
+                    Margin="0,0,0,20"
+                    Visibility="{Binding HasMemoryCards, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <GridView.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <ItemsWrapGrid Orientation="Horizontal" MaximumRowsOrColumns="2" />
+                        </ItemsPanelTemplate>
+                    </GridView.ItemsPanel>
+                    <GridView.ItemContainerStyle>
+                        <Style TargetType="GridViewItem">
+                            <Setter Property="Margin" Value="0,0,14,14" />
+                            <Setter Property="Padding" Value="0" />
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        </Style>
+                    </GridView.ItemContainerStyle>
+                    <GridView.ItemTemplate>
+                        <DataTemplate>
+                            <Border Style="{StaticResource MkCardStyle}" MinHeight="190">
+                                <StackPanel Spacing="10">
+                                    <StackPanel Spacing="3">
+                                        <TextBlock Text="{Binding Title, Mode=OneWay}" Style="{StaticResource MkPlaceNameStyle}" FontSize="18" />
+                                        <TextBlock Text="{Binding Subtitle, Mode=OneWay}" Style="{StaticResource MkMetaTextStyle}" />
+                                    </StackPanel>
+                                    <ItemsControl ItemsSource="{Binding Photos, Mode=OneWay}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Orientation="Horizontal" Spacing="8" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Width="88" Height="88" CornerRadius="8" Background="{ThemeResource MkBrushSurfaceMuted}">
+                                                    <Image
+                                                        Source="{Binding ThumbnailImage, Mode=OneWay}"
+                                                        Stretch="UniformToFill"
+                                                        AutomationProperties.Name="{Binding AccessibleLabel, Mode=OneWay}" />
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <TextBlock
+                                        Text="{Binding PlaceSummary, Mode=OneWay}"
+                                        Style="{StaticResource MkCaptionTextStyle}"
+                                        Opacity="0.8"
+                                        TextTrimming="CharacterEllipsis"
+                                        MaxLines="1" />
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </GridView.ItemTemplate>
+                </GridView>
+
                 <Border
                     Style="{StaticResource MkEmptyStateCardStyle}"
-                    Visibility="{Binding HasYearChapters, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}">
+                    Visibility="{Binding HasMemoryCards, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}">
                     <StackPanel Spacing="12" HorizontalAlignment="Center">
                         <TextBlock
-                            Text="아직 여행 기록이 없습니다."
+                            Text="아직 꺼내볼 수 있는 과거 추억이 없습니다."
                             Style="{StaticResource MkEmptyStateTitleStyle}" />
                         <TextBlock
-                            Text="사진을 가져오고 장소를 연결하면 여행이 쌓입니다."
+                            Text="촬영 날짜가 있는 사진을 가져오면 오늘과 비슷한 시기의 추억을 골라드려요."
                             Style="{StaticResource MkEmptyStateMessageStyle}" />
                         <Button
                             Content="사진 가져오기"
@@ -359,41 +388,6 @@
                             Click="ImportPhotos_OnClick" />
                     </StackPanel>
                 </Border>
-
-                <!-- Bottom stats (computed in code-behind from YearChapters) -->
-                <StackPanel
-                    x:Name="StatsHost"
-                    Margin="0,8,0,12"
-                    Spacing="12"
-                    Visibility="Collapsed">
-                    <TextBlock
-                        Text="여행 한눈에"
-                        Style="{StaticResource MkSectionTitleStyle}"
-                        FontSize="18"
-                        Margin="0,0,0,4" />
-                    <Grid ColumnDefinitions="*,*,*,*,*" ColumnSpacing="12">
-                        <StackPanel Spacing="4">
-                            <TextBlock Text="총 여행" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
-                            <TextBlock x:Name="StatTrips" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
-                        </StackPanel>
-                        <StackPanel Grid.Column="1" Spacing="4">
-                            <TextBlock Text="방문 국가" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
-                            <TextBlock x:Name="StatCountries" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
-                        </StackPanel>
-                        <StackPanel Grid.Column="2" Spacing="4">
-                            <TextBlock Text="방문 도시·여행" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
-                            <TextBlock x:Name="StatCities" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
-                        </StackPanel>
-                        <StackPanel Grid.Column="3" Spacing="4">
-                            <TextBlock Text="방문 장소" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
-                            <TextBlock x:Name="StatPlaces" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
-                        </StackPanel>
-                        <StackPanel Grid.Column="4" Spacing="4">
-                            <TextBlock Text="총 사진" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
-                            <TextBlock x:Name="StatPhotos" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
-                        </StackPanel>
-                    </Grid>
-                </StackPanel>
             </StackPanel>
         </ScrollViewer>
 

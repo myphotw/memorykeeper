@@ -20,6 +20,7 @@ public partial class TravelRecordsDetailViewModel : ObservableObject
     private readonly ILogger<TravelRecordsDetailViewModel> _logger;
     private readonly DispatcherQueue _dispatcherQueue;
     private CancellationTokenSource? _thumbnailCts;
+    private TravelRecordsDetailKind? _activeDetailKind;
     private TravelSeason? _activeSeason;
 
     [ObservableProperty]
@@ -45,6 +46,12 @@ public partial class TravelRecordsDetailViewModel : ObservableObject
 
     [ObservableProperty]
     private bool showSeasonAction;
+
+    [ObservableProperty]
+    private bool showFarthestHomeHint;
+
+    [ObservableProperty]
+    private string farthestHomeHint = string.Empty;
 
     [ObservableProperty]
     private bool isBusy;
@@ -73,11 +80,17 @@ public partial class TravelRecordsDetailViewModel : ObservableObject
     [RelayCommand]
     private async Task LoadAsync()
     {
-        var kind = _navigationState.PendingDetailKind ?? TravelRecordsDetailKind.MostVisited;
-        var season = _navigationState.PendingDetailSeason;
+        var requestedKind = _navigationState.PendingDetailKind;
+        var kind = requestedKind ?? _activeDetailKind ?? TravelRecordsDetailKind.MostVisited;
+        var season = requestedKind.HasValue
+            ? _navigationState.PendingDetailSeason
+            : _activeSeason;
         _navigationState.PendingDetailKind = null;
         _navigationState.PendingDetailSeason = null;
+        _activeDetailKind = kind;
         _activeSeason = kind == TravelRecordsDetailKind.Season ? season : null;
+        FarthestHomeHint = string.Empty;
+        ShowFarthestHomeHint = false;
 
         IsBusy = true;
         try
@@ -88,8 +101,17 @@ public partial class TravelRecordsDetailViewModel : ObservableObject
 
             var detail = await _travelRecordsService.GetDetailAsync(kind, season, token);
             Title = detail.Title;
-            Places = new ObservableCollection<TravelPlaceCardItem>(
-                detail.Places.Select(item => new TravelPlaceCardItem(item)));
+            var isRecentDetail = kind == TravelRecordsDetailKind.Recent;
+            var isLongUnvisitedDetail = kind == TravelRecordsDetailKind.LongUnvisited;
+            var placeItems = detail.Places
+                .Select(item => new TravelPlaceCardItem(item)
+                {
+                    IsRecentDetail = isRecentDetail,
+                    IsLongUnvisitedDetail = isLongUnvisitedDetail,
+                    IsStandardPlaceDetail = !isRecentDetail && !isLongUnvisitedDetail,
+                })
+                .ToList();
+            Places = new ObservableCollection<TravelPlaceCardItem>(placeItems);
             Countries = new ObservableCollection<TravelCountryCardItem>(
                 detail.Countries.Select(item => new TravelCountryCardItem(item)));
             FarthestPlaces = new ObservableCollection<TravelFarthestCardItem>(
@@ -99,6 +121,10 @@ public partial class TravelRecordsDetailViewModel : ObservableObject
             ShowCountries = Countries.Count > 0;
             ShowFarthest = FarthestPlaces.Count > 0;
             ShowSeasonAction = _activeSeason is not null;
+            FarthestHomeHint = kind == TravelRecordsDetailKind.Farthest
+                ? FarthestPlaces.FirstOrDefault()?.HomeHint ?? string.Empty
+                : string.Empty;
+            ShowFarthestHomeHint = !string.IsNullOrWhiteSpace(FarthestHomeHint);
             StatusMessage = ShowPlaces || ShowCountries || ShowFarthest
                 ? "항목을 선택하면 방문지도로 이동합니다."
                 : "표시할 기록이 없습니다.";

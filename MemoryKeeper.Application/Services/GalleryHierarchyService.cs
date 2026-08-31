@@ -660,6 +660,8 @@ public sealed class GalleryHierarchyService
             ThumbnailUrl = thumbnail,
             AbsoluteLibraryPath = thumbnail,
             IsFavorite = photo.Photo.Favorite,
+            Country = CountryLabel(photo),
+            CaptureDatetime = photo.Photo.CaptureDatetime,
             CapturedAt = ResolveSortDate(photo.Photo) is var captured && captured != DateTimeOffset.MinValue
                 ? captured
                 : null,

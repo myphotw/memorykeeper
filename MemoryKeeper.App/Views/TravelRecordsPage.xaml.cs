@@ -62,6 +62,40 @@ public sealed partial class TravelRecordsPage : Page
     private void ApplyResponsiveLayout(LayoutBreakpoint breakpoint)
     {
         ContentHost.HorizontalAlignment = HorizontalAlignment.Center;
+        ApplyMemoryCardWidths();
+    }
+
+    private void MemoryCardsGrid_OnSizeChanged(object sender, SizeChangedEventArgs e) =>
+        ApplyMemoryCardWidths();
+
+    private void MemoryCardsGrid_OnContainerContentChanging(
+        ListViewBase sender,
+        ContainerContentChangingEventArgs args)
+    {
+        if (args.ItemContainer is GridViewItem container)
+        {
+            container.Width = CalculateMemoryCardWidth();
+        }
+    }
+
+    private void ApplyMemoryCardWidths()
+    {
+        var width = CalculateMemoryCardWidth();
+        foreach (var item in ViewModel.MemoryCards)
+        {
+            if (MemoryCardsGrid.ContainerFromItem(item) is GridViewItem container)
+            {
+                container.Width = width;
+            }
+        }
+    }
+
+    private double CalculateMemoryCardWidth()
+    {
+        var available = Math.Max(280, MemoryCardsGrid.ActualWidth - 4);
+        return available >= 900
+            ? Math.Min(440, (available - 14) / 2)
+            : Math.Min(440, available);
     }
 
     private void RefreshDerivedUi()
@@ -105,59 +139,9 @@ public sealed partial class TravelRecordsPage : Page
 
         StatsHost.Visibility = Visibility.Visible;
         StatTrips.Text = trips.Count.ToString();
-        StatCountries.Text = trips
-            .Select(trip => trip.Country)
-            .Where(country => !string.IsNullOrWhiteSpace(country))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Count()
-            .ToString();
-        StatCities.Text = trips
-            .Select(trip => trip.TripName)
-            .Where(name => !string.IsNullOrWhiteSpace(name))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Count()
-            .ToString();
-        StatPlaces.Text = trips.Sum(trip => Math.Max(1, trip.PlaceCount)).ToString();
-        StatPhotos.Text = trips.Sum(trip => trip.PhotoCount).ToString("N0");
-    }
-
-    private void CountryEmoji_OnLoaded(object sender, RoutedEventArgs e)
-    {
-        if (sender is TextBlock { DataContext: TravelTripCardItem trip } block)
-        {
-            block.Text = TravelCountryEmoji.For(trip.Country);
-        }
-    }
-
-    private void TripRow_OnLoaded(object sender, RoutedEventArgs e)
-    {
-        // no-op hook reserved for future density tweaks
-    }
-
-    private void TripRow_OnItemClick(object sender, ItemClickEventArgs e)
-    {
-        if (e.ClickedItem is TravelTripCardItem trip)
-        {
-            ViewModel.OpenTripCommand.Execute(trip);
-        }
-    }
-
-    private void TripRow_OnPointerEntered(object sender, PointerRoutedEventArgs e)
-    {
-        if (sender is Border border
-            && global::Microsoft.UI.Xaml.Application.Current.Resources.TryGetValue("MkBrushSurfaceMuted", out var brush)
-            && brush is Brush muted)
-        {
-            border.Background = muted;
-        }
-    }
-
-    private void TripRow_OnPointerExited(object sender, PointerRoutedEventArgs e)
-    {
-        if (sender is Border border)
-        {
-            border.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-        }
+        StatCountries.Text = ViewModel.VisitedForeignCountryCount.ToString("N0");
+        StatPlaces.Text = ViewModel.DistinctPlaceCount.ToString("N0");
+        StatPhotos.Text = ViewModel.UniquePhotoCount.ToString("N0");
     }
 
     private void InsightCard_OnPointerEntered(object sender, PointerRoutedEventArgs e)
@@ -203,11 +187,16 @@ public sealed partial class TravelRecordsPage : Page
     private void ImportPhotos_OnClick(object sender, RoutedEventArgs e) =>
         OpenImportRequested?.Invoke(this, EventArgs.Empty);
 
+    private void MemoryCard_OnItemClick(object sender, ItemClickEventArgs e)
+    {
+        if (e.ClickedItem is TravelMemoryCardItem memory)
+        {
+            ViewModel.OpenMemoryCardCommand.Execute(memory);
+        }
+    }
+
     private void LongUnvisited_OnTapped(object sender, TappedRoutedEventArgs e) =>
         ViewModel.OpenLongUnvisitedDetailCommand.Execute(null);
-
-    private void Country_OnTapped(object sender, TappedRoutedEventArgs e) =>
-        ViewModel.OpenCountriesDetailCommand.Execute(null);
 
     private void Farthest_OnTapped(object sender, TappedRoutedEventArgs e) =>
         ViewModel.OpenFarthestDetailCommand.Execute(null);

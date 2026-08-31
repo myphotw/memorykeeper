@@ -20,6 +20,15 @@ public enum TravelRecordsDetailKind
 
 public sealed class TravelRecordsDashboardDto
 {
+    /// <summary>Unique photos identified by Backend file ID, then Media ID.</summary>
+    public int UniquePhotoCount { get; init; }
+
+    /// <summary>Unique real places, excluding the synthetic missing-place bucket.</summary>
+    public int DistinctPlaceCount { get; init; }
+
+    /// <summary>Foreign countries represented by <see cref="CountryVisitStatistics"/>.</summary>
+    public int VisitedForeignCountryCount { get; init; }
+
     public TravelPlaceSummaryDto? MostVisitedPlace { get; init; }
 
     public TravelPlaceSummaryDto? LongUnvisitedPlace { get; init; }
@@ -32,8 +41,65 @@ public sealed class TravelRecordsDashboardDto
 
     public TravelFarthestSummaryDto? FarthestPlace { get; init; }
 
+    /// <summary>
+    /// Foreign-country visits calculated only for the country graph by merging capture
+    /// dates across places and counting consecutive-day ranges.
+    /// </summary>
+    public IReadOnlyList<TravelCountryVisitSummaryDto> CountryVisitStatistics { get; init; } = [];
+
+    public IReadOnlyList<TravelMemoryCardDto> MemoryCards { get; init; } = [];
+
     /// <summary>연도 Chapter → 여행(장소) 카드. Memory Timeline 본문.</summary>
     public IReadOnlyList<TravelYearChapterDto> YearChapters { get; init; } = [];
+}
+
+public sealed class TravelCountryVisitSummaryDto
+{
+    public string Country { get; init; } = string.Empty;
+
+    public int VisitCount { get; init; }
+
+    public int CapturedDayCount { get; init; }
+
+    public int Rank { get; init; }
+}
+
+public enum TravelMemoryCardKind
+{
+    YearsAgoToday = 1,
+    LastYearAroundNow = 2,
+    YearsAgoAroundNow = 3,
+    Rediscovered = 4,
+}
+
+public sealed class TravelMemoryCardDto
+{
+    public TravelMemoryCardKind Kind { get; init; }
+
+    public string Title { get; init; } = string.Empty;
+
+    public string Subtitle { get; init; } = string.Empty;
+
+    public Guid FocusPlaceId { get; init; }
+
+    public Guid? RepresentativeMediaId { get; init; }
+
+    public IReadOnlyList<TravelMemoryPhotoDto> Photos { get; init; } = [];
+}
+
+public sealed class TravelMemoryPhotoDto
+{
+    public Guid? MediaId { get; init; }
+
+    public Guid PlaceId { get; init; }
+
+    public string PlaceName { get; init; } = string.Empty;
+
+    public string Country { get; init; } = string.Empty;
+
+    public DateTimeOffset CapturedAt { get; init; }
+
+    public string ThumbnailPath { get; init; } = string.Empty;
 }
 
 /// <summary>연도 하나의 Chapter (예: 2025).</summary>

@@ -109,6 +109,12 @@ public partial class TravelPlaceCardItem : ObservableObject
 
     public string TagsText => Dto.TopTags.Count == 0 ? string.Empty : string.Join(" · ", Dto.TopTags);
 
+    public bool IsRecentDetail { get; init; }
+
+    public bool IsLongUnvisitedDetail { get; init; }
+
+    public bool IsStandardPlaceDetail { get; init; }
+
     public string AbsoluteLibraryPath => Dto.AbsoluteLibraryPath ?? string.Empty;
 
     public Guid? RepresentativeMediaId => Dto.RepresentativeMediaId;
@@ -151,6 +157,82 @@ public sealed class TravelCountryCardItem
     public string VisitCountText => $"{Dto.VisitRecordCount}회";
 
     public string PlaceCountText => $"장소 {Dto.PlaceCount}곳";
+}
+
+public sealed class TravelCountryVisitItem
+{
+    public TravelCountryVisitItem(TravelCountryVisitSummaryDto dto, int maximumVisitCount)
+    {
+        Dto = dto;
+        MaximumVisitCount = Math.Max(1, maximumVisitCount);
+    }
+
+    public TravelCountryVisitSummaryDto Dto { get; }
+
+    public string Country => Dto.Country;
+
+    public int VisitCount => Dto.VisitCount;
+
+    public int MaximumVisitCount { get; }
+
+    public string VisitCountText => $"{Dto.VisitCount}회";
+
+    public string CapturedDayText => $"촬영 {Dto.CapturedDayCount}일";
+}
+
+public sealed class TravelMemoryCardItem
+{
+    public TravelMemoryCardItem(TravelMemoryCardDto dto)
+    {
+        Dto = dto;
+        Photos = new ObservableCollection<TravelMemoryPhotoItem>(
+            dto.Photos.Select(photo => new TravelMemoryPhotoItem(photo)));
+    }
+
+    public TravelMemoryCardDto Dto { get; }
+
+    public string Title => Dto.Title;
+
+    public string Subtitle => Dto.Subtitle;
+
+    public Guid FocusPlaceId => Dto.FocusPlaceId;
+
+    public Guid? RepresentativeMediaId => Dto.RepresentativeMediaId;
+
+    public ObservableCollection<TravelMemoryPhotoItem> Photos { get; }
+
+    public string FocusPlaceName => Dto.Photos
+        .FirstOrDefault(photo => photo.PlaceId == Dto.FocusPlaceId)?.PlaceName
+        ?? string.Empty;
+
+    public string PlaceSummary => string.Join(" · ", Dto.Photos
+        .Select(photo => photo.PlaceName)
+        .Where(name => !string.IsNullOrWhiteSpace(name))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .Take(2));
+}
+
+public partial class TravelMemoryPhotoItem : ObservableObject
+{
+    public TravelMemoryPhotoItem(TravelMemoryPhotoDto dto)
+    {
+        Dto = dto;
+    }
+
+    public TravelMemoryPhotoDto Dto { get; }
+
+    public Guid? MediaId => Dto.MediaId;
+
+    public Guid PlaceId => Dto.PlaceId;
+
+    public string ThumbnailPath => Dto.ThumbnailPath;
+
+    public string AccessibleLabel => string.IsNullOrWhiteSpace(Dto.PlaceName)
+        ? Dto.CapturedAt.ToLocalTime().ToString("yyyy년 M월 d일 사진")
+        : $"{Dto.CapturedAt.ToLocalTime():yyyy년 M월 d일} {Dto.PlaceName} 사진";
+
+    [ObservableProperty]
+    private BitmapImage? thumbnailImage;
 }
 
 public partial class TravelFarthestCardItem : ObservableObject

@@ -15,8 +15,7 @@
             PaneDisplayMode="Top"
             AlwaysShowHeader="False"
             Background="{ThemeResource MkBrushBackground}"
-            ItemInvoked="RootNavigation_OnItemInvoked"
-            SelectionChanged="RootNavigation_OnSelectionChanged">
+            ItemInvoked="RootNavigation_OnItemInvoked">
             <NavigationView.MenuItems>
                 <NavigationViewItem Content="홈" Tag="home" IsSelected="True" />
                 <NavigationViewItem Content="사진첩" Tag="gallery" />

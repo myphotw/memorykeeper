@@ -223,6 +223,294 @@ public class TravelRecordsServiceTests
         Assert.Null(dashboard.FarthestPlace?.Year);
     }
 
+    [Fact]
+    public async Task GetDashboardAsync_CountryGraphCountsConsecutiveCaptureDateRangesAcrossPlaces()
+    {
+        var repository = new FixedAggregates(
+        [
+            new TravelPlaceAggregateRaw
+            {
+                PlaceId = Guid.NewGuid(),
+                PlaceName = "서울",
+                Country = "일본",
+                PhotoCount = 3,
+                Photos =
+                [
+                    CreateCandidate("seoul-1", new DateTime(2024, 8, 1), "일본"),
+                    CreateCandidate("seoul-2", new DateTime(2024, 8, 2), "일본"),
+                ],
+            },
+            new TravelPlaceAggregateRaw
+            {
+                PlaceId = Guid.NewGuid(),
+                PlaceName = "부산",
+                Country = "일본",
+                PhotoCount = 4,
+                Photos =
+                [
+                    CreateCandidate("busan-2", new DateTime(2024, 8, 2), "일본"),
+                    CreateCandidate("busan-4", new DateTime(2024, 8, 4), "일본"),
+                    CreateCandidate("busan-5", new DateTime(2024, 8, 5), "일본"),
+                ],
+            },
+            new TravelPlaceAggregateRaw
+            {
+                PlaceId = Guid.NewGuid(),
+                PlaceName = "날짜 미상",
+                Country = "일본",
+                PhotoCount = 1,
+                Photos = [new TravelPhotoCandidateRaw { BackendFileId = "undated" }],
+            },
+        ]);
+
+        var dashboard = await CreateService(repository).GetDashboardAsync();
+
+        var country = Assert.Single(dashboard.CountryVisitStatistics);
+        Assert.Equal("일본", country.Country);
+        Assert.Equal(2, country.VisitCount);
+        Assert.Equal(4, country.CapturedDayCount);
+        Assert.Equal(1, dashboard.VisitedForeignCountryCount);
+    }
+
+    [Fact]
+    public async Task GetDashboardAsync_CountsUniquePhotosAndDistinctRealPlaces()
+    {
+        var repeatedPlaceId = Guid.NewGuid();
+        var mediaOnlyId = Guid.NewGuid();
+        var repository = new FixedAggregates(
+        [
+            new TravelPlaceAggregateRaw
+            {
+                PlaceId = repeatedPlaceId,
+                PlaceName = "여러 해에 나온 장소",
+                VisitDates = [new DateTime(2020, 1, 1)],
+                Photos =
+                [
+                    new TravelPhotoCandidateRaw
+                    {
+                        BackendFileId = "same-backend-file",
+                        MediaId = Guid.NewGuid(),
+                    },
+                    new TravelPhotoCandidateRaw { MediaId = mediaOnlyId },
+                ],
+            },
+            new TravelPlaceAggregateRaw
+            {
+                PlaceId = repeatedPlaceId,
+                PlaceName = "여러 해에 나온 장소",
+                VisitDates = [new DateTime(2024, 1, 1)],
+                Photos =
+                [
+                    new TravelPhotoCandidateRaw
+                    {
+                        BackendFileId = "SAME-BACKEND-FILE",
+                        MediaId = Guid.NewGuid(),
+                    },
+                    new TravelPhotoCandidateRaw { MediaId = mediaOnlyId },
+                ],
+            },
+            new TravelPlaceAggregateRaw
+            {
+                PlaceId = LibraryConstants.UnclassifiedPlaceId,
+                PlaceName = GalleryHierarchyService.UnclassifiedTitle,
+                IsUnclassified = true,
+                Photos = [new TravelPhotoCandidateRaw { BackendFileId = "unclassified-photo" }],
+            },
+            new TravelPlaceAggregateRaw
+            {
+                PlaceId = Guid.Empty,
+                Photos = [new TravelPhotoCandidateRaw { BackendFileId = "missing-place-photo" }],
+            },
+        ]);
+
+        var dashboard = await CreateService(repository).GetDashboardAsync();
+
+        Assert.Equal(4, dashboard.UniquePhotoCount);
+        Assert.Equal(1, dashboard.DistinctPlaceCount);
+    }
+
+    [Fact]
+    public async Task GetDashboardAsync_CountryGraphUsesPhotoCountryAndExcludesUnknownCountries()
+    {
+        var repository = new FixedAggregates(
+        [
+            new TravelPlaceAggregateRaw
+            {
+                PlaceId = LibraryConstants.UnclassifiedPlaceId,
+                PlaceName = GalleryHierarchyService.UnclassifiedTitle,
+                Country = "일본",
+                IsUnclassified = true,
+                Photos =
+                [
+                    CreateCandidate("kr-1", new DateTime(2024, 8, 1), "대한민국"),
+                    CreateCandidate("kr-2", new DateTime(2024, 8, 1), "한국"),
+                    CreateCandidate("kr-3", new DateTime(2024, 8, 1), "South Korea"),
+                    CreateCandidate("kr-4", new DateTime(2024, 8, 1), "Republic of Korea"),
+                    CreateCandidate("jp-1", new DateTime(2024, 8, 1), "일본"),
+                    CreateCandidate("jp-2", new DateTime(2024, 8, 2), "일본"),
+                    CreateCandidate("other", new DateTime(2024, 8, 3), GalleryHierarchyService.OtherTitle),
+                    CreateCandidate("blank", new DateTime(2024, 8, 4), string.Empty),
+                    new TravelPhotoCandidateRaw
+                    {
+                        BackendFileId = "null-country",
+                        Country = null!,
+                        CapturedAt = new DateTimeOffset(2024, 8, 5, 10, 0, 0, TimeSpan.Zero),
+                    },
+                ],
+            },
+            new TravelPlaceAggregateRaw
+            {
+                PlaceId = Guid.NewGuid(),
+                Country = GalleryHierarchyService.OtherTitle,
+                Photos =
+                [
+                    CreateCandidate("jp-4", new DateTime(2024, 8, 4), "일본"),
+                    CreateCandidate("unclassified", new DateTime(2024, 8, 7), GalleryHierarchyService.UnclassifiedTitle),
+                ],
+            },
+        ]);
+
+        var dashboard = await CreateService(repository).GetDashboardAsync();
+
+        var japan = Assert.Single(dashboard.CountryVisitStatistics, item => item.Country == "일본");
+        Assert.Equal(2, japan.VisitCount);
+        Assert.Equal(3, japan.CapturedDayCount);
+        Assert.Single(dashboard.CountryVisitStatistics);
+        Assert.Equal(dashboard.CountryVisitStatistics.Count, dashboard.VisitedForeignCountryCount);
+        Assert.DoesNotContain(dashboard.CountryVisitStatistics, item =>
+            item.Country is "대한민국" or GalleryHierarchyService.OtherTitle or GalleryHierarchyService.UnclassifiedTitle);
+    }
+
+    [Fact]
+    public async Task GetDashboardAsync_DomesticCountriesOnly_HasNoForeignCountries()
+    {
+        var dashboard = await CreateService(CreateCountryRepository(
+            "대한민국",
+            "한국",
+            "South Korea",
+            "Republic of Korea")).GetDashboardAsync();
+
+        Assert.Equal(0, dashboard.VisitedForeignCountryCount);
+        Assert.Empty(dashboard.CountryVisitStatistics);
+    }
+
+    [Fact]
+    public async Task GetDashboardAsync_DomesticAndJapan_HasOneForeignCountry()
+    {
+        var dashboard = await CreateService(CreateCountryRepository("대한민국", "일본"))
+            .GetDashboardAsync();
+
+        var country = Assert.Single(dashboard.CountryVisitStatistics);
+        Assert.Equal("일본", country.Country);
+        Assert.Equal(1, dashboard.VisitedForeignCountryCount);
+    }
+
+    [Fact]
+    public async Task GetDashboardAsync_ThreeForeignCountries_SharesGraphCountryCount()
+    {
+        var dashboard = await CreateService(CreateCountryRepository(
+            "대한민국",
+            "일본",
+            "몰디브",
+            "카타르")).GetDashboardAsync();
+
+        Assert.Equal(3, dashboard.VisitedForeignCountryCount);
+        Assert.Equal(dashboard.CountryVisitStatistics.Count, dashboard.VisitedForeignCountryCount);
+        Assert.Equal(
+            ["몰디브", "일본", "카타르"],
+            dashboard.CountryVisitStatistics
+                .Select(item => item.Country)
+                .OrderBy(country => country, StringComparer.Ordinal)
+                .ToArray());
+    }
+
+    [Fact]
+    public async Task GetDashboardAsync_MemoryCardsAreDeterministicAndDoNotRepeatPhotosOrYears()
+    {
+        var today = DateTime.Today;
+        var exactYear = Enumerable.Range(2, 12)
+            .Select(offset => today.Year - offset)
+            .First(year => DateTime.DaysInMonth(year, today.Month) >= today.Day);
+        var aroundYear = today.Year - 4 == exactYear ? today.Year - 5 : today.Year - 4;
+        var oldYear = today.Year - 12;
+        var nearbyDay = today.Day == 1 ? 2 : today.Day - 1;
+        var oldMonth = today.Month == 1 ? 7 : 1;
+        var repository = new FixedAggregates(
+        [
+            new TravelPlaceAggregateRaw
+            {
+                PlaceId = Guid.NewGuid(),
+                PlaceName = "추억 장소",
+                Country = "대한민국",
+                PhotoCount = 8,
+                Photos =
+                [
+                    CreateCandidate("exact-1", new DateTime(exactYear, today.Month, today.Day)),
+                    CreateCandidate("exact-2", new DateTime(exactYear, today.Month, today.Day)),
+                    CreateCandidate("last-year", new DateTime(today.Year - 1, today.Month, nearbyDay)),
+                    CreateCandidate("around", new DateTime(aroundYear, today.Month, nearbyDay)),
+                    CreateCandidate("old", new DateTime(oldYear, oldMonth, 1)),
+                ],
+            },
+        ]);
+
+        var dashboard = await CreateService(repository).GetDashboardAsync();
+
+        Assert.Equal(4, dashboard.MemoryCards.Count);
+        Assert.Contains(dashboard.MemoryCards, card =>
+            card.Kind == TravelMemoryCardKind.YearsAgoToday
+            && card.Title == $"{today.Year - exactYear}년 전 오늘");
+        Assert.Contains(dashboard.MemoryCards, card => card.Kind == TravelMemoryCardKind.LastYearAroundNow);
+        Assert.Contains(dashboard.MemoryCards, card => card.Kind == TravelMemoryCardKind.YearsAgoAroundNow);
+        Assert.Contains(dashboard.MemoryCards, card => card.Kind == TravelMemoryCardKind.Rediscovered);
+
+        var photos = dashboard.MemoryCards.SelectMany(card => card.Photos).ToList();
+        Assert.Equal(photos.Count, photos.Select(photo => photo.MediaId).Distinct().Count());
+        Assert.All(dashboard.MemoryCards, card => Assert.InRange(card.Photos.Count, 1, 4));
+    }
+
+    private static TravelRecordsService CreateService(ITravelRecordsRepository repository)
+    {
+        var homeLocation = new HomeLocationService(
+            new HomeSettingRepository([]),
+            new NoOpLocationResolver(),
+            NullLogger<HomeLocationService>.Instance);
+        return new TravelRecordsService(
+            repository,
+            new InMemoryMediaTagRepository(),
+            new InMemoryTagRepository(),
+            homeLocation,
+            NullLogger<TravelRecordsService>.Instance);
+    }
+
+    private static TravelPhotoCandidateRaw CreateCandidate(
+        string id,
+        DateTime capturedAt,
+        string country = "대한민국") => new()
+    {
+        MediaId = Guid.NewGuid(),
+        BackendFileId = id,
+        ThumbnailPath = $"https://backend.example/thumbnails/{id}",
+        Country = country,
+        CapturedAt = new DateTimeOffset(DateTime.SpecifyKind(capturedAt, DateTimeKind.Local)),
+    };
+
+    private static FixedAggregates CreateCountryRepository(params string?[] countries) =>
+        new(countries.Select((country, index) => new TravelPlaceAggregateRaw
+        {
+            PlaceId = Guid.NewGuid(),
+            Country = country ?? string.Empty,
+            Photos =
+            [
+                new TravelPhotoCandidateRaw
+                {
+                    BackendFileId = $"country-{index}",
+                    Country = country!,
+                    CapturedAt = new DateTimeOffset(2024, 1, index + 1, 10, 0, 0, TimeSpan.Zero),
+                },
+            ],
+        }).ToList());
+
     private sealed class FixedAggregates : ITravelRecordsRepository
     {
         private readonly IReadOnlyList<TravelPlaceAggregateRaw> _items;

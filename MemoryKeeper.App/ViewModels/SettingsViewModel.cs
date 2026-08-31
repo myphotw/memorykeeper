@@ -825,9 +825,13 @@ public partial class SettingsViewModel : ObservableObject
         };
 
         // Keep shell back-stack section in sync so child pages return here.
-        if (_navigation.Current?.Tag is "settings" or null)
+        if (_navigation.Current is { Tag: "settings" } current)
         {
-            _navigation.ReplaceCurrent(NavigationEntry.Of("settings", ActiveSection));
+            _navigation.ReplaceCurrent(current with { SettingsSection = ActiveSection });
+        }
+        else if (_navigation.Current is null)
+        {
+            _navigation.ReplaceCurrent(NavigationEntry.TopLevel("settings", "설정", ActiveSection));
         }
     }
 

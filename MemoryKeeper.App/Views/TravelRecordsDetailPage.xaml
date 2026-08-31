@@ -11,28 +11,61 @@
 
     <Page.Resources>
         <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+
+        <Style x:Key="TravelDetailListItemStyle" TargetType="ListViewItem">
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0,0,0,12" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Stretch" />
+        </Style>
+
+        <Style x:Key="TravelDetailCardStyle" TargetType="Border" BasedOn="{StaticResource MkCompactCardStyle}">
+            <Setter Property="Margin" Value="0" />
+        </Style>
     </Page.Resources>
 
-    <Grid Style="{StaticResource MkStandardPageContainerStyle}" RowDefinitions="Auto,Auto,*" RowSpacing="12">
-        <Grid ColumnDefinitions="Auto,*">
-            <Button Content="뒤로" Command="{Binding BackCommand}" Margin="0,0,12,0" />
+    <Grid Style="{StaticResource MkStandardPageContainerStyle}" RowDefinitions="Auto,Auto,*" RowSpacing="16">
+        <StackPanel Spacing="6">
+            <Button
+                x:Name="BackNavigationButton"
+                Command="{Binding BackCommand}"
+                Style="{StaticResource MkBackNavigationButtonStyle}"
+                Visibility="Collapsed">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <FontIcon
+                        FontFamily="{StaticResource MkIconFontFamily}"
+                        FontSize="14"
+                        Glyph="&#xE72B;" />
+                    <TextBlock
+                        x:Name="BackNavigationLabel"
+                        MaxWidth="280"
+                        Text="여행기록"
+                        TextTrimming="CharacterEllipsis"
+                        TextWrapping="NoWrap" />
+                </StackPanel>
+            </Button>
             <TextBlock
-                Grid.Column="1"
                 Text="{Binding Title, Mode=OneWay}"
-                FontSize="28"
-                FontWeight="SemiBold"
-                VerticalAlignment="Center" />
-        </Grid>
+                Style="{StaticResource MkPageTitleStyle}"
+                Margin="0" />
+        </StackPanel>
 
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="12">
+        <StackPanel Grid.Row="1" Spacing="4">
             <TextBlock
                 Text="{Binding StatusMessage, Mode=OneWay}"
-                Opacity="0.75"
+                Style="{StaticResource MkCaptionTextStyle}"
+                Opacity="0.8"
                 VerticalAlignment="Center" />
+            <TextBlock
+                Text="{Binding FarthestHomeHint, Mode=OneWay}"
+                Style="{StaticResource MkCaptionTextStyle}"
+                Opacity="0.72"
+                Visibility="{Binding ShowFarthestHomeHint, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
             <Button
                 Content="계절 방문지도 열기"
                 Visibility="{Binding ShowSeasonAction, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                Command="{Binding OpenSeasonVisitRecordCommand}" />
+                Command="{Binding OpenSeasonVisitRecordCommand}"
+                HorizontalAlignment="Left" />
         </StackPanel>
 
         <Grid Grid.Row="2">
@@ -41,21 +74,52 @@
                 ItemsSource="{Binding Places, Mode=OneWay}"
                 SelectionMode="None"
                 IsItemClickEnabled="True"
-                ItemClick="Places_OnItemClick">
+                ItemClick="Places_OnItemClick"
+                ItemContainerStyle="{StaticResource TravelDetailListItemStyle}">
                 <ListView.ItemTemplate>
                     <DataTemplate>
-                        <Grid ColumnDefinitions="56,72,*" ColumnSpacing="12" Padding="0,10">
-                            <TextBlock Text="{Binding Rank}" FontSize="22" FontWeight="Bold" VerticalAlignment="Center" />
-                            <Border Grid.Column="1" Width="64" Height="64" CornerRadius="10">
-                                <Image Source="{Binding ThumbnailImage, Mode=OneWay}" Stretch="UniformToFill" />
-                            </Border>
-                            <StackPanel Grid.Column="2" Spacing="2" VerticalAlignment="Center">
-                                <TextBlock Text="{Binding PlaceName}" FontSize="18" FontWeight="SemiBold" />
-                                <TextBlock Text="{Binding VisitCountText}" Opacity="0.85" />
-                                <TextBlock Text="{Binding LastVisitText}" Opacity="0.75" FontSize="12" />
-                                <TextBlock Text="{Binding TagsText}" Opacity="0.7" FontSize="12" />
-                            </StackPanel>
-                        </Grid>
+                        <Border Style="{StaticResource TravelDetailCardStyle}">
+                            <Grid ColumnDefinitions="84,*" ColumnSpacing="16">
+                                <Border Width="84" Height="84" Style="{StaticResource MkThumbnailBorderStyle}">
+                                    <Image
+                                        Source="{Binding ThumbnailImage, Mode=OneWay}"
+                                        Style="{StaticResource MkImageStyle}" />
+                                </Border>
+                                <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center">
+                                    <TextBlock
+                                        Text="{Binding PlaceName}"
+                                        Style="{StaticResource MkPlaceNameStyle}"
+                                        TextTrimming="CharacterEllipsis"
+                                        MaxLines="2" />
+                                    <TextBlock
+                                        Text="{Binding VisitCountText}"
+                                        Style="{StaticResource MkMetaTextStyle}" />
+                                    <StackPanel
+                                        Orientation="Horizontal"
+                                        Spacing="4"
+                                        Visibility="{Binding IsRecentDetail, Converter={StaticResource BoolToVisibilityConverter}}">
+                                        <TextBlock Text="최근 방문" Style="{StaticResource MkCaptionTextStyle}" />
+                                        <TextBlock Text="{Binding LastVisitText}" Style="{StaticResource MkCaptionTextStyle}" />
+                                    </StackPanel>
+                                    <StackPanel
+                                        Orientation="Horizontal"
+                                        Spacing="4"
+                                        Visibility="{Binding IsLongUnvisitedDetail, Converter={StaticResource BoolToVisibilityConverter}}">
+                                        <TextBlock Text="마지막 방문" Style="{StaticResource MkCaptionTextStyle}" />
+                                        <TextBlock Text="{Binding LastVisitText}" Style="{StaticResource MkCaptionTextStyle}" />
+                                        <TextBlock Text="·" Style="{StaticResource MkCaptionTextStyle}" />
+                                        <TextBlock Text="{Binding RelativeText}" Style="{StaticResource MkCaptionTextStyle}" />
+                                    </StackPanel>
+                                    <StackPanel
+                                        Orientation="Horizontal"
+                                        Spacing="4"
+                                        Visibility="{Binding IsStandardPlaceDetail, Converter={StaticResource BoolToVisibilityConverter}}">
+                                        <TextBlock Text="최근 방문" Style="{StaticResource MkCaptionTextStyle}" />
+                                        <TextBlock Text="{Binding LastVisitText}" Style="{StaticResource MkCaptionTextStyle}" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
                     </DataTemplate>
                 </ListView.ItemTemplate>
             </ListView>
@@ -65,17 +129,32 @@
                 ItemsSource="{Binding Countries, Mode=OneWay}"
                 SelectionMode="None"
                 IsItemClickEnabled="True"
-                ItemClick="Countries_OnItemClick">
+                ItemClick="Countries_OnItemClick"
+                ItemContainerStyle="{StaticResource TravelDetailListItemStyle}">
                 <ListView.ItemTemplate>
                     <DataTemplate>
-                        <Grid ColumnDefinitions="56,*" ColumnSpacing="12" Padding="0,10">
-                            <TextBlock Text="{Binding Rank}" FontSize="22" FontWeight="Bold" VerticalAlignment="Center" />
-                            <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
-                                <TextBlock Text="{Binding Country}" FontSize="18" FontWeight="SemiBold" />
-                                <TextBlock Text="{Binding VisitCountText}" Opacity="0.85" />
-                                <TextBlock Text="{Binding PlaceCountText}" Opacity="0.75" FontSize="12" />
-                            </StackPanel>
-                        </Grid>
+                        <Border Style="{StaticResource TravelDetailCardStyle}">
+                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16">
+                                <Border
+                                    Width="32"
+                                    Height="32"
+                                    CornerRadius="16"
+                                    Background="{ThemeResource MkBrushSurfaceMuted}"
+                                    VerticalAlignment="Top">
+                                    <TextBlock
+                                        Text="{Binding Rank}"
+                                        Style="{StaticResource MkMetaTextStyle}"
+                                        FontWeight="SemiBold"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center" />
+                                </Border>
+                                <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Country}" Style="{StaticResource MkPlaceNameStyle}" />
+                                    <TextBlock Text="{Binding VisitCountText}" Style="{StaticResource MkMetaTextStyle}" />
+                                    <TextBlock Text="{Binding PlaceCountText}" Style="{StaticResource MkCaptionTextStyle}" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
                     </DataTemplate>
                 </ListView.ItemTemplate>
             </ListView>
@@ -85,21 +164,44 @@
                 ItemsSource="{Binding FarthestPlaces, Mode=OneWay}"
                 SelectionMode="None"
                 IsItemClickEnabled="True"
-                ItemClick="Farthest_OnItemClick">
+                ItemClick="Farthest_OnItemClick"
+                ItemContainerStyle="{StaticResource TravelDetailListItemStyle}">
                 <ListView.ItemTemplate>
                     <DataTemplate>
-                        <Grid ColumnDefinitions="56,72,*" ColumnSpacing="12" Padding="0,10">
-                            <TextBlock Text="{Binding Rank}" FontSize="22" FontWeight="Bold" VerticalAlignment="Center" />
-                            <Border Grid.Column="1" Width="64" Height="64" CornerRadius="10">
-                                <Image Source="{Binding ThumbnailImage, Mode=OneWay}" Stretch="UniformToFill" />
-                            </Border>
-                            <StackPanel Grid.Column="2" Spacing="2" VerticalAlignment="Center">
-                                <TextBlock Text="{Binding PlaceName}" FontSize="18" FontWeight="SemiBold" />
-                                <TextBlock Text="{Binding DistanceText}" Opacity="0.85" />
-                                <TextBlock Text="{Binding YearText}" Opacity="0.75" FontSize="12" />
-                                <TextBlock Text="{Binding HomeHint}" Opacity="0.7" FontSize="12" />
-                            </StackPanel>
-                        </Grid>
+                        <Border Style="{StaticResource TravelDetailCardStyle}">
+                            <Grid ColumnDefinitions="Auto,84,*" ColumnSpacing="16">
+                                <Border
+                                    Width="32"
+                                    Height="32"
+                                    CornerRadius="16"
+                                    Background="{ThemeResource MkBrushSurfaceMuted}"
+                                    VerticalAlignment="Top">
+                                    <TextBlock
+                                        Text="{Binding Rank}"
+                                        Style="{StaticResource MkMetaTextStyle}"
+                                        FontWeight="SemiBold"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center" />
+                                </Border>
+                                <Border Grid.Column="1" Width="84" Height="84" Style="{StaticResource MkThumbnailBorderStyle}">
+                                    <Image
+                                        Source="{Binding ThumbnailImage, Mode=OneWay}"
+                                        Style="{StaticResource MkImageStyle}" />
+                                </Border>
+                                <StackPanel Grid.Column="2" Spacing="6" VerticalAlignment="Center">
+                                    <TextBlock
+                                        Text="{Binding PlaceName}"
+                                        Style="{StaticResource MkPlaceNameStyle}"
+                                        TextTrimming="CharacterEllipsis"
+                                        MaxLines="2" />
+                                    <TextBlock Text="{Binding DistanceText}" Style="{StaticResource MkMetaTextStyle}" FontWeight="SemiBold" />
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <TextBlock Text="방문 연도" Style="{StaticResource MkCaptionTextStyle}" />
+                                        <TextBlock Text="{Binding YearText}" Style="{StaticResource MkCaptionTextStyle}" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
                     </DataTemplate>
                 </ListView.ItemTemplate>
             </ListView>

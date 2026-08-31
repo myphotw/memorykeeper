@@ -25,6 +25,9 @@ public sealed class TravelPlaceAggregateRaw
 
     public int FavoriteCount { get; init; }
 
+    /// <summary>True when this is the synthetic missing-place aggregate.</summary>
+    public bool IsUnclassified { get; init; }
+
     public Guid? RepresentativeMediaId { get; init; }
 
     public string? AbsoluteLibraryPath { get; init; }
@@ -33,4 +36,26 @@ public sealed class TravelPlaceAggregateRaw
     /// Distinct visit dates (CapturedAt ?? ImportedAt).date.
     /// </summary>
     public IReadOnlyList<DateTime> VisitDates { get; init; } = [];
+
+    /// <summary>
+    /// Photo-level candidates already present in the Gallery snapshot. Only the real
+    /// capture timestamp is populated so anniversary memories never use import time.
+    /// </summary>
+    public IReadOnlyList<TravelPhotoCandidateRaw> Photos { get; init; } = [];
+}
+
+public sealed class TravelPhotoCandidateRaw
+{
+    public Guid? MediaId { get; init; }
+
+    public string BackendFileId { get; init; } = string.Empty;
+
+    public string ThumbnailPath { get; init; } = string.Empty;
+
+    /// <summary>Country resolved for this photo, not inherited from its aggregate.</summary>
+    public string Country { get; init; } = string.Empty;
+
+    public DateTimeOffset? CapturedAt { get; init; }
+
+    public bool IsFavorite { get; init; }
 }

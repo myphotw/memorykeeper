@@ -16,6 +16,7 @@ public sealed partial class MainWindow : Window
     private readonly IPhotoNavigationState _photoNavigationState;
     private readonly IPlaceEditorSeedState _placeEditorSeedState;
     private readonly IPlaceFocusState _placeFocusState;
+    private readonly ITravelRecordsNavigationState _travelRecordsNavigationState;
     private readonly IResponsiveLayoutService _responsiveLayout;
     private readonly INavigationService _navigation;
     private readonly ICatalogInvalidation _catalogInvalidation;
@@ -53,6 +54,7 @@ public sealed partial class MainWindow : Window
         IPhotoNavigationState photoNavigationState,
         IPlaceEditorSeedState placeEditorSeedState,
         IPlaceFocusState placeFocusState,
+        ITravelRecordsNavigationState travelRecordsNavigationState,
         IResponsiveLayoutService responsiveLayout,
         INavigationService navigation,
         ICatalogInvalidation catalogInvalidation,
@@ -63,6 +65,7 @@ public sealed partial class MainWindow : Window
         _photoNavigationState = photoNavigationState;
         _placeEditorSeedState = placeEditorSeedState;
         _placeFocusState = placeFocusState;
+        _travelRecordsNavigationState = travelRecordsNavigationState;
         _responsiveLayout = responsiveLayout;
         _navigation = navigation;
         _catalogInvalidation = catalogInvalidation;
@@ -103,7 +106,7 @@ public sealed partial class MainWindow : Window
                 == CatalogSurface.AllMemoryKeeper)
             {
                 _navigation.Clear();
-                SelectNavigationItem("home");
+                NavigateTopLevel("home");
             }
         }
         catch (Exception ex)
@@ -157,15 +160,7 @@ public sealed partial class MainWindow : Window
         MemoryKeeper.App.Diagnostics.StartupDiagnostics.WriteStep("[7] NavigateToHome");
         ExitSetupMode();
         _navigation.Clear();
-        _navigatingBack = true;
-        try
-        {
-            SelectNavigationItem("home");
-        }
-        finally
-        {
-            _navigatingBack = false;
-        }
+        NavigateTopLevel("home");
     }
 
     private void RootNavigation_OnItemInvoked(
@@ -182,121 +177,100 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        // Always honor Home clicks — SelectionChanged skips when Home is already selected
-        // (common while photo viewer/detail is shown with Home still highlighted).
-        if (tag == "home")
+        if (IsTopLevelTag(tag))
         {
-            NavigateToHome();
+            NavigateTopLevel(tag);
         }
     }
 
-    private void RootNavigation_OnSelectionChanged(
-        NavigationView sender,
-        NavigationViewSelectionChangedEventArgs args)
+    private void NavigateByEntry(NavigationEntry entry)
     {
-        if (_isSetupMode || _suppressSelectionNavigation)
-        {
-            return;
-        }
-
-        if (args.SelectedItem is not NavigationViewItem item || item.Tag is not string tag)
-        {
-            return;
-        }
-
-        NavigateByTag(tag);
-    }
-
-    private void NavigateByTag(string tag)
-    {
-        switch (tag)
+        switch (entry.Tag)
         {
             case "home":
-                NavigateToHome();
+                NavigateToHome(entry);
                 break;
             case "travel":
-                NavigateToTravelRecords();
+                NavigateToTravelRecords(entry);
                 break;
             case "travel-detail":
-                NavigateToTravelRecordsDetail();
+                NavigateToTravelRecordsDetail(entry);
                 break;
             case "visits":
             case "timeline":
             case "map":
             case "search":
-                NavigateToVisitRecord();
+                NavigateToVisitRecord(entry);
                 break;
             case "pending":
-                NavigateToPendingMemory();
+                NavigateToPendingMemory(entry);
                 break;
             case "gallery":
-                NavigateToGallery();
+                NavigateToGallery(entry);
                 break;
             case "favorites":
-                NavigateToFavorites();
+                NavigateToFavorites(entry);
                 break;
             case "storage":
-                NavigateToSettingsSection("storage");
+                NavigateToSettings("storage", entry);
                 break;
             case "import":
-                NavigateToImport();
+                NavigateToImport(entry);
                 break;
             case "place":
-                NavigateToPlace();
+                NavigateToPlace(entry);
                 break;
             case "tag":
-                NavigateToSettingsSection("tags");
+                NavigateToSettings("tags", entry);
                 break;
             case "settings":
-                NavigateToSettings("overview");
+                NavigateToSettings(entry.SettingsSection ?? "overview", entry);
                 break;
             case "logs":
-                NavigateToSettingsSection("logs");
+                NavigateToSettings("logs", entry);
                 break;
             case "photo-viewer":
-                NavigateToPhotoViewer();
+                NavigateToPhotoViewer(entry);
                 break;
             case "photo":
-                NavigateToPhotoDetail();
+                NavigateToPhotoDetail(entry);
                 break;
             case "setup":
                 EnterSetupMode();
                 break;
             default:
-                NavigateToHome();
+                NavigateTopLevel("home");
                 break;
         }
     }
 
-    private void Track(string tag, string? settingsSection = null)
+    private void Track(NavigationEntry entry)
     {
-        var entry = NavigationEntry.Of(tag, settingsSection);
         if (_navigatingBack || _navigatingForward)
         {
             _navigation.ReplaceCurrent(entry);
-            LogNavigation($"ReplaceCurrent tag={tag}");
+            LogNavigation($"ReplaceCurrent tag={entry.Tag} kind={entry.Kind}");
             return;
         }
 
-        // Explicit Home (GNB) clears history. All other navigations push caller onto the back stack.
-        if (tag == "home")
+        if (entry.Kind == NavigationKind.TopLevel)
         {
             CaptureCurrentPageState();
-            _navigation.NavigateRoot(NavigationEntry.Home);
-            LogNavigation("NavigateRoot home");
+            _navigation.NavigateRoot(entry);
+            LogNavigation($"NavigateRoot tag={entry.Tag}");
             return;
         }
 
         if (_navigation.IsCurrent(entry))
         {
-            LogNavigation($"Skip duplicate Track tag={tag}");
+            LogNavigation($"Skip duplicate Track tag={entry.Tag} context={entry.ContextKey ?? "(null)"}");
             return;
         }
 
         CaptureCurrentPageState();
         _navigation.Navigate(entry);
         _navigation.RemoveConsecutiveDuplicates();
-        LogNavigation($"Navigate tag={tag}");
+        LogNavigation($"Navigate tag={entry.Tag} kind={entry.Kind} root={entry.RootTag} context={entry.ContextKey ?? "(null)"}");
     }
 
     private void LogNavigation(string action)
@@ -308,7 +282,130 @@ public sealed partial class MainWindow : Window
     }
 
     private static bool IsTopLevelTag(string? tag) =>
-        tag is "home" or "visits" or "gallery" or "travel" or "settings" or "search";
+        tag is "home" or "visits" or "gallery" or "travel" or "settings";
+
+    private void NavigateTopLevel(string tag)
+    {
+        if (!IsTopLevelTag(tag))
+        {
+            return;
+        }
+
+        ClearPendingDestinationState();
+        var settingsSection = tag == "settings" ? "overview" : null;
+        SelectNavigationItem(NavigationEntry.TopLevel(tag, GetDisplayLabel(tag), settingsSection));
+    }
+
+    private void NavigateDrillDown(
+        string tag,
+        string? contextKey = null,
+        string? displayLabel = null,
+        string? settingsSection = null) =>
+        SelectNavigationItem(CreateNavigationEntry(
+            tag,
+            NavigationKind.DrillDown,
+            contextKey,
+            displayLabel,
+            settingsSection));
+
+    private void NavigateViewer(
+        string tag,
+        string? contextKey = null,
+        string? displayLabel = null) =>
+        SelectNavigationItem(CreateNavigationEntry(
+            tag,
+            NavigationKind.Viewer,
+            contextKey,
+            displayLabel));
+
+    private NavigationEntry CreateNavigationEntry(
+        string tag,
+        NavigationKind kind,
+        string? contextKey = null,
+        string? displayLabel = null,
+        string? settingsSection = null)
+    {
+        var rootTag = kind == NavigationKind.TopLevel
+            ? MapToTopNavTag(tag)
+            : _navigation.Current?.RootTag
+              ?? MapToTopNavTag(_navigation.Current?.Tag ?? tag);
+        var label = string.IsNullOrWhiteSpace(displayLabel)
+            ? GetDisplayLabel(tag)
+            : displayLabel;
+
+        return kind switch
+        {
+            NavigationKind.TopLevel => NavigationEntry.TopLevel(tag, label, settingsSection),
+            NavigationKind.Viewer => NavigationEntry.Viewer(tag, rootTag, label, contextKey),
+            _ => NavigationEntry.DrillDown(tag, rootTag, label, contextKey, settingsSection)
+        };
+    }
+
+    private NavigationEntry CreateTravelDetailEntry()
+    {
+        var kind = _travelRecordsNavigationState.PendingDetailKind
+                   ?? global::MemoryKeeper.Application.DTOs.TravelRecordsDetailKind.MostVisited;
+        var season = _travelRecordsNavigationState.PendingDetailSeason;
+        var contextKey = kind switch
+        {
+            global::MemoryKeeper.Application.DTOs.TravelRecordsDetailKind.MostVisited => "most-visited",
+            global::MemoryKeeper.Application.DTOs.TravelRecordsDetailKind.LongUnvisited => "long-unvisited",
+            global::MemoryKeeper.Application.DTOs.TravelRecordsDetailKind.Recent => "recent",
+            global::MemoryKeeper.Application.DTOs.TravelRecordsDetailKind.Countries => "countries",
+            global::MemoryKeeper.Application.DTOs.TravelRecordsDetailKind.Farthest => "farthest",
+            global::MemoryKeeper.Application.DTOs.TravelRecordsDetailKind.Season =>
+                $"season:{season?.ToString().ToLowerInvariant() ?? "unknown"}",
+            _ => kind.ToString().ToLowerInvariant()
+        };
+        var label = kind switch
+        {
+            global::MemoryKeeper.Application.DTOs.TravelRecordsDetailKind.MostVisited => "가장 많이 방문한 장소",
+            global::MemoryKeeper.Application.DTOs.TravelRecordsDetailKind.LongUnvisited => "오래 안 간 장소",
+            global::MemoryKeeper.Application.DTOs.TravelRecordsDetailKind.Recent => "최근 다녀온 장소",
+            global::MemoryKeeper.Application.DTOs.TravelRecordsDetailKind.Countries => "가장 많이 방문한 국가",
+            global::MemoryKeeper.Application.DTOs.TravelRecordsDetailKind.Farthest => "가장 멀리 여행한 장소",
+            global::MemoryKeeper.Application.DTOs.TravelRecordsDetailKind.Season => "계절의 추억",
+            _ => "여행 상세"
+        };
+
+        return CreateNavigationEntry("travel-detail", NavigationKind.DrillDown, contextKey, label);
+    }
+
+    private static string GetDisplayLabel(string tag) =>
+        MapToTopNavTag(tag) switch
+        {
+            "home" when tag == "home" => "홈",
+            "gallery" when tag == "gallery" => "사진첩",
+            "visits" when tag is "visits" or "timeline" or "map" or "search" => "방문지도",
+            "travel" when tag == "travel" => "여행기록",
+            "settings" when tag == "settings" => "설정",
+            _ => tag switch
+            {
+                "travel-detail" => "여행 상세",
+                "photo-viewer" or "photo" => "사진",
+                "favorites" => "즐겨찾기",
+                "pending" => "미완성 추억",
+                "import" => "사진 등록",
+                "place" => "장소 관리",
+                "tag" => "태그 관리",
+                "storage" => "사진 관리",
+                "logs" => "로그",
+                _ => "이전 화면"
+            }
+        };
+
+    private void ClearPendingDestinationState()
+    {
+        _placeFocusState.ClearFocus();
+        _placeFocusState.ClearFilters();
+        _pendingVisitNavSource = VisitMapNavigationSource.ShellNav;
+        _travelRecordsNavigationState.PendingDetailKind = null;
+        _travelRecordsNavigationState.PendingDetailSeason = null;
+        _travelRecordsNavigationState.PendingFocusPlaceId = null;
+        _travelRecordsNavigationState.PendingFocusYear = null;
+        _travelRecordsNavigationState.PendingFocusPlaceName = null;
+        _travelRecordsNavigationState.PendingFocusMediaId = null;
+    }
 
     private string? GetHierarchicalParentTag(string? tag) =>
         tag switch
@@ -317,7 +414,7 @@ public sealed partial class MainWindow : Window
             "visits" or "gallery" or "travel" or "settings" or "search" => "home",
             "travel-detail" => "travel",
             "favorites" => "gallery",
-            "photo-viewer" => _photoNavigationState.ReturnSourceTag,
+            "photo-viewer" => _navigation.Current?.RootTag ?? "gallery",
             "photo" when _photoNavigationState.DetailOpenedFromViewer => "photo-viewer",
             "photo" => "gallery",
             "import" => "home",
@@ -371,7 +468,9 @@ public sealed partial class MainWindow : Window
                     "logs" => "logs",
                     _ => "overview"
                 };
-                NavigateToSettings(section);
+                NavigateToSettings(
+                    section,
+                    CreateNavigationEntry("settings", NavigationKind.DrillDown, settingsSection: section));
                 _suppressSelectionNavigation = true;
                 try
                 {
@@ -548,57 +647,7 @@ public sealed partial class MainWindow : Window
 
     private void RestoreEntry(NavigationEntry entry)
     {
-        switch (entry.Tag)
-        {
-            case "home":
-                SelectNavigationItem("home");
-                break;
-            case "travel":
-                SelectNavigationItem("travel");
-                break;
-            case "travel-detail":
-                SelectNavigationItem("travel-detail");
-                break;
-            case "visits":
-                SelectNavigationItem("visits");
-                break;
-            case "pending":
-                SelectNavigationItem("pending");
-                break;
-            case "gallery":
-                SelectNavigationItem("gallery");
-                break;
-            case "favorites":
-                SelectNavigationItem("favorites");
-                break;
-            case "import":
-                SelectNavigationItem("import");
-                break;
-            case "place":
-                SelectNavigationItem("place");
-                break;
-            case "photo-viewer":
-                SelectNavigationItem("photo-viewer");
-                break;
-            case "photo":
-                SelectNavigationItem("photo");
-                break;
-            case "settings":
-                NavigateToSettings(entry.SettingsSection ?? "overview");
-                _suppressSelectionNavigation = true;
-                try
-                {
-                    SyncNavigationSelection("settings");
-                }
-                finally
-                {
-                    _suppressSelectionNavigation = false;
-                }
-                break;
-            default:
-                SelectNavigationItem("home");
-                break;
-        }
+        SelectNavigationItem(entry);
     }
 
     private void EnterSetupMode()
@@ -636,22 +685,14 @@ public sealed partial class MainWindow : Window
 
         ExitSetupMode();
         _navigation.Clear();
-        _navigatingBack = true;
-        try
-        {
-            SelectNavigationItem("home");
-        }
-        finally
-        {
-            _navigatingBack = false;
-        }
+        NavigateTopLevel("home");
 
         ViewModel.SetUiStatus("초기 설정이 완료되었습니다.");
     }
 
-    private void NavigateToHome()
+    private void NavigateToHome(NavigationEntry entry)
     {
-        Track("home");
+        Track(entry);
         DetachHandlers();
         var page = GetOrCreatePage<HomePage>("home");
         _homeViewModel = page.ViewModel;
@@ -676,9 +717,9 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private void NavigateToTravelRecords()
+    private void NavigateToTravelRecords(NavigationEntry entry)
     {
-        Track("travel");
+        Track(entry);
         DetachHandlers();
         var page = GetOrCreatePage<TravelRecordsPage>("travel");
         _travelRecordsPage = page;
@@ -693,9 +734,9 @@ public sealed partial class MainWindow : Window
         _ = page.ViewModel.LoadCommand.ExecuteAsync(null);
     }
 
-    private void NavigateToTravelRecordsDetail()
+    private void NavigateToTravelRecordsDetail(NavigationEntry entry)
     {
-        Track("travel-detail");
+        Track(entry);
         DetachHandlers();
         var page = GetOrCreatePage<TravelRecordsDetailPage>("travel-detail");
         _travelRecordsDetailViewModel = page.ViewModel;
@@ -704,9 +745,9 @@ public sealed partial class MainWindow : Window
         ContentFrame.Content = page;
     }
 
-    private void NavigateToVisitRecord()
+    private void NavigateToVisitRecord(NavigationEntry entry)
     {
-        Track("visits");
+        Track(entry);
         DetachHandlers();
         var page = GetOrCreatePage<VisitRecordPage>("visits");
         _visitRecordPage = page;
@@ -744,9 +785,9 @@ public sealed partial class MainWindow : Window
         });
     }
 
-    private void NavigateToPendingMemory()
+    private void NavigateToPendingMemory(NavigationEntry entry)
     {
-        Track("pending");
+        Track(entry);
         DetachHandlers();
         var page = GetOrCreatePage<PendingMemoryPage>("pending");
         _pendingMemoryViewModel = page.ViewModel;
@@ -763,9 +804,9 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private void NavigateToGallery()
+    private void NavigateToGallery(NavigationEntry entry)
     {
-        Track("gallery");
+        Track(entry);
         DetachHandlers();
         MemoryKeeper.App.Diagnostics.GalleryDiagnostics.WriteStep("NavigateToGallery start");
         try
@@ -821,9 +862,9 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private void NavigateToFavorites()
+    private void NavigateToFavorites(NavigationEntry entry)
     {
-        Track("favorites");
+        Track(entry);
         DetachHandlers();
         var page = GetOrCreatePage<FavoritesPage>("favorites");
         _favoritesViewModel = page.ViewModel;
@@ -836,9 +877,9 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private void NavigateToPhotoViewer()
+    private void NavigateToPhotoViewer(NavigationEntry entry)
     {
-        Track("photo-viewer");
+        Track(entry);
         DetachHandlers();
         // Viewer always reloads current media; do not cache across sessions.
         var page = _serviceProvider.GetRequiredService<PhotoViewerPage>();
@@ -850,9 +891,9 @@ public sealed partial class MainWindow : Window
         _ = page.ViewModel.LoadCommand.ExecuteAsync(null);
     }
 
-    private void NavigateToPhotoDetail()
+    private void NavigateToPhotoDetail(NavigationEntry entry)
     {
-        Track("photo");
+        Track(entry);
         DetachHandlers();
         var page = _serviceProvider.GetRequiredService<PhotoDetailPage>();
         _photoDetailViewModel = page.ViewModel;
@@ -861,9 +902,9 @@ public sealed partial class MainWindow : Window
         ContentFrame.Content = page;
     }
 
-    private void NavigateToImport()
+    private void NavigateToImport(NavigationEntry entry)
     {
-        Track("import");
+        Track(entry);
         DetachHandlers();
         var page = _serviceProvider.GetRequiredService<PhotoManagementPage>();
         page.ViewModel.BackRequested += OnShellBackRequested;
@@ -871,9 +912,9 @@ public sealed partial class MainWindow : Window
         ContentFrame.Content = page;
     }
 
-    private void NavigateToPlace()
+    private void NavigateToPlace(NavigationEntry entry)
     {
-        Track("place");
+        Track(entry);
         DetachHandlers();
         var page = _serviceProvider.GetRequiredService<PlaceManagementPage>();
         _placeManagementViewModel = page.ViewModel;
@@ -882,10 +923,10 @@ public sealed partial class MainWindow : Window
         _ = page.ViewModel.LoadCommand.ExecuteAsync(null);
     }
 
-    private void NavigateToSettings(string? section = null)
+    private void NavigateToSettings(string? section, NavigationEntry entry)
     {
         var targetSection = string.IsNullOrWhiteSpace(section) ? "overview" : section;
-        Track("settings", targetSection);
+        Track(entry with { SettingsSection = targetSection });
         DetachHandlers();
         var page = GetOrCreatePage<SettingsPage>("settings");
         page.ViewModel.ResetCompleted += OnSettingsResetCompleted;
@@ -895,12 +936,12 @@ public sealed partial class MainWindow : Window
     }
 
     private void NavigateToSettingsSection(string section) =>
-        NavigateToSettings(section);
+        NavigateDrillDown("settings", settingsSection: section);
 
     private void OnSettingsResetCompleted(object? sender, EventArgs e)
     {
         _navigation.Clear();
-        SelectNavigationItem("home");
+        NavigateTopLevel("home");
     }
 
     private void OnShellBackRequested(object? sender, EventArgs e) =>
@@ -912,13 +953,13 @@ public sealed partial class MainWindow : Window
         var tag = _photoNavigationState.Target == PhotoNavigationTarget.Detail
             ? "photo"
             : "photo-viewer";
-        SelectNavigationItem(tag);
+        NavigateViewer(tag);
     }
 
     private void OnPhotoViewerClosed(object? sender, EventArgs e) => NavigateBack();
 
     private void OnPhotoViewerOpenDetailRequested(object? sender, EventArgs e) =>
-        SelectNavigationItem("photo");
+        NavigateViewer("photo");
 
     private void OnPhotoDetailClosed(object? sender, EventArgs e)
     {
@@ -939,7 +980,7 @@ public sealed partial class MainWindow : Window
     }
 
     private void OnGalleryOpenTravelRequested(object? sender, EventArgs e) =>
-        SelectNavigationItem("travel-detail");
+        SelectNavigationItem(CreateTravelDetailEntry());
 
     private void OnVisitOpenGalleryRequested(object? sender, EventArgs e) =>
         SelectNavigationItem("gallery");
@@ -996,7 +1037,7 @@ public sealed partial class MainWindow : Window
         SelectNavigationItem("pending");
 
     private void OnTravelOpenDetailRequested(object? sender, EventArgs e) =>
-        SelectNavigationItem("travel-detail");
+        SelectNavigationItem(CreateTravelDetailEntry());
 
     private void DetachHandlers()
     {
@@ -1116,33 +1157,37 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private void SelectNavigationItem(string tag)
+    private void SelectNavigationItem(string tag) =>
+        SelectNavigationItem(CreateNavigationEntry(tag, NavigationKind.DrillDown));
+
+    private void SelectNavigationItem(NavigationEntry entry)
     {
         if (!_navigatingBack
             && !_navigatingForward
-            && _navigation.IsCurrent(NavigationEntry.Of(tag))
-            && IsContentShowingTag(tag))
+            && entry.Kind != NavigationKind.TopLevel
+            && _navigation.IsCurrent(entry)
+            && IsContentShowingTag(entry.Tag))
         {
             // Travel/Home focus onto the already-visible visit map must still Activate.
-            if (tag == "visits"
+            if (entry.Tag == "visits"
                 && (_placeFocusState.HasPendingFocus || _placeFocusState.HasPendingFilters
                     || _pendingVisitNavSource is VisitMapNavigationSource.TravelRecord
                         or VisitMapNavigationSource.Home))
             {
                 LogNavigation($"Re-Activate visit map in place. PendingSource={_pendingVisitNavSource}");
-                NavigateToVisitRecord();
+                NavigateToVisitRecord(entry);
                 return;
             }
 
-            LogNavigation($"Skip duplicate SelectNavigationItem tag={tag}");
+            LogNavigation($"Skip duplicate SelectNavigationItem tag={entry.Tag}");
             return;
         }
 
-        NavigateByTag(tag);
+        NavigateByEntry(entry);
         _suppressSelectionNavigation = true;
         try
         {
-            SyncNavigationSelection(tag);
+            SyncNavigationSelection(entry.RootTag ?? MapToTopNavTag(entry.Tag));
         }
         finally
         {
@@ -1170,17 +1215,7 @@ public sealed partial class MainWindow : Window
 
     private void SyncNavigationSelection(string tag)
     {
-        var syncTag = tag switch
-        {
-            "search" or "timeline" or "map" => "visits",
-            "storage" or "tag" or "logs" or "import" or "pending" or "place" => "settings",
-            "photo" or "photo-viewer" or "travel-detail" or "favorites" =>
-                MapToTopNavTag(
-                    string.IsNullOrWhiteSpace(_photoNavigationState.ReturnSourceTag)
-                        ? "home"
-                        : _photoNavigationState.ReturnSourceTag),
-            _ => tag
-        };
+        var syncTag = MapToTopNavTag(tag);
 
         var items = RootNavigation.MenuItems.OfType<NavigationViewItem>()
             .Concat(RootNavigation.FooterMenuItems.OfType<NavigationViewItem>());

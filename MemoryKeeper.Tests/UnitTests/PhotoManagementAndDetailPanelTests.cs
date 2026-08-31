@@ -113,8 +113,9 @@ public sealed class PhotoManagementAndDetailPanelTests
         Assert.Contains("ContentFrame.Content is VisitRecordPage visit", mainWindow, StringComparison.Ordinal);
         Assert.Contains("visit.ViewModel.GoBackCommand.Execute(null)", mainWindow, StringComparison.Ordinal);
         Assert.Contains("IsXButton1Pressed", mainWindow, StringComparison.Ordinal);
-        Assert.Contains("Command=\"{Binding GoBackCommand}\"", visitView, StringComparison.Ordinal);
-        Assert.Contains("IsContextualCloseVisible", visitView, StringComparison.Ordinal);
+        Assert.Contains("BackNavigationButton", visitView, StringComparison.Ordinal);
+        Assert.DoesNotContain("Content=\"✕\"", visitView, StringComparison.Ordinal);
+        Assert.DoesNotContain("IsContextualCloseVisible", visitView, StringComparison.Ordinal);
         Assert.Contains("source == VisitMapNavigationSource.PhotoDetail", visitViewModel, StringComparison.Ordinal);
         Assert.Contains("PhotoDetail = 4", focusState, StringComparison.Ordinal);
     }

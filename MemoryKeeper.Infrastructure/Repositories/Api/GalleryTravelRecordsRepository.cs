@@ -35,6 +35,7 @@ public sealed class GalleryTravelRecordsRepository : ITravelRecordsRepository
             Longitude = place.Longitude,
             PhotoCount = place.PhotoCount,
             FavoriteCount = place.FavoriteCount,
+            IsUnclassified = place.IsUnclassified,
             RepresentativeMediaId = place.RepresentativeMediaId ?? Guid.Empty,
             AbsoluteLibraryPath = place.RepresentativeAbsolutePath,
             VisitDates = place.AllPhotos
@@ -43,6 +44,15 @@ public sealed class GalleryTravelRecordsRepository : ITravelRecordsRepository
                 .Distinct()
                 .OrderBy(date => date)
                 .ToList(),
+            Photos = place.AllPhotos.Select(photo => new TravelPhotoCandidateRaw
+            {
+                MediaId = photo.MediaId == Guid.Empty ? null : photo.MediaId,
+                BackendFileId = photo.BackendFileId,
+                ThumbnailPath = photo.ThumbnailUrl,
+                Country = photo.Country,
+                CapturedAt = photo.CaptureDatetime,
+                IsFavorite = photo.IsFavorite,
+            }).ToList(),
         }).ToList();
 
         _logger.LogInformation(

@@ -41,7 +41,22 @@ public partial class TravelRecordsViewModel : ObservableObject
     private TravelFarthestCardItem? farthestPlace;
 
     [ObservableProperty]
+    private ObservableCollection<TravelCountryVisitItem> countryVisitStatistics = [];
+
+    [ObservableProperty]
+    private ObservableCollection<TravelMemoryCardItem> memoryCards = [];
+
+    [ObservableProperty]
     private ObservableCollection<TravelYearChapterItem> yearChapters = [];
+
+    [ObservableProperty]
+    private int uniquePhotoCount;
+
+    [ObservableProperty]
+    private int distinctPlaceCount;
+
+    [ObservableProperty]
+    private int visitedForeignCountryCount;
 
     [ObservableProperty]
     private bool hasMostVisited;
@@ -60,6 +75,12 @@ public partial class TravelRecordsViewModel : ObservableObject
 
     [ObservableProperty]
     private bool hasFarthest;
+
+    [ObservableProperty]
+    private bool hasCountryVisitStatistics;
+
+    [ObservableProperty]
+    private bool hasMemoryCards;
 
     [ObservableProperty]
     private string farthestEmptyMessage = "위치가 있는 여행 기록이 필요해요";
@@ -315,6 +336,26 @@ public partial class TravelRecordsViewModel : ObservableObject
         OpenVisitRecordRequested?.Invoke(this, EventArgs.Empty);
     }
 
+    [RelayCommand]
+    private void OpenMemoryCard(TravelMemoryCardItem? item)
+    {
+        if (item is null || item.FocusPlaceId == Guid.Empty)
+        {
+            return;
+        }
+
+        ClearPendingFilters();
+        _placeFocusState.FocusPlaceId = item.FocusPlaceId;
+        _placeFocusState.FocusPlaceName = item.FocusPlaceName;
+        _placeFocusState.FocusMediaId = item.RepresentativeMediaId;
+        _logger.LogInformation(
+            "TravelRecords open memory card → VisitMap. Kind={Kind} PlaceId={PlaceId} MediaId={MediaId}",
+            item.Dto.Kind,
+            item.FocusPlaceId,
+            item.RepresentativeMediaId);
+        OpenVisitRecordRequested?.Invoke(this, EventArgs.Empty);
+    }
+
     private void OpenDetail(TravelRecordsDetailKind kind, TravelSeason? season = null)
     {
         _navigationState.RequestDetail(kind, season);
@@ -330,6 +371,9 @@ public partial class TravelRecordsViewModel : ObservableObject
 
     private void ApplyDashboard(TravelRecordsDashboardDto dashboard)
     {
+        UniquePhotoCount = dashboard.UniquePhotoCount;
+        DistinctPlaceCount = dashboard.DistinctPlaceCount;
+        VisitedForeignCountryCount = dashboard.VisitedForeignCountryCount;
         YearChapters = new ObservableCollection<TravelYearChapterItem>(
             dashboard.YearChapters.Select(chapter => new TravelYearChapterItem(chapter)));
         MostVisitedPlace = dashboard.MostVisitedPlace is null
@@ -348,6 +392,14 @@ public partial class TravelRecordsViewModel : ObservableObject
         FarthestPlace = dashboard.FarthestPlace is null
             ? null
             : new TravelFarthestCardItem(dashboard.FarthestPlace);
+        var countryMaximum = dashboard.CountryVisitStatistics
+            .Select(item => item.VisitCount)
+            .DefaultIfEmpty(1)
+            .Max();
+        CountryVisitStatistics = new ObservableCollection<TravelCountryVisitItem>(
+            dashboard.CountryVisitStatistics.Select(item => new TravelCountryVisitItem(item, countryMaximum)));
+        MemoryCards = new ObservableCollection<TravelMemoryCardItem>(
+            dashboard.MemoryCards.Select(item => new TravelMemoryCardItem(item)));
 
         HasYearChapters = YearChapters.Count > 0;
         HasMostVisited = MostVisitedPlace is not null;
@@ -356,6 +408,8 @@ public partial class TravelRecordsViewModel : ObservableObject
         HasRecent = RecentPlaces.Count > 0;
         HasTopCountry = TopCountry is not null;
         HasFarthest = FarthestPlace is not null;
+        HasCountryVisitStatistics = CountryVisitStatistics.Count > 0;
+        HasMemoryCards = MemoryCards.Count > 0;
         FarthestEmptyMessage = NeedsHomeLocation
             ? "Home을 설정하면 보여요"
             : "위치가 있는 여행 기록이 필요해요";
@@ -405,7 +459,7 @@ public partial class TravelRecordsViewModel : ObservableObject
         {
             if (!string.IsNullOrWhiteSpace(placeName))
             {
-                StatusMessage = $"{placeName} 추억을 Timeline에서 찾아보세요.";
+                StatusMessage = $"{placeName} 추억을 찾지 못했습니다.";
             }
 
             return;
@@ -428,43 +482,13 @@ public partial class TravelRecordsViewModel : ObservableObject
         {
             var targets = new List<(Guid? MediaId, string Path, Action<BitmapImage?> SetImage)>();
 
-            if (FeaturedMemory is not null)
+            foreach (var card in MemoryCards)
             {
-                targets.Add((FeaturedMemory.RepresentativeMediaId, FeaturedMemory.AbsoluteLibraryPath,
-                    image => FeaturedMemory.ThumbnailImage = image));
-            }
-
-            foreach (var chapter in YearChapters)
-            {
-                foreach (var trip in chapter.Trips)
+                foreach (var photo in card.Photos)
                 {
-                    targets.Add((trip.RepresentativeMediaId, trip.AbsoluteLibraryPath,
-                        image => trip.ThumbnailImage = image));
+                    targets.Add((photo.MediaId, photo.ThumbnailPath,
+                        image => photo.ThumbnailImage = image));
                 }
-            }
-
-            if (MostVisitedPlace is not null)
-            {
-                targets.Add((MostVisitedPlace.RepresentativeMediaId, MostVisitedPlace.AbsoluteLibraryPath,
-                    image => MostVisitedPlace.ThumbnailImage = image));
-            }
-
-            if (LongUnvisitedPlace is not null)
-            {
-                targets.Add((LongUnvisitedPlace.RepresentativeMediaId, LongUnvisitedPlace.AbsoluteLibraryPath,
-                    image => LongUnvisitedPlace.ThumbnailImage = image));
-            }
-
-            if (FarthestPlace is not null)
-            {
-                targets.Add((FarthestPlace.RepresentativeMediaId, FarthestPlace.AbsoluteLibraryPath,
-                    image => FarthestPlace.ThumbnailImage = image));
-            }
-
-            foreach (var recent in RecentPlaces)
-            {
-                targets.Add((recent.RepresentativeMediaId, recent.AbsoluteLibraryPath,
-                    image => recent.ThumbnailImage = image));
             }
 
             foreach (var target in targets)

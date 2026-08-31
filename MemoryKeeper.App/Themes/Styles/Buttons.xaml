@@ -107,6 +107,66 @@
         <Setter Property="Template" Value="{StaticResource MkButtonTemplate}" />
     </Style>
 
+    <!-- Compact page-history affordance: a quiet secondary button with clear interaction feedback. -->
+    <Style x:Key="MkBackNavigationButtonStyle" TargetType="Button">
+        <Setter Property="FontFamily" Value="{StaticResource MkFontFamily}" />
+        <Setter Property="FontSize" Value="{StaticResource MkFontSizeCaption}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="MinHeight" Value="{StaticResource MkControlHeight}" />
+        <Setter Property="Padding" Value="10,6" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Background" Value="{ThemeResource MkBrushSurfaceMuted}" />
+        <Setter Property="Foreground" Value="{ThemeResource MkBrushTextPrimary}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource MkBrushBorder}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="HorizontalAlignment" Value="Left" />
+        <Setter Property="HorizontalContentAlignment" Value="Left" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="UseSystemFocusVisuals" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid>
+                        <Border
+                            x:Name="Root"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{TemplateBinding CornerRadius}"
+                            Padding="{TemplateBinding Padding}">
+                            <ContentPresenter
+                                HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                Content="{TemplateBinding Content}"
+                                ContentTemplate="{TemplateBinding ContentTemplate}"
+                                Foreground="{TemplateBinding Foreground}" />
+                        </Border>
+                        <VisualStateManager.VisualStateGroups>
+                            <VisualStateGroup x:Name="CommonStates">
+                                <VisualState x:Name="Normal" />
+                                <VisualState x:Name="PointerOver">
+                                    <VisualState.Setters>
+                                        <Setter Target="Root.Background" Value="{ThemeResource MkBrushSurfaceMuted}" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="Pressed">
+                                    <VisualState.Setters>
+                                        <Setter Target="Root.Background" Value="{ThemeResource MkBrushBorder}" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="Disabled">
+                                    <VisualState.Setters>
+                                        <Setter Target="Root.Opacity" Value="0.45" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                            </VisualStateGroup>
+                        </VisualStateManager.VisualStateGroups>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <Style x:Key="MkGoldAccentTextStyle" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource MkFontFamily}" />
         <Setter Property="FontSize" Value="{StaticResource MkFontSizeCaption}" />

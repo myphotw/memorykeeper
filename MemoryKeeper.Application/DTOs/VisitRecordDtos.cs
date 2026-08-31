@@ -64,6 +64,13 @@ public sealed record VisitRecordPreviewPhotoDto
 
     public bool IsFavorite { get; init; }
 
+    /// <summary>Country resolved for this individual photo.</summary>
+    public string Country { get; init; } = string.Empty;
+
+    /// <summary>Actual Backend capture_datetime without an imported/created fallback.</summary>
+    public DateTimeOffset? CaptureDatetime { get; init; }
+
+    /// <summary>Existing visit-map sort date (capture, then import/creation fallback).</summary>
     public DateTimeOffset? CapturedAt { get; init; }
 
     /// <summary>Local calendar year used for visit-map year grouping.</summary>

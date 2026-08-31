@@ -3,8 +3,10 @@ using MemoryKeeper.App.Models;
 using MemoryKeeper.App.Services;
 using MemoryKeeper.App.ViewModels;
 using MemoryKeeper.Application.Layout;
+using MemoryKeeper.Application.Navigation;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
@@ -16,6 +18,7 @@ public sealed partial class VisitRecordPage : Page
 {
     private readonly ILoggerFactory _loggerFactory;
     private readonly IResponsiveLayoutService _responsiveLayout;
+    private readonly INavigationService _navigation;
     private GoogleMapController? _mapController;
     private VisitRecordPlaceItem? _selectedPlaceSubscription;
     private readonly List<VisitPreviewItem> _previewSubscriptions = [];
@@ -29,12 +32,14 @@ public sealed partial class VisitRecordPage : Page
     public VisitRecordPage(
         VisitRecordViewModel viewModel,
         ILoggerFactory loggerFactory,
-        IResponsiveLayoutService responsiveLayout)
+        IResponsiveLayoutService responsiveLayout,
+        INavigationService navigation)
     {
         ViewModel = viewModel;
         DataContext = viewModel;
         _loggerFactory = loggerFactory;
         _responsiveLayout = responsiveLayout;
+        _navigation = navigation;
         InitializeComponent();
         _responsiveLayout.BreakpointChanged += OnBreakpointChanged;
         Loaded += (_, _) =>
@@ -175,6 +180,7 @@ public sealed partial class VisitRecordPage : Page
 
     private void VisitRecordPage_OnLoaded(object sender, RoutedEventArgs e)
     {
+        RefreshBackNavigation();
         _loggerFactory.CreateLogger<VisitRecordPage>().LogInformation(
             "VisitRecordPage Loaded. Size={Width:0}x{Height:0} WebView={WebW:0}x{WebH:0}",
             ActualWidth,
@@ -199,6 +205,7 @@ public sealed partial class VisitRecordPage : Page
         VisitMapNavigationSource source,
         bool reloadData)
     {
+        RefreshBackNavigation();
         var requestId = Interlocked.Increment(ref _activateRequestId);
         var logger = _loggerFactory.CreateLogger<VisitRecordPage>();
         logger.LogInformation(
@@ -226,6 +233,21 @@ public sealed partial class VisitRecordPage : Page
         await ViewModel.ActivateVisitSurfaceAsync(navigationGeneration, source, reloadData);
 
         logger.LogInformation("VisitRecordPage Activate done. Gen={Gen} RequestId={RequestId}", navigationGeneration, requestId);
+    }
+
+    private void RefreshBackNavigation()
+    {
+        var current = _navigation.Current;
+        var isVisible = current is { } entry
+                        && entry.Kind != NavigationKind.TopLevel
+                        && _navigation.CanGoBack;
+        var label = _navigation.BackEntry?.DisplayLabel;
+        label = string.IsNullOrWhiteSpace(label) ? "뒤로" : label.Trim();
+
+        BackNavigationLabel.Text = label;
+        BackNavigationButton.Visibility = isVisible ? Visibility.Visible : Visibility.Collapsed;
+        ToolTipService.SetToolTip(BackNavigationButton, $"{label}(으)로 돌아가기");
+        AutomationProperties.SetName(BackNavigationButton, $"이전 화면: {label}");
     }
 
     private void EnsureMapController()

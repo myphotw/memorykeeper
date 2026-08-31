@@ -36,21 +36,29 @@
             RowSpacing="{StaticResource MkSectionSpacing}">
 
             <!-- Title + fixed-width search (no expanding result row) -->
-            <StackPanel Spacing="12">
-                <Grid ColumnDefinitions="*,Auto">
-                    <TextBlock
-                        Text="방문지도"
-                        Style="{StaticResource MkPageTitleStyle}"
-                        Margin="0" />
-                    <Button
-                        Grid.Column="1"
-                        Content="✕"
-                        AutomationProperties.Name="닫기"
-                        Command="{Binding GoBackCommand}"
-                        MinWidth="40"
-                        Padding="10,4"
-                        Visibility="{Binding IsContextualCloseVisible, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
-                </Grid>
+            <StackPanel Spacing="8">
+                <Button
+                    x:Name="BackNavigationButton"
+                    Command="{Binding GoBackCommand}"
+                    Style="{StaticResource MkBackNavigationButtonStyle}"
+                    Visibility="Collapsed">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon
+                            FontFamily="{StaticResource MkIconFontFamily}"
+                            FontSize="14"
+                            Glyph="&#xE72B;" />
+                        <TextBlock
+                            x:Name="BackNavigationLabel"
+                            MaxWidth="280"
+                            Text="뒤로"
+                            TextTrimming="CharacterEllipsis"
+                            TextWrapping="NoWrap" />
+                    </StackPanel>
+                </Button>
+                <TextBlock
+                    Text="방문지도"
+                    Style="{StaticResource MkPageTitleStyle}"
+                    Margin="0" />
                 <TextBlock
                     Text="{Binding StatusMessage, Mode=OneWay}"
                     Style="{StaticResource MkCaptionTextStyle}"

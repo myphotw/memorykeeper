@@ -63,7 +63,52 @@ public sealed class GalleryTravelRecordsRepositoryTests
         Assert.Equal(126.9770, place.Longitude, 4);
         Assert.Equal(2, place.PhotoCount);
         Assert.Equal(2, place.VisitDates.Count);
+        Assert.Equal(2, place.Photos.Count);
+        Assert.All(place.Photos, photo => Assert.NotNull(photo.CapturedAt));
+        Assert.Contains(place.Photos, photo => photo.Country == "대한민국");
+        Assert.Contains(place.Photos, photo => photo.Country == GalleryHierarchyService.OtherTitle);
+        Assert.False(place.IsUnclassified);
         Assert.Equal($"https://backend.example/api/common/gallery/{secondId}/thumbnail", place.AbsoluteLibraryPath);
+    }
+
+    [Fact]
+    public async Task GetPlaceAggregatesAsync_PreservesPerPhotoCountryInSyntheticAggregate()
+    {
+        var snapshot = new GalleryPhotoCatalogSnapshot
+        {
+            ApiBaseUrl = "https://backend.example",
+            Photos =
+            [
+                new PhotoDto
+                {
+                    FileId = "korea-photo",
+                    Filename = "korea.jpg",
+                    Country = "대한민국",
+                    CaptureDatetime = new DateTimeOffset(2024, 8, 1, 10, 0, 0, TimeSpan.Zero),
+                },
+                new PhotoDto
+                {
+                    FileId = "japan-photo",
+                    Filename = "japan.jpg",
+                    Country = "일본",
+                    CaptureDatetime = new DateTimeOffset(2024, 8, 2, 10, 0, 0, TimeSpan.Zero),
+                },
+                new PhotoDto
+                {
+                    FileId = "unknown-photo",
+                    Filename = "unknown.jpg",
+                    Country = null,
+                    CaptureDatetime = new DateTimeOffset(2024, 8, 3, 10, 0, 0, TimeSpan.Zero),
+                },
+            ],
+        };
+
+        var aggregate = Assert.Single(await CreateRepository(snapshot).GetPlaceAggregatesAsync());
+
+        Assert.True(aggregate.IsUnclassified);
+        Assert.Contains(aggregate.Photos, photo => photo.Country == "대한민국");
+        Assert.Contains(aggregate.Photos, photo => photo.Country == "일본");
+        Assert.Contains(aggregate.Photos, photo => photo.Country == GalleryHierarchyService.OtherTitle);
     }
 
     [Fact]
