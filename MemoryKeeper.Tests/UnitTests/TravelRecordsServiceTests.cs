@@ -27,7 +27,7 @@ public class TravelRecordsServiceTests
             CreatePhoto("s2.jpg", storageId, sokcho, new DateTimeOffset(now.Year - 1, 4, 11, 10, 0, 0, TimeSpan.Zero)),
             CreatePhoto("s3.jpg", storageId, sokcho, new DateTimeOffset(now.Year - 1, 7, 1, 10, 0, 0, TimeSpan.Zero)),
             CreatePhoto("b1.jpg", storageId, busan, new DateTimeOffset(2019, 5, 18, 10, 0, 0, TimeSpan.Zero)),
-            CreatePhoto("b2.jpg", storageId, busan, new DateTimeOffset(2019, 5, 19, 10, 0, 0, TimeSpan.Zero)),
+            CreatePhoto("b2.jpg", storageId, busan, new DateTimeOffset(2019, 8, 1, 10, 0, 0, TimeSpan.Zero)),
             CreatePhoto("m1.jpg", storageId, maldives, new DateTimeOffset(2024, 1, 5, 10, 0, 0, TimeSpan.Zero))
         };
 
@@ -64,7 +64,7 @@ public class TravelRecordsServiceTests
 
         Assert.NotNull(dashboard.MostVisitedPlace);
         Assert.Equal(sokcho.Id, dashboard.MostVisitedPlace!.PlaceId);
-        Assert.Equal(3, dashboard.MostVisitedPlace.VisitRecordCount);
+        Assert.Equal(2, dashboard.MostVisitedPlace.VisitRecordCount);
 
         Assert.NotNull(dashboard.LongUnvisitedPlace);
         Assert.Equal(busan.Id, dashboard.LongUnvisitedPlace!.PlaceId);

@@ -219,6 +219,8 @@ public partial class App : Microsoft.UI.Xaml.Application
                 services.Configure<ImportUploadOptions>(
                     context.Configuration.GetSection(ImportUploadOptions.SectionName));
                 services.AddSingleton<IGalleryApiRepository, GalleryApiRepository>();
+                services.AddSingleton<IFastGalleryApiRepository, FastGalleryApiRepository>();
+                services.AddSingleton<IFastTravelApiRepository, FastTravelApiRepository>();
                 services.AddSingleton<IGalleryPhotoCatalog, GalleryPhotoCatalog>();
                 services.AddSingleton<IUploadApiRepository, UploadApiRepository>();
                 services.AddSingleton<IUploadJobApiRepository, UploadJobApiRepository>();

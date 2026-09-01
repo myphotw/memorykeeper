@@ -12,9 +12,10 @@ public sealed class TravelCountryListRegressionTests
         var mainWindow = LoadSource("MemoryKeeper.App", "Views", "MainWindow.xaml.cs");
         var gallery = LoadSource("MemoryKeeper.App", "ViewModels", "GalleryViewModel.cs");
 
-        Assert.Contains("BuildForeignCountries(countryVisitStatistics, aggregates)", service, StringComparison.Ordinal);
+        Assert.Contains("BuildForeignCountries(countryAggregates)", service, StringComparison.Ordinal);
         Assert.Contains("VisitCount = statistic.VisitCount", service, StringComparison.Ordinal);
-        Assert.Contains("PhotoCount = CountUniquePhotos(photos)", service, StringComparison.Ordinal);
+        Assert.Contains("PhotoCount = item.Item.PhotoCount", service, StringComparison.Ordinal);
+        Assert.Contains("GetCountryAggregatesAsync", service, StringComparison.Ordinal);
         Assert.Contains("_navigationState.ForeignCountries", viewModel, StringComparison.Ordinal);
         Assert.DoesNotContain("TravelRecordsService", viewModel, StringComparison.Ordinal);
         Assert.Contains("Text=\"해외 방문 국가\"", page, StringComparison.Ordinal);

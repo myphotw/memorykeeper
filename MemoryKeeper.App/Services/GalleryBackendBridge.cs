@@ -11,6 +11,80 @@ namespace MemoryKeeper.App.Services;
 /// </summary>
 public static class GalleryBackendBridge
 {
+    /// <summary>Fast Gallery home read: one first page plus summary, never a complete catalog snapshot.</summary>
+    public static async Task<HomeDashboardDto> GetFastHomeDashboardAsync(
+        IFastGalleryApiRepository fastGallery,
+        string apiBaseUrl,
+        CancellationToken cancellationToken = default)
+    {
+        var pageTask = fastGallery.GetPhotosAsync(new FastGalleryPhotoQuery { Limit = 50 }, cancellationToken);
+        var summaryTask = fastGallery.GetSummaryAsync(cancellationToken);
+        var page = await pageTask.ConfigureAwait(false);
+        FastGallerySummaryDto summary;
+        try
+        {
+            summary = await summaryTask.ConfigureAwait(false);
+        }
+        catch
+        {
+            // A summary outage must not hide the immediately useful first photo page.
+            summary = new FastGallerySummaryDto();
+        }
+        var photos = page.Items;
+        var dashboardPhotos = photos.Take(6).Select(photo => new DashboardPhotoDto
+        {
+            MediaId = GalleryBackendMapper.ParseFileId(photo.FileId),
+            FileName = photo.Filename,
+            IsFavorite = photo.Favorite,
+            PlaceName = photo.PlaceDisplayName,
+            Country = photo.Country,
+            CapturedAt = photo.EffectiveCaptureDatetime,
+            AbsoluteLibraryPath = GalleryBackendMapper.ToAbsoluteUrl(apiBaseUrl, photo.ThumbnailUrl)
+                                  ?? GalleryBackendMapper.ToAbsoluteUrl(apiBaseUrl, photo.PreviewUrl)
+                                  ?? string.Empty,
+        }).Where(photo => photo.MediaId != Guid.Empty).ToList();
+        var recentVisits = photos.Where(photo => photo.MemorykeeperPlaceId.HasValue)
+            .GroupBy(photo => photo.MemorykeeperPlaceId!.Value)
+            .Select(group =>
+            {
+                var rep = group.First();
+                return new RecentVisitDto
+                {
+                    PlaceId = group.Key,
+                    PlaceName = rep.PlaceDisplayName ?? "장소",
+                    Country = rep.Country ?? string.Empty,
+                    PhotoCount = group.Count(),
+                    VisitRecordCount = group.Select(item => item.EffectiveCaptureDate).Distinct().Count(),
+                    LastVisitDate = group.Max(item => item.EffectiveCaptureDatetime),
+                    RepresentativeMediaId = GalleryBackendMapper.ParseFileId(rep.FileId),
+                    AbsoluteLibraryPath = GalleryBackendMapper.ToAbsoluteUrl(apiBaseUrl, rep.ThumbnailUrl)
+                                           ?? GalleryBackendMapper.ToAbsoluteUrl(apiBaseUrl, rep.PreviewUrl),
+                };
+            }).OrderByDescending(item => item.LastVisitDate).Take(3).ToList();
+        var heroes = recentVisits.Take(3).Select(visit => new HeroMemoryDto
+        {
+            PlaceId = visit.PlaceId, PlaceName = visit.PlaceName,
+            Year = visit.LastVisitDate?.Year ?? 0, PhotoCount = visit.PhotoCount,
+            VisitRecordCount = visit.VisitRecordCount, RepresentativeMediaId = visit.RepresentativeMediaId,
+            AbsoluteLibraryPath = visit.AbsoluteLibraryPath, KindLabel = "최근 방문",
+            DateText = visit.LastVisitDate?.ToLocalTime().ToString("yyyy.MM.dd") ?? string.Empty,
+        }).ToList();
+        return new HomeDashboardDto
+        {
+            HeroMemories = heroes,
+            RecentVisits = recentVisits,
+            RecentImports = dashboardPhotos,
+            Favorites = dashboardPhotos.Where(photo => photo.IsFavorite).ToList(),
+            Statistics = new DashboardStatisticsDto
+            {
+                PhotoCount = summary.TotalPhotos, FavoriteCount = summary.FavoriteCount, GpsCount = summary.GpsCount,
+                CountryCount = summary.ByCountry.Count,
+                ByYear = summary.ByYear.Select(item => new DashboardStatBucketDto { Name = item.Name, Count = item.Count }).ToList(),
+                ByCountry = summary.ByCountry.Select(item => new DashboardStatBucketDto { Name = item.Name, Count = item.Count }).ToList(),
+                LastUpdatedText = summary.EffectiveDateMax?.ToString("yyyy.MM.dd") ?? string.Empty,
+            },
+        };
+    }
     public static async Task<MemorySearchQueryResult> SearchPlacesAsync(
         IGalleryApiRepository galleryApi,
         string apiBaseUrl,

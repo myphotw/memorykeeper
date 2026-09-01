@@ -17,6 +17,7 @@ public sealed partial class GalleryPage : Page
     private ObservableCollection<GalleryItem>? _subscribedItems;
     private readonly PhotoDetailView _photoDetailView;
     private bool _detailViewHosted;
+    private ScrollViewer? _photoScrollViewer;
 
     public event EventHandler? OpenImportRequested;
 
@@ -62,6 +63,25 @@ public sealed partial class GalleryPage : Page
         GalleryDiagnostics.WriteStep("GalleryPage Loaded");
         UpdateEmptyState();
         RefreshDetail();
+        _photoScrollViewer ??= FindDescendant<ScrollViewer>(PhotoGrid);
+        if (_photoScrollViewer is not null)
+        {
+            _photoScrollViewer.ViewChanged -= PhotoScrollViewer_OnViewChanged;
+            _photoScrollViewer.ViewChanged += PhotoScrollViewer_OnViewChanged;
+        }
+    }
+
+    private void PhotoScrollViewer_OnViewChanged(object sender, ScrollViewerViewChangedEventArgs e)
+    {
+        if (_photoScrollViewer is null || e.IsIntermediate || !ViewModel.CanLoadMore || ViewModel.IsBusy)
+        {
+            return;
+        }
+
+        if (_photoScrollViewer.ScrollableHeight - _photoScrollViewer.VerticalOffset <= 600)
+        {
+            ViewModel.LoadMoreCommand.Execute(null);
+        }
     }
 
     private void ViewModel_OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)

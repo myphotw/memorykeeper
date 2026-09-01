@@ -39,13 +39,25 @@ public sealed class TravelRecordsService
         CancellationToken cancellationToken = default)
     {
         var aggregates = await _travelRecordsRepository.GetPlaceAggregatesAsync(cancellationToken);
+        var countryAggregates = await _travelRecordsRepository.GetCountryAggregatesAsync(cancellationToken);
+        IReadOnlyList<TravelMemoryCandidateRaw> memoryCandidates;
+        try
+        {
+            memoryCandidates = await _travelRecordsRepository.GetMemoryCandidatesAsync(
+                DateOnly.FromDateTime(DateTime.Today), MemoryCardPhotoTake * 5, cancellationToken);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogWarning(ex, "Travel memories failed; aggregate dashboard remains available.");
+            memoryCandidates = [];
+        }
         _logger.LogInformation(
             "TravelRecords dashboard aggregates. Places={Places}, WithVisits={WithVisits}, UndatedOnly={Undated}",
             aggregates.Count,
             aggregates.Count(a => a.VisitDates.Count > 0),
             aggregates.Count(a => a.VisitDates.Count == 0 && a.PhotoCount > 0));
 
-        if (aggregates.Count == 0)
+        if (aggregates.Count == 0 && countryAggregates.Count == 0)
         {
             return new TravelRecordsDashboardDto();
         }
@@ -54,22 +66,26 @@ public sealed class TravelRecordsService
         var mostVisited = OrderMostVisited(aggregates).FirstOrDefault();
         var longUnvisited = OrderLongUnvisited(aggregates).FirstOrDefault();
         var recent = OrderRecent(aggregates).Take(RecentCardTake).ToList();
-        var countries = OrderCountries(aggregates);
-        var countryVisitStatistics = BuildCountryVisitStatistics(aggregates);
+        var countries = countryAggregates.Count > 0 ? OrderCountries(countryAggregates) : OrderCountries(aggregates);
+        var countryVisitStatistics = countryAggregates.Count > 0
+            ? BuildCountryVisitStatistics(countryAggregates)
+            : BuildCountryVisitStatistics(aggregates);
 
         return new TravelRecordsDashboardDto
         {
-            DomesticTripCount = CountDomesticTrips(aggregates, home),
+            DomesticTripCount = countryAggregates.Count > 0
+                ? countryAggregates.Where(item => IsDomesticCountry(item.Country)).Sum(item => item.VisitCount)
+                : CountDomesticTrips(aggregates, home),
             ForeignTripCount = countryVisitStatistics.Sum(item => item.VisitCount),
             ForeignPlaceCount = CountForeignPlaces(aggregates),
-            ForeignPhotoCount = CountUniquePhotos(
-                aggregates.SelectMany(item => item.Photos)
-                    .Where(photo => TryNormalizeForeignCountry(photo.Country) is not null)),
+            ForeignPhotoCount = countryAggregates.Count > 0
+                ? countryAggregates.Where(item => TryNormalizeForeignCountry(item.Country) is not null).Sum(item => item.PhotoCount)
+                : CountPhotoCount(aggregates.Where(item => TryNormalizeForeignCountry(item.Country) is not null)),
             DomesticPlaceCount = CountDomesticPlaces(aggregates),
-            DomesticPhotoCount = CountUniquePhotos(
-                aggregates.SelectMany(item => item.Photos)
-                    .Where(photo => IsDomesticCountry(photo.Country))),
-            UniquePhotoCount = CountUniquePhotos(aggregates),
+            DomesticPhotoCount = countryAggregates.Count > 0
+                ? countryAggregates.Where(item => IsDomesticCountry(item.Country)).Sum(item => item.PhotoCount)
+                : CountPhotoCount(aggregates.Where(item => IsDomesticCountry(item.Country))),
+            UniquePhotoCount = countryAggregates.Count > 0 ? countryAggregates.Sum(item => item.PhotoCount) : CountPhotoCount(aggregates),
             DistinctPlaceCount = CountDistinctPlaces(aggregates),
             VisitedForeignCountryCount = countryVisitStatistics.Count,
             MostVisitedPlace = mostVisited is null
@@ -83,8 +99,12 @@ public sealed class TravelRecordsService
             TopCountry = countries.FirstOrDefault(),
             FarthestPlace = OrderFarthest(aggregates, home).FirstOrDefault(),
             CountryVisitStatistics = countryVisitStatistics,
-            ForeignCountries = BuildForeignCountries(countryVisitStatistics, aggregates),
-            MemoryCards = BuildMemoryCards(aggregates, DateOnly.FromDateTime(DateTime.Today)),
+            ForeignCountries = countryAggregates.Count > 0
+                ? BuildForeignCountries(countryAggregates)
+                : BuildForeignCountries(countryVisitStatistics, aggregates),
+            MemoryCards = memoryCandidates.Count > 0
+                ? BuildMemoryCardsFromCandidates(memoryCandidates, DateOnly.FromDateTime(DateTime.Today))
+                : BuildMemoryCards(aggregates, DateOnly.FromDateTime(DateTime.Today)),
             YearChapters = BuildYearChapters(aggregates)
         };
     }
@@ -92,6 +112,28 @@ public sealed class TravelRecordsService
     private static IReadOnlyList<TravelCountryVisitSummaryDto> BuildCountryVisitStatistics(
         IReadOnlyList<TravelPlaceAggregateRaw> aggregates)
     {
+        if (!aggregates.SelectMany(item => item.Photos).Any())
+        {
+            return aggregates
+                .Select(item => new { Aggregate = item, Country = TryNormalizeForeignCountry(item.Country) })
+                .Where(item => item.Country is not null)
+                .GroupBy(item => item.Country!, StringComparer.OrdinalIgnoreCase)
+                .Select(group => new
+                {
+                    Country = group.Key,
+                    Dates = group.SelectMany(item => item.Aggregate.VisitDates).Distinct().OrderBy(date => date).ToList(),
+                    PhotoCount = group.Sum(item => item.Aggregate.PhotoCount),
+                })
+                .Where(item => item.Dates.Count > 0)
+                .OrderByDescending(item => CountConsecutiveDateRanges(item.Dates))
+                .ThenByDescending(item => item.PhotoCount)
+                .ThenBy(item => item.Country, StringComparer.OrdinalIgnoreCase)
+                .Select((item, index) => new TravelCountryVisitSummaryDto
+                {
+                    Country = item.Country, VisitCount = CountConsecutiveDateRanges(item.Dates),
+                    CapturedDayCount = item.Dates.Count, Rank = index + 1,
+                }).ToList();
+        }
         return aggregates
             .SelectMany(item => item.Photos)
             .Select(photo => new
@@ -133,6 +175,27 @@ public sealed class TravelRecordsService
 
     private static int CountUniquePhotos(IEnumerable<TravelPlaceAggregateRaw> aggregates) =>
         CountUniquePhotos(aggregates.SelectMany(item => item.Photos));
+
+    private static int CountPhotoCount(IEnumerable<TravelPlaceAggregateRaw> aggregates)
+    {
+        var list = aggregates.ToList();
+        return list.SelectMany(item => item.Photos).Any()
+            ? CountUniquePhotos(list)
+            : list.Sum(item => item.PhotoCount);
+    }
+
+    private static IReadOnlyList<TravelCountryVisitSummaryDto> BuildCountryVisitStatistics(
+        IReadOnlyList<TravelCountryAggregateRaw> countries) =>
+        countries.Select(item => new { Item = item, Country = TryNormalizeForeignCountry(item.Country) })
+            .Where(item => item.Country is not null)
+            .OrderByDescending(item => item.Item.VisitCount)
+            .ThenByDescending(item => item.Item.PhotoCount)
+            .ThenBy(item => item.Country, StringComparer.OrdinalIgnoreCase)
+            .Select((item, index) => new TravelCountryVisitSummaryDto
+            {
+                Country = item.Country!, VisitCount = item.Item.VisitCount,
+                CapturedDayCount = item.Item.CaptureDates.Count, Rank = index + 1,
+            }).ToList();
 
     private static int CountUniquePhotos(IEnumerable<TravelPhotoCandidateRaw> photos) =>
         photos
@@ -246,11 +309,18 @@ public sealed class TravelRecordsService
             .GroupBy(item => item.Country!, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.Select(item => item.Photo).ToList(), StringComparer.OrdinalIgnoreCase);
 
+        var aggregateByCountry = aggregates
+            .Select(item => new { Aggregate = item, Country = TryNormalizeForeignCountry(item.Country) })
+            .Where(item => item.Country is not null)
+            .GroupBy(item => item.Country!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Select(item => item.Aggregate).ToList(), StringComparer.OrdinalIgnoreCase);
         return statistics
             .Select(statistic =>
             {
                 photosByCountry.TryGetValue(statistic.Country, out var photos);
                 photos ??= [];
+                aggregateByCountry.TryGetValue(statistic.Country, out var aggregateRows);
+                aggregateRows ??= [];
                 var representative = photos
                     .Where(photo => !string.IsNullOrWhiteSpace(photo.ThumbnailPath))
                     .OrderByDescending(photo => photo.CapturedAt)
@@ -261,13 +331,65 @@ public sealed class TravelRecordsService
                 {
                     Country = statistic.Country,
                     VisitCount = statistic.VisitCount,
-                    PhotoCount = CountUniquePhotos(photos),
+                    PhotoCount = photos.Count > 0 ? CountUniquePhotos(photos) : aggregateRows.Sum(item => item.PhotoCount),
                     RepresentativeMediaId = representative?.MediaId,
                     ThumbnailPath = representative?.ThumbnailPath ?? string.Empty,
                 };
             })
             .ToList();
     }
+
+    private static IReadOnlyList<TravelForeignCountryDto> BuildForeignCountries(
+        IReadOnlyList<TravelCountryAggregateRaw> countries) =>
+        countries.Select(item => new { Item = item, Country = TryNormalizeForeignCountry(item.Country) })
+            .Where(item => item.Country is not null)
+            .OrderByDescending(item => item.Item.VisitCount)
+            .ThenByDescending(item => item.Item.PhotoCount)
+            .ThenBy(item => item.Country, StringComparer.OrdinalIgnoreCase)
+            .Select(item => new TravelForeignCountryDto
+            {
+                Country = item.Country!, VisitCount = item.Item.VisitCount, PhotoCount = item.Item.PhotoCount,
+                RepresentativeMediaId = item.Item.RepresentativeMediaId,
+                ThumbnailPath = item.Item.RepresentativeThumbnailPath ?? string.Empty,
+            }).ToList();
+
+    private static IReadOnlyList<TravelMemoryCardDto> BuildMemoryCardsFromCandidates(
+        IReadOnlyList<TravelMemoryCandidateRaw> candidates,
+        DateOnly today)
+    {
+        var cards = new List<TravelMemoryCardDto>();
+        foreach (var group in candidates
+                     .Where(item => item.CaptureDate < today && item.PlaceId.HasValue)
+                     .GroupBy(item => NormalizeMemoryCategory(item.Category))
+                     .OrderBy(group => group.Key == TravelMemoryCardKind.YearsAgoToday ? 0 : 1)
+                     .Take(2))
+        {
+            var first = group.OrderByDescending(item => item.CaptureDate).First();
+            var kind = group.Key;
+            var years = Math.Max(1, today.Year - first.CaptureDate.Year);
+            cards.Add(new TravelMemoryCardDto
+            {
+                Kind = kind,
+                Title = kind == TravelMemoryCardKind.YearsAgoToday ? $"{years}년 전 오늘" : "작년 이맘때",
+                Subtitle = first.CaptureDate.ToString("yyyy.MM.dd"),
+                FocusPlaceId = first.PlaceId!.Value,
+                RepresentativeMediaId = first.MediaId,
+                Photos = group.Take(MemoryCardPhotoTake).Select(item => new TravelMemoryPhotoDto
+                {
+                    MediaId = item.MediaId, PlaceId = item.PlaceId!.Value, PlaceName = item.PlaceName,
+                    Country = item.Country,
+                    CapturedAt = new DateTimeOffset(item.CaptureDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero),
+                    ThumbnailPath = item.ThumbnailPath,
+                }).ToList(),
+            });
+        }
+        return cards;
+    }
+
+    private static TravelMemoryCardKind NormalizeMemoryCategory(string category) =>
+        string.Equals(category, "exact_anniversary", StringComparison.OrdinalIgnoreCase)
+            ? TravelMemoryCardKind.YearsAgoToday
+            : TravelMemoryCardKind.LastYearAroundNow;
 
     private static IReadOnlyList<TravelMemoryCardDto> BuildMemoryCards(
         IReadOnlyList<TravelPlaceAggregateRaw> aggregates,
@@ -584,7 +706,7 @@ public sealed class TravelRecordsService
         {
             FocusPlaceId = focus.PlaceId,
             TripName = tripName,
-            LocationText = string.Join(" · ", locationParts),
+            LocationText = string.Join(" 쨌 ", locationParts),
             Country = country,
             Year = year,
             StartDate = new DateTimeOffset(start),
@@ -620,6 +742,7 @@ public sealed class TravelRecordsService
         CancellationToken cancellationToken = default)
     {
         var aggregates = await _travelRecordsRepository.GetPlaceAggregatesAsync(cancellationToken);
+        var countryAggregates = await _travelRecordsRepository.GetCountryAggregatesAsync(cancellationToken);
         var home = await _homeLocationService.GetAsync(cancellationToken);
 
         if (kind == TravelRecordsDetailKind.Season)
@@ -651,7 +774,7 @@ public sealed class TravelRecordsService
             {
                 Kind = kind,
                 Title = "가장 많이 방문한 국가",
-                Countries = OrderCountries(aggregates).Take(DetailTake).ToList()
+                Countries = (countryAggregates.Count > 0 ? OrderCountries(countryAggregates) : OrderCountries(aggregates)).Take(DetailTake).ToList()
             },
             TravelRecordsDetailKind.Farthest => new TravelRecordsDetailDto
             {
@@ -682,7 +805,7 @@ public sealed class TravelRecordsService
         IEnumerable<TravelPlaceAggregateRaw> aggregates) =>
         aggregates
             .Where(item => item.VisitDates.Count > 0)
-            .OrderByDescending(item => item.VisitDates.Count)
+            .OrderByDescending(item => item.ResolvedVisitCount)
             .ThenByDescending(item => item.PhotoCount)
             .ThenBy(item => item.PlaceName);
 
@@ -690,7 +813,7 @@ public sealed class TravelRecordsService
         IEnumerable<TravelPlaceAggregateRaw> aggregates) =>
         aggregates
             .Where(item =>
-                item.VisitDates.Count >= LongUnvisitedMinVisits
+                item.ResolvedVisitCount >= LongUnvisitedMinVisits
                 || item.PhotoCount >= LongUnvisitedMinPhotos)
             .Where(item => item.VisitDates.Count > 0)
             .OrderBy(item => item.VisitDates.Max())
@@ -713,7 +836,7 @@ public sealed class TravelRecordsService
             .Select(group => new
             {
                 Country = group.Key,
-                VisitRecordCount = group.Sum(item => item.VisitDates.Count),
+                VisitRecordCount = group.Sum(item => item.ResolvedVisitCount),
                 PlaceCount = group.Count(),
                 PhotoCount = group.Sum(item => item.PhotoCount),
             })
@@ -728,6 +851,17 @@ public sealed class TravelRecordsService
                 Rank = index + 1
             })
             .ToList();
+
+    private static IReadOnlyList<TravelCountrySummaryDto> OrderCountries(
+        IEnumerable<TravelCountryAggregateRaw> countries) =>
+        countries.Where(item => !string.IsNullOrWhiteSpace(item.Country))
+            .OrderByDescending(item => item.VisitCount)
+            .ThenByDescending(item => item.PhotoCount)
+            .ThenBy(item => item.Country)
+            .Select((item, index) => new TravelCountrySummaryDto
+            {
+                Country = item.Country, VisitRecordCount = item.VisitCount, PlaceCount = 0, Rank = index + 1,
+            }).ToList();
 
     private static IReadOnlyList<TravelFarthestSummaryDto> OrderFarthest(
         IReadOnlyList<TravelPlaceAggregateRaw> aggregates,
@@ -841,7 +975,7 @@ public sealed class TravelRecordsService
             PlaceId = item.PlaceId,
             PlaceName = item.PlaceName,
             Country = item.Country,
-            VisitRecordCount = item.VisitDates.Count,
+            VisitRecordCount = item.ResolvedVisitCount,
             LastVisitDate = last,
             RelativeLastVisitText = FormatRelative(last),
             RepresentativeMediaId = item.RepresentativeMediaId,

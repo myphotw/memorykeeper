@@ -6,6 +6,7 @@ using MemoryKeeper.App.Services;
 using MemoryKeeper.Application.DTOs;
 using MemoryKeeper.Application.Interfaces;
 using MemoryKeeper.Application.Services;
+using MemoryKeeper.Infrastructure.Services.Api;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml.Media.Imaging;
@@ -17,8 +18,8 @@ public partial class HomeViewModel : ObservableObject
     private static readonly TimeSpan HeroInterval = TimeSpan.FromSeconds(4);
 
     private readonly IGalleryApiRepository _galleryApiRepository;
-    private readonly IGalleryPhotoCatalog _galleryPhotoCatalog;
-    private readonly GalleryHierarchyService _galleryHierarchyService;
+    private readonly IFastGalleryApiRepository _fastGallery;
+    private readonly BaseApiClient _apiClient;
     private readonly IThumbnailService _thumbnailService;
     private readonly IPlaceFocusState _placeFocusState;
     private readonly IPhotoNavigationState _photoNavigationState;
@@ -165,8 +166,8 @@ public partial class HomeViewModel : ObservableObject
 
     public HomeViewModel(
         IGalleryApiRepository galleryApiRepository,
-        IGalleryPhotoCatalog galleryPhotoCatalog,
-        GalleryHierarchyService galleryHierarchyService,
+        IFastGalleryApiRepository fastGallery,
+        BaseApiClient apiClient,
         IThumbnailService thumbnailService,
         IPlaceFocusState placeFocusState,
         IPhotoNavigationState photoNavigationState,
@@ -174,8 +175,8 @@ public partial class HomeViewModel : ObservableObject
         ILogger<HomeViewModel> logger)
     {
         _galleryApiRepository = galleryApiRepository;
-        _galleryPhotoCatalog = galleryPhotoCatalog;
-        _galleryHierarchyService = galleryHierarchyService;
+        _fastGallery = fastGallery;
+        _apiClient = apiClient;
         _thumbnailService = thumbnailService;
         _placeFocusState = placeFocusState;
         _photoNavigationState = photoNavigationState;
@@ -214,10 +215,9 @@ public partial class HomeViewModel : ObservableObject
             ClearLocalDashboardSections();
             try
             {
-                var dashboard = await GalleryBackendBridge.GetHomeDashboardAsync(
-                    _galleryApiRepository,
-                    _galleryPhotoCatalog,
-                    _galleryHierarchyService,
+                var dashboard = await GalleryBackendBridge.GetFastHomeDashboardAsync(
+                    _fastGallery,
+                    _apiClient.ApiBaseUrl,
                     token);
                 ApplyDashboard(dashboard);
                 StatusMessage = "추억을 불러왔습니다.";
