@@ -29,16 +29,25 @@ public sealed class FastGalleryTravelRecordsRepository : ITravelRecordsRepositor
             PlaceId = item.MemorykeeperPlaceId!.Value,
             PlaceName = item.PlaceDisplayName ?? string.Empty,
             Country = item.Country ?? string.Empty,
+            Region = item.Region ?? string.Empty,
+            Latitude = item.Latitude ?? 0d,
+            Longitude = item.Longitude ?? 0d,
             PhotoCount = item.PhotoCount,
             VisitCount = item.VisitCount,
             VisitDates = item.CaptureDates.Select(date => date.ToDateTime(TimeOnly.MinValue)).OrderBy(date => date).ToList(),
             IsUnclassified = string.IsNullOrWhiteSpace(item.PlaceDisplayName),
             RepresentativeMediaId = ToMediaId(item.RepresentativeFileId),
-            AbsoluteLibraryPath = ToAbsoluteUrl(FirstUrl(item.RepresentativeThumbnailUrl, item.RepresentativePreviewUrl)),
+            AbsoluteLibraryPath = ResolveThumbnailUrl(
+                item.RepresentativeFileId,
+                item.RepresentativeThumbnailUrl,
+                item.RepresentativePreviewUrl),
             RepresentativeCaptureDate = item.RepresentativeCaptureDate,
             Photos = [],
         }).ToList();
-        _logger.LogInformation("TravelRecords projected from Fast Travel aggregates. Places={Places}", result.Count);
+        _logger.LogInformation(
+            "TravelRecords projected from Fast Travel aggregates. Places={Places}, WithCoordinates={WithCoordinates}",
+            result.Count,
+            result.Count(place => PlaceIdentity.HasValidCoordinates(place.Latitude, place.Longitude)));
         return result;
     }
 
@@ -52,7 +61,10 @@ public sealed class FastGalleryTravelRecordsRepository : ITravelRecordsRepositor
             VisitCount = item.VisitCount,
             CaptureDates = item.CaptureDates,
             RepresentativeMediaId = ToMediaId(item.RepresentativeFileId),
-            RepresentativeThumbnailPath = ToAbsoluteUrl(FirstUrl(item.RepresentativeThumbnailUrl, item.RepresentativePreviewUrl)),
+            RepresentativeThumbnailPath = ResolveThumbnailUrl(
+                item.RepresentativeFileId,
+                item.RepresentativeThumbnailUrl,
+                item.RepresentativePreviewUrl),
             RepresentativeCaptureDate = item.RepresentativeCaptureDate,
         }).ToList();
     }
@@ -60,15 +72,32 @@ public sealed class FastGalleryTravelRecordsRepository : ITravelRecordsRepositor
     public async Task<IReadOnlyList<TravelMemoryCandidateRaw>> GetMemoryCandidatesAsync(DateOnly referenceDate, int limit, CancellationToken cancellationToken = default)
     {
         var response = await _travel.GetMemoriesAsync(referenceDate, limit, cancellationToken).ConfigureAwait(false);
-        return response.Items.Select(item => new TravelMemoryCandidateRaw
+        var candidates = response.Items.Count > 0
+            ? response.Items.Select(item => (Item: item, Category: item.Category ?? item.Candidate)).ToList()
+            : response.ExactAnniversary.Select(item => (Item: item, Category: (string?)"exact_anniversary"))
+                .Concat(response.PreviousYearPeriod.Select(item => (Item: item, Category: (string?)"previous_year_period")))
+                .ToList();
+
+        _logger.LogInformation(
+            "Fast Travel memories received. Items={Items}, ExactAnniversary={Exact}, PreviousYearPeriod={Previous}, Projected={Projected}",
+            response.Items.Count,
+            response.ExactAnniversary.Count,
+            response.PreviousYearPeriod.Count,
+            candidates.Count);
+
+        return candidates.Select(source => new TravelMemoryCandidateRaw
         {
-            MediaId = ToMediaId(item.FileId),
-            PlaceId = item.MemorykeeperPlaceId ?? item.PlaceId,
-            PlaceName = item.PlaceDisplayName ?? string.Empty,
-            Country = item.Country ?? string.Empty,
-            CaptureDate = item.EffectiveCaptureDate,
-            ThumbnailPath = ToAbsoluteUrl(FirstUrl(item.ThumbnailUrl, item.PreviewUrl)) ?? string.Empty,
-            Category = item.Category ?? item.Candidate ?? string.Empty,
+            MediaId = ToMediaId(source.Item.FileId),
+            PlaceId = source.Item.MemorykeeperPlaceId ?? source.Item.PlaceId,
+            PlaceName = source.Item.PlaceDisplayName ?? string.Empty,
+            Country = source.Item.Country ?? string.Empty,
+            CaptureDate = source.Item.EffectiveCaptureDate,
+            ThumbnailPath = ResolveThumbnailUrl(
+                                source.Item.FileId,
+                                source.Item.ThumbnailUrl,
+                                source.Item.PreviewUrl)
+                            ?? string.Empty,
+            Category = source.Category ?? string.Empty,
         }).ToList();
     }
 
@@ -78,14 +107,12 @@ public sealed class FastGalleryTravelRecordsRepository : ITravelRecordsRepositor
         return value == Guid.Empty ? null : value;
     }
 
-    private static string? FirstUrl(string? thumbnail, string? preview) =>
-        string.IsNullOrWhiteSpace(thumbnail) ? preview : thumbnail;
-
-    private string? ToAbsoluteUrl(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value) || Uri.TryCreate(value, UriKind.Absolute, out _)) return value;
-        return $"{_apiClient.ApiBaseUrl.TrimEnd('/')}/{value.TrimStart('/')}";
-    }
+    private string? ResolveThumbnailUrl(string? fileId, string? thumbnail, string? preview) =>
+        BackendMediaUrlResolver.ResolveDisplayUrl(
+            _apiClient.ApiBaseUrl,
+            fileId,
+            thumbnail,
+            preview);
 
     private Task<FastTravelAggregatesDto> GetAggregatesAsync(CancellationToken cancellationToken)
     {

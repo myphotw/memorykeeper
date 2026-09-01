@@ -25,6 +25,8 @@ public sealed class TravelPlaceAggregateRaw
 
     public string Country { get; init; } = string.Empty;
 
+    public string Region { get; init; } = string.Empty;
+
     public double Latitude { get; init; }
 
     public double Longitude { get; init; }

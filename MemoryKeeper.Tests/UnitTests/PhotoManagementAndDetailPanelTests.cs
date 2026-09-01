@@ -117,6 +117,8 @@ public sealed class PhotoManagementAndDetailPanelTests
         Assert.DoesNotContain("Content=\"✕\"", visitView, StringComparison.Ordinal);
         Assert.DoesNotContain("IsContextualCloseVisible", visitView, StringComparison.Ordinal);
         Assert.Contains("source == VisitMapNavigationSource.PhotoDetail", visitViewModel, StringComparison.Ordinal);
+        Assert.Contains("QueryFastVisitRecordsAsync", visitViewModel, StringComparison.Ordinal);
+        Assert.DoesNotContain("GalleryHierarchyService", visitViewModel, StringComparison.Ordinal);
         Assert.Contains("PhotoDetail = 4", focusState, StringComparison.Ordinal);
     }
 

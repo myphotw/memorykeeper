@@ -163,6 +163,8 @@ public partial class HomePhotoItem : ObservableObject
 
     public string AbsoluteLibraryPath => Dto.AbsoluteLibraryPath;
 
+    public string? FallbackAbsoluteLibraryPath => Dto.FallbackAbsoluteLibraryPath;
+
     public string CaptionLine
     {
         get

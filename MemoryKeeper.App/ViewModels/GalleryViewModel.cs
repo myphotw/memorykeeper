@@ -847,7 +847,10 @@ public partial class GalleryViewModel : ObservableObject
 
     private GalleryItem ToGalleryItem(FastGalleryPhotoDto photo)
     {
-        var thumbnail = GalleryBackendMapper.ToAbsoluteUrl(_apiClient.ApiBaseUrl, photo.ThumbnailUrl);
+        var thumbnail = BackendMediaUrlResolver.ResolveThumbnailUrl(
+            _apiClient.ApiBaseUrl,
+            photo.FileId,
+            photo.ThumbnailUrl);
         var preview = GalleryBackendMapper.ToAbsoluteUrl(_apiClient.ApiBaseUrl, photo.PreviewUrl);
         return new GalleryItem(new GalleryMediaDto
         {
@@ -963,12 +966,15 @@ public partial class GalleryViewModel : ObservableObject
                         continue;
                     }
 
+                    var bitmap = await HttpImageLoader.LoadFirstAvailableAsync(
+                        [remoteUrl, item.Media.PreviewUrl],
+                        _logger,
+                        context: $"GalleryThumbnail:{item.BackendFileId}",
+                        cancellationToken: token);
+                    token.ThrowIfCancellationRequested();
+
                     await EnqueueAsync(() =>
                     {
-                        var bitmap = HttpImageLoader.TryCreate(
-                            remoteUrl,
-                            _logger,
-                            context: $"GalleryThumbnail:{item.BackendFileId}");
                         item.ThumbnailImage = bitmap;
                         item.HasThumbnail = bitmap is not null;
                         if (bitmap is null)

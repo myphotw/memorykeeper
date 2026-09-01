@@ -14,21 +14,41 @@ public static class GalleryBackendBridge
     /// <summary>Fast Gallery home read: one first page plus summary, never a complete catalog snapshot.</summary>
     public static async Task<HomeDashboardDto> GetFastHomeDashboardAsync(
         IFastGalleryApiRepository fastGallery,
+        ITravelRecordsRepository travelRecords,
         string apiBaseUrl,
         CancellationToken cancellationToken = default)
     {
         var pageTask = fastGallery.GetPhotosAsync(new FastGalleryPhotoQuery { Limit = 50 }, cancellationToken);
         var summaryTask = fastGallery.GetSummaryAsync(cancellationToken);
+        var placesTask = travelRecords.GetPlaceAggregatesAsync(cancellationToken);
         var page = await pageTask.ConfigureAwait(false);
         FastGallerySummaryDto summary;
         try
         {
             summary = await summaryTask.ConfigureAwait(false);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch
         {
             // A summary outage must not hide the immediately useful first photo page.
             summary = new FastGallerySummaryDto();
+        }
+        IReadOnlyList<TravelPlaceAggregateRaw> placeAggregates;
+        try
+        {
+            placeAggregates = await placesTask.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            // Home remains useful with the first Gallery page and summary alone.
+            placeAggregates = [];
         }
         var photos = page.Items;
         var dashboardPhotos = photos.Take(6).Select(photo => new DashboardPhotoDto
@@ -39,28 +59,45 @@ public static class GalleryBackendBridge
             PlaceName = photo.PlaceDisplayName,
             Country = photo.Country,
             CapturedAt = photo.EffectiveCaptureDatetime,
-            AbsoluteLibraryPath = GalleryBackendMapper.ToAbsoluteUrl(apiBaseUrl, photo.ThumbnailUrl)
+            AbsoluteLibraryPath = ResolveThumbnailUrl(apiBaseUrl, photo.FileId, photo.ThumbnailUrl)
                                   ?? GalleryBackendMapper.ToAbsoluteUrl(apiBaseUrl, photo.PreviewUrl)
                                   ?? string.Empty,
+            FallbackAbsoluteLibraryPath = GalleryBackendMapper.ToAbsoluteUrl(apiBaseUrl, photo.PreviewUrl),
         }).Where(photo => photo.MediaId != Guid.Empty).ToList();
-        var recentVisits = photos.Where(photo => photo.MemorykeeperPlaceId.HasValue)
-            .GroupBy(photo => photo.MemorykeeperPlaceId!.Value)
-            .Select(group =>
-            {
-                var rep = group.First();
-                return new RecentVisitDto
+        var recentVisits = placeAggregates.Count > 0
+            ? placeAggregates
+                .Where(place => !place.IsUnclassified && place.VisitDates.Count > 0)
+                .OrderByDescending(place => place.VisitDates.Max())
+                .Take(3)
+                .Select(place => new RecentVisitDto
                 {
-                    PlaceId = group.Key,
-                    PlaceName = rep.PlaceDisplayName ?? "장소",
-                    Country = rep.Country ?? string.Empty,
-                    PhotoCount = group.Count(),
-                    VisitRecordCount = group.Select(item => item.EffectiveCaptureDate).Distinct().Count(),
-                    LastVisitDate = group.Max(item => item.EffectiveCaptureDatetime),
-                    RepresentativeMediaId = GalleryBackendMapper.ParseFileId(rep.FileId),
-                    AbsoluteLibraryPath = GalleryBackendMapper.ToAbsoluteUrl(apiBaseUrl, rep.ThumbnailUrl)
-                                           ?? GalleryBackendMapper.ToAbsoluteUrl(apiBaseUrl, rep.PreviewUrl),
-                };
-            }).OrderByDescending(item => item.LastVisitDate).Take(3).ToList();
+                    PlaceId = place.PlaceId,
+                    PlaceName = string.IsNullOrWhiteSpace(place.PlaceName) ? "장소" : place.PlaceName,
+                    Country = place.Country,
+                    PhotoCount = place.PhotoCount,
+                    VisitRecordCount = place.ResolvedVisitCount,
+                    LastVisitDate = ToLocalDateOffset(place.VisitDates.Max()),
+                    RepresentativeMediaId = place.RepresentativeMediaId,
+                    AbsoluteLibraryPath = place.AbsoluteLibraryPath,
+                }).ToList()
+            : photos.Where(photo => photo.MemorykeeperPlaceId.HasValue)
+                .GroupBy(photo => photo.MemorykeeperPlaceId!.Value)
+                .Select(group =>
+                {
+                    var rep = group.First();
+                    return new RecentVisitDto
+                    {
+                        PlaceId = group.Key,
+                        PlaceName = rep.PlaceDisplayName ?? "장소",
+                        Country = rep.Country ?? string.Empty,
+                        PhotoCount = group.Count(),
+                        VisitRecordCount = group.Select(item => item.EffectiveCaptureDate).Distinct().Count(),
+                        LastVisitDate = group.Max(item => item.EffectiveCaptureDatetime),
+                        RepresentativeMediaId = GalleryBackendMapper.ParseFileId(rep.FileId),
+                        AbsoluteLibraryPath = ResolveThumbnailUrl(apiBaseUrl, rep.FileId, rep.ThumbnailUrl)
+                                               ?? GalleryBackendMapper.ToAbsoluteUrl(apiBaseUrl, rep.PreviewUrl),
+                    };
+                }).OrderByDescending(item => item.LastVisitDate).Take(3).ToList();
         var heroes = recentVisits.Take(3).Select(visit => new HeroMemoryDto
         {
             PlaceId = visit.PlaceId, PlaceName = visit.PlaceName,
@@ -78,12 +115,18 @@ public static class GalleryBackendBridge
             Statistics = new DashboardStatisticsDto
             {
                 PhotoCount = summary.TotalPhotos, FavoriteCount = summary.FavoriteCount, GpsCount = summary.GpsCount,
-                CountryCount = summary.ByCountry.Count,
+                PlaceCount = placeAggregates.Count(place => !place.IsUnclassified), CountryCount = summary.ByCountry.Count,
                 ByYear = summary.ByYear.Select(item => new DashboardStatBucketDto { Name = item.Name, Count = item.Count }).ToList(),
                 ByCountry = summary.ByCountry.Select(item => new DashboardStatBucketDto { Name = item.Name, Count = item.Count }).ToList(),
                 LastUpdatedText = summary.EffectiveDateMax?.ToString("yyyy.MM.dd") ?? string.Empty,
             },
         };
+    }
+
+    private static DateTimeOffset ToLocalDateOffset(DateTime value)
+    {
+        var local = DateTime.SpecifyKind(value, DateTimeKind.Local);
+        return new DateTimeOffset(local);
     }
     public static async Task<MemorySearchQueryResult> SearchPlacesAsync(
         IGalleryApiRepository galleryApi,
@@ -377,6 +420,74 @@ public static class GalleryBackendBridge
         };
     }
 
+    /// <summary>
+    /// Visit Map read path backed by the marker endpoint and Travel place aggregates.
+    /// It never downloads the paged Gallery photo catalog.
+    /// </summary>
+    public static async Task<VisitRecordQueryResult> QueryFastVisitRecordsAsync(
+        IGalleryApiRepository galleryApi,
+        ITravelRecordsRepository travelRecords,
+        string apiBaseUrl,
+        GalleryHierarchyQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        var mapTask = galleryApi.GetMapAsync(query.Year, cancellationToken: cancellationToken);
+        var aggregatesTask = travelRecords.GetPlaceAggregatesAsync(cancellationToken);
+        var map = await mapTask.ConfigureAwait(false);
+
+        IReadOnlyList<TravelPlaceAggregateRaw> aggregates;
+        try
+        {
+            aggregates = await aggregatesTask.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            // Marker-only Visit Map remains usable during a Travel aggregate outage.
+            aggregates = [];
+        }
+
+        var aggregatesById = aggregates
+            .Where(item => item.PlaceId != Guid.Empty)
+            .GroupBy(item => item.PlaceId)
+            .ToDictionary(group => group.Key, group => group.First());
+
+        var places = map.Items
+            .GroupBy(MarkerPlaceId)
+            .Select(group => BuildFastVisitPlace(group.Key, group.ToList(), aggregatesById, apiBaseUrl, query))
+            .Where(place => MatchesVisitQuery(place, query))
+            .OrderByDescending(place => place.LastCapturedDate)
+            .ThenBy(place => place.PlaceName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var chips = new List<MemorySearchChipDto>();
+        if (query.Year is int year)
+        {
+            chips.Add(new MemorySearchChipDto { Label = $"{year}년", Kind = MemorySearchChipKind.Year });
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.Country))
+        {
+            chips.Add(new MemorySearchChipDto { Label = query.Country.Trim(), Kind = MemorySearchChipKind.Place });
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.SearchText))
+        {
+            chips.Add(new MemorySearchChipDto { Label = query.SearchText.Trim(), Kind = MemorySearchChipKind.Place });
+        }
+
+        return new VisitRecordQueryResult
+        {
+            AllMapPlaces = places,
+            TimelinePlaces = places,
+            Chips = chips,
+        };
+    }
+
     private static DashboardPhotoDto ToDashboardPhoto(PhotoDto photo, string apiBaseUrl)
     {
         var thumb = ResolveThumbnailUrl(apiBaseUrl, photo.FileId, photo.ThumbnailUrl)
@@ -385,6 +496,7 @@ public static class GalleryBackendBridge
         {
             MediaId = GalleryBackendMapper.ParseFileId(photo.FileId),
             AbsoluteLibraryPath = thumb ?? string.Empty,
+            FallbackAbsoluteLibraryPath = GalleryBackendMapper.ToAbsoluteUrl(apiBaseUrl, photo.PreviewUrl),
             FileName = photo.Filename,
             IsFavorite = photo.Favorite,
             PlaceName = FirstNonEmpty(photo.PlaceDisplayName, photo.PlaceName),
@@ -512,6 +624,171 @@ public static class GalleryBackendBridge
             .OrderByDescending(p => p.PhotoCount)
             .ToList();
     }
+
+    private static VisitRecordPlaceDto BuildFastVisitPlace(
+        Guid placeId,
+        IReadOnlyList<MapMarkerDto> markers,
+        IReadOnlyDictionary<Guid, TravelPlaceAggregateRaw> aggregatesById,
+        string apiBaseUrl,
+        GalleryHierarchyQuery query)
+    {
+        var first = markers[0];
+        aggregatesById.TryGetValue(placeId, out var aggregate);
+        var placeName = FirstNonEmpty(
+            aggregate?.PlaceName,
+            first.PlaceDisplayName,
+            first.PlaceName,
+            first.GeocodedPlaceName,
+            first.PlaceCanonicalName);
+        var country = FirstNonEmpty(aggregate?.Country, first.Country) ?? string.Empty;
+        var city = FirstNonEmpty(aggregate?.Region, first.Province, first.City, first.District) ?? string.Empty;
+        var dates = (aggregate?.VisitDates ?? [])
+            .Select(DateOnly.FromDateTime)
+            .Distinct()
+            .Where(date => query.Year is null || date.Year == query.Year)
+            .Where(date => query.Season is null || IsInSeason(date.Month, query.Season.Value))
+            .OrderBy(date => date)
+            .ToList();
+        var representative = aggregate?.RepresentativeMediaId is Guid representativeId
+            ? markers.FirstOrDefault(marker => GalleryBackendMapper.ParseFileId(marker.FileId) == representativeId) ?? first
+            : first;
+        var representativeMediaId = aggregate?.RepresentativeMediaId
+                                    ?? NonEmptyMediaId(representative.FileId);
+        var representativePath = aggregate?.AbsoluteLibraryPath
+                                 ?? ResolveThumbnailUrl(apiBaseUrl, representative.FileId, representative.Thumbnail);
+        var resolvedCoordinates = PlaceIdentity.ResolveCoordinates(
+            (representative.Latitude, representative.Longitude),
+            markers.Select(marker => (marker.Latitude, marker.Longitude)));
+        var photos = markers.Select(marker => ToPreview(marker, apiBaseUrl)).ToList();
+        var visitCount = dates.Count > 0
+            ? CountDateRanges(dates)
+            : query.Year is null && query.Season is null
+                ? aggregate?.ResolvedVisitCount ?? 0
+                : 0;
+        var photoCount = query.Year.HasValue || query.Season.HasValue
+            ? markers.Count
+            : aggregate?.PhotoCount ?? markers.Count;
+        var years = dates.Select(date => date.Year)
+            .Concat(markers.Where(marker => marker.Year.HasValue).Select(marker => marker.Year!.Value))
+            .Distinct()
+            .OrderByDescending(year => year)
+            .ToList();
+
+        return new VisitRecordPlaceDto
+        {
+            PlaceId = placeId,
+            PlaceName = PlaceIdentity.DisplayName(placeName),
+            Country = country,
+            City = city,
+            Latitude = resolvedCoordinates?.Latitude ?? 0,
+            Longitude = resolvedCoordinates?.Longitude ?? 0,
+            PhotoCount = photoCount,
+            VisitRecordCount = visitCount,
+            FavoriteCount = aggregate?.FavoriteCount ?? 0,
+            RepresentativeMediaId = representativeMediaId,
+            RepresentativeAbsolutePath = representativePath,
+            FirstCapturedDate = dates.Count > 0 ? ToDateOffset(dates[0]) : null,
+            LastCapturedDate = dates.Count > 0 ? ToDateOffset(dates[^1]) : null,
+            VisitDates = dates,
+            CaptureYears = years,
+            AllPhotos = photos,
+            PreviewPhotos = photos.Take(8).ToList(),
+            MarkerScale = VisitRecordPlaceScoping.CalculateMarkerScale(visitCount, photoCount),
+            IsUnclassified = aggregate?.IsUnclassified == true || string.IsNullOrWhiteSpace(placeName),
+        };
+    }
+
+    private static bool MatchesVisitQuery(VisitRecordPlaceDto place, GalleryHierarchyQuery query)
+    {
+        if (query.UnclassifiedOnly && !place.IsUnclassified)
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.Country)
+            && !string.Equals(place.Country, query.Country.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.City)
+            && !string.Equals(place.City, query.City.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (query.PlaceId is Guid placeId && place.PlaceId != placeId)
+        {
+            return false;
+        }
+
+        if (query.Season is not null && place.VisitDates.Count == 0)
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(query.SearchText))
+        {
+            return true;
+        }
+
+        var term = query.SearchText.Trim();
+        return place.PlaceName.Contains(term, StringComparison.OrdinalIgnoreCase)
+               || place.Country.Contains(term, StringComparison.OrdinalIgnoreCase)
+               || place.City.Contains(term, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static Guid MarkerPlaceId(MapMarkerDto marker)
+    {
+        if (marker.MemorykeeperPlaceId is Guid id && id != Guid.Empty)
+        {
+            return id;
+        }
+
+        var name = FirstNonEmpty(
+            marker.PlaceDisplayName,
+            marker.PlaceName,
+            marker.GeocodedPlaceName,
+            marker.PlaceCanonicalName);
+        return PlaceIdentity.StableId(marker.Country, FirstNonEmpty(marker.City, marker.District, marker.Province), name);
+    }
+
+    private static Guid? NonEmptyMediaId(string? fileId)
+    {
+        var id = GalleryBackendMapper.ParseFileId(fileId);
+        return id == Guid.Empty ? null : id;
+    }
+
+    private static int CountDateRanges(IReadOnlyList<DateOnly> dates)
+    {
+        if (dates.Count == 0)
+        {
+            return 0;
+        }
+
+        var visits = 1;
+        for (var index = 1; index < dates.Count; index++)
+        {
+            if (dates[index].DayNumber - dates[index - 1].DayNumber > 1)
+            {
+                visits++;
+            }
+        }
+
+        return visits;
+    }
+
+    private static bool IsInSeason(int month, TravelSeason season) => season switch
+    {
+        TravelSeason.Spring => month is >= 3 and <= 5,
+        TravelSeason.Summer => month is >= 6 and <= 8,
+        TravelSeason.Autumn => month is >= 9 and <= 11,
+        TravelSeason.Winter => month is 12 or 1 or 2,
+        _ => true,
+    };
+
+    private static DateTimeOffset ToDateOffset(DateOnly date) =>
+        new(date.Year, date.Month, date.Day, 0, 0, 0, TimeSpan.Zero);
 
     public static IReadOnlyList<VisitRecordPlaceDto> GroupPhotosToVisitPlaces(
         IReadOnlyList<PhotoDto> photos,
@@ -673,7 +950,7 @@ public static class GalleryBackendBridge
             ThumbnailUrl = thumb ?? string.Empty,
             AbsoluteLibraryPath = thumb ?? string.Empty,
             IsFavorite = false,
-            CapturedAt = marker.Year is int y ? new DateTimeOffset(y, 1, 1, 0, 0, 0, TimeSpan.Zero) : null,
+            CapturedAt = null,
             CaptureYear = marker.Year ?? 0,
         };
     }
@@ -701,22 +978,5 @@ public static class GalleryBackendBridge
     /// Absolute thumbnail URL from API field, or synthesized from file_id (no Backend change).
     /// </summary>
     internal static string? ResolveThumbnailUrl(string apiBaseUrl, string? fileId, string? thumbnailField)
-    {
-        var fromField = GalleryBackendMapper.ToAbsoluteUrl(apiBaseUrl, thumbnailField);
-        if (!string.IsNullOrWhiteSpace(fromField)
-            && (fromField.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
-                || fromField.StartsWith("https://", StringComparison.OrdinalIgnoreCase)))
-        {
-            return fromField;
-        }
-
-        if (string.IsNullOrWhiteSpace(fileId))
-        {
-            return fromField;
-        }
-
-        return GalleryBackendMapper.ToAbsoluteUrl(
-            apiBaseUrl,
-            $"/api/common/gallery/{fileId.Trim()}/thumbnail");
-    }
+        => BackendMediaUrlResolver.ResolveThumbnailUrl(apiBaseUrl, fileId, thumbnailField);
 }

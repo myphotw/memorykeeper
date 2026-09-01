@@ -98,6 +98,9 @@ public sealed class DashboardPhotoDto
 
     public string AbsoluteLibraryPath { get; init; } = string.Empty;
 
+    /// <summary>Authenticated preview used only when the preferred thumbnail cannot be loaded.</summary>
+    public string? FallbackAbsoluteLibraryPath { get; init; }
+
     public bool IsFavorite { get; init; }
 
     public string FileName { get; init; } = string.Empty;

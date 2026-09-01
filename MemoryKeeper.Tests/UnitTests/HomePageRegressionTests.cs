@@ -89,6 +89,17 @@ public sealed class HomePageRegressionTests
         Assert.Contains("Content=\"여행기록\" Tag=\"travel\"", mainWindowXaml, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void RecentPhotos_RetainAuthenticatedPreviewFallback()
+    {
+        var bridge = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Services", "GalleryBackendBridge.cs"));
+        var viewModel = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "ViewModels", "HomeViewModel.cs"));
+
+        Assert.Contains("FallbackAbsoluteLibraryPath = GalleryBackendMapper.ToAbsoluteUrl", bridge, StringComparison.Ordinal);
+        Assert.Contains("item.FallbackAbsoluteLibraryPath", viewModel, StringComparison.Ordinal);
+        Assert.Contains("LoadFirstAvailableAsync", viewModel, StringComparison.Ordinal);
+    }
+
     private static int CountOccurrences(string source, string value)
     {
         var count = 0;

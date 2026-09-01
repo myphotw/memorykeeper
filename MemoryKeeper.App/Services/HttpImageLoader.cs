@@ -114,7 +114,10 @@ public static class HttpImageLoader
 
             stream.Seek(0);
             await bitmap.SetSourceAsync(stream);
-            logger?.LogInformation("HttpImageLoader authenticated source loaded. Context={Context}", context);
+            logger?.LogInformation(
+                "HttpImageLoader authenticated source loaded. Context={Context}, Path={Path}",
+                context,
+                ApiErrorClassifier.SafePath(absoluteUrl));
             return bitmap;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -124,17 +127,45 @@ public static class HttpImageLoader
         catch (ApiException ex)
         {
             logger?.LogWarning(
-                "HttpImageLoader request failed. Context={Context}, Category={Category}, StatusCode={StatusCode}",
+                "HttpImageLoader request failed. Context={Context}, Path={Path}, Category={Category}, StatusCode={StatusCode}",
                 context,
+                ApiErrorClassifier.SafePath(absoluteUrl),
                 ex.Category,
                 (int)ex.StatusCode);
             return null;
         }
         catch (Exception ex)
         {
-            logger?.LogWarning(ex, "HttpImageLoader decode failed. Context={Context}", context);
+            logger?.LogWarning(
+                ex,
+                "HttpImageLoader decode failed. Context={Context}, Path={Path}",
+                context,
+                ApiErrorClassifier.SafePath(absoluteUrl));
             return null;
         }
+    }
+
+    /// <summary>Tries authenticated media URLs in order, typically thumbnail then preview.</summary>
+    public static async Task<BitmapImage?> LoadFirstAvailableAsync(
+        IEnumerable<string?> candidates,
+        ILogger? logger = null,
+        string? context = null,
+        CancellationToken cancellationToken = default)
+    {
+        foreach (var candidate in candidates
+                     .Where(IsHttpUrl)
+                     .Select(value => value!.Trim())
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var image = await LoadAsync(candidate, logger, context, cancellationToken);
+            if (image is not null)
+            {
+                return image;
+            }
+        }
+
+        return null;
     }
 
     private static async Task LoadAuthenticatedAsync(

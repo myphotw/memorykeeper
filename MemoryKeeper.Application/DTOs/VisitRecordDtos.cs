@@ -30,6 +30,9 @@ public sealed record VisitRecordPlaceDto
 
     public DateTimeOffset? LastCapturedDate { get; init; }
 
+    /// <summary>Actual effective capture dates used to scope consecutive-day visits without fabricated timestamps.</summary>
+    public IReadOnlyList<DateOnly> VisitDates { get; init; } = [];
+
     /// <summary>Capture/import years that have photos at this place (MK-046).</summary>
     public IReadOnlyList<int> CaptureYears { get; init; } = [];
 

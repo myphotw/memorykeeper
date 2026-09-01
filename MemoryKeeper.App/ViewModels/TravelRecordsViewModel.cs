@@ -193,11 +193,13 @@ public partial class TravelRecordsViewModel : ObservableObject
             var dashboard = await _travelRecordsService.GetDashboardAsync(token);
             ApplyDashboard(dashboard);
             _logger.LogInformation(
-                "TravelRecords UI applied. YearChapters={Years}, Trips={Trips}, HasMostVisited={Most}, HasRecent={Recent}",
+                "TravelRecords UI applied. YearChapters={Years}, Trips={Trips}, MemoryCards={MemoryCards}, HasMostVisited={Most}, HasRecent={Recent}, HasFarthest={Farthest}",
                 YearChapters.Count,
                 YearChapters.Sum(c => c.Trips.Count),
+                MemoryCards.Count,
                 HasMostVisited,
-                HasRecent);
+                HasRecent,
+                HasFarthest);
             ApplyPendingMemoryFocus();
             if (!HasFeaturedMemory)
             {
@@ -528,13 +530,13 @@ public partial class TravelRecordsViewModel : ObservableObject
                     continue;
                 }
 
-                await EnqueueAsync(() =>
-                {
-                    target.SetImage(HttpImageLoader.TryCreate(
-                        target.Path,
-                        _logger,
-                        context: $"TravelThumb:{target.MediaId:N}"));
-                });
+                var image = await HttpImageLoader.LoadAsync(
+                    target.Path,
+                    _logger,
+                    context: $"TravelThumb:{target.MediaId:N}",
+                    cancellationToken: token);
+                token.ThrowIfCancellationRequested();
+                await EnqueueAsync(() => target.SetImage(image));
             }
         }
         catch (OperationCanceledException)

@@ -115,30 +115,8 @@ public static class GalleryBackendMapper
 
     public static string ToApiFileId(Guid id) => BackendFileIdCodec.ToApiFileId(id);
 
-    public static string? ToAbsoluteUrl(string apiBaseUrl, string? pathOrUrl)
-    {
-        if (string.IsNullOrWhiteSpace(pathOrUrl))
-        {
-            return null;
-        }
-
-        var trimmed = pathOrUrl.Trim();
-        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var absolute)
-            && (absolute.Scheme == Uri.UriSchemeHttp || absolute.Scheme == Uri.UriSchemeHttps))
-        {
-            return absolute.ToString();
-        }
-
-        var baseUrl = (apiBaseUrl ?? string.Empty).TrimEnd('/');
-        if (string.IsNullOrWhiteSpace(baseUrl))
-        {
-            return trimmed.StartsWith('/') ? trimmed : "/" + trimmed;
-        }
-
-        return trimmed.StartsWith('/')
-            ? baseUrl + trimmed
-            : baseUrl + "/" + trimmed;
-    }
+    public static string? ToAbsoluteUrl(string apiBaseUrl, string? pathOrUrl) =>
+        BackendMediaUrlResolver.ToAbsoluteUrl(apiBaseUrl, pathOrUrl);
 
     private static IReadOnlyList<TagDto> MapTags(GalleryPhotoDetailDto detail)
     {

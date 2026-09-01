@@ -33,7 +33,7 @@ public partial class TravelCountryListViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void Load()
+    private async Task LoadAsync()
     {
         IsBusy = true;
         try
@@ -46,7 +46,7 @@ public partial class TravelCountryListViewModel : ObservableObject
 
             foreach (var country in Countries.Where(item => item.HasThumbnail))
             {
-                country.ThumbnailImage = HttpImageLoader.TryCreate(
+                country.ThumbnailImage = await HttpImageLoader.LoadAsync(
                     country.ThumbnailPath,
                     _logger,
                     context: $"TravelCountry:{country.Country}");

@@ -8,6 +8,8 @@ public sealed class FastTravelAggregateDto
     [JsonPropertyName("place_display_name")] public string? PlaceDisplayName { get; init; }
     [JsonPropertyName("country")] public string? Country { get; init; }
     [JsonPropertyName("region")] public string? Region { get; init; }
+    [JsonPropertyName("latitude")] public double? Latitude { get; init; }
+    [JsonPropertyName("longitude")] public double? Longitude { get; init; }
     [JsonPropertyName("photo_count")] public int PhotoCount { get; init; }
     [JsonPropertyName("capture_dates")] public IReadOnlyList<DateOnly> CaptureDates { get; init; } = [];
     [JsonPropertyName("visit_count")] public int VisitCount { get; init; }
@@ -42,4 +44,6 @@ public sealed class FastTravelMemoryCandidateDto
 public sealed class FastTravelMemoriesDto
 {
     [JsonPropertyName("items")] public IReadOnlyList<FastTravelMemoryCandidateDto> Items { get; init; } = [];
+    [JsonPropertyName("exact_anniversary")] public IReadOnlyList<FastTravelMemoryCandidateDto> ExactAnniversary { get; init; } = [];
+    [JsonPropertyName("previous_year_period")] public IReadOnlyList<FastTravelMemoryCandidateDto> PreviousYearPeriod { get; init; } = [];
 }

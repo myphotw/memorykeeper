@@ -19,6 +19,7 @@ public partial class HomeViewModel : ObservableObject
 
     private readonly IGalleryApiRepository _galleryApiRepository;
     private readonly IFastGalleryApiRepository _fastGallery;
+    private readonly ITravelRecordsRepository _travelRecordsRepository;
     private readonly BaseApiClient _apiClient;
     private readonly IThumbnailService _thumbnailService;
     private readonly IPlaceFocusState _placeFocusState;
@@ -167,6 +168,7 @@ public partial class HomeViewModel : ObservableObject
     public HomeViewModel(
         IGalleryApiRepository galleryApiRepository,
         IFastGalleryApiRepository fastGallery,
+        ITravelRecordsRepository travelRecordsRepository,
         BaseApiClient apiClient,
         IThumbnailService thumbnailService,
         IPlaceFocusState placeFocusState,
@@ -176,6 +178,7 @@ public partial class HomeViewModel : ObservableObject
     {
         _galleryApiRepository = galleryApiRepository;
         _fastGallery = fastGallery;
+        _travelRecordsRepository = travelRecordsRepository;
         _apiClient = apiClient;
         _thumbnailService = thumbnailService;
         _placeFocusState = placeFocusState;
@@ -217,6 +220,7 @@ public partial class HomeViewModel : ObservableObject
             {
                 var dashboard = await GalleryBackendBridge.GetFastHomeDashboardAsync(
                     _fastGallery,
+                    _travelRecordsRepository,
                     _apiClient.ApiBaseUrl,
                     token);
                 ApplyDashboard(dashboard);
@@ -701,7 +705,8 @@ public partial class HomeViewModel : ObservableObject
                     item.AbsoluteLibraryPath,
                     image => item.ThumbnailImage = image,
                     loading => item.IsThumbnailLoading = loading,
-                    token);
+                    token,
+                    item.FallbackAbsoluteLibraryPath);
             }
 
             if (PendingSummary.RepresentativeMediaId is Guid pendingMediaId
@@ -731,7 +736,8 @@ public partial class HomeViewModel : ObservableObject
         string absolutePath,
         Action<BitmapImage?> setImage,
         Action<bool> setLoading,
-        CancellationToken token)
+        CancellationToken token,
+        string? fallbackAbsolutePath = null)
     {
         if (string.IsNullOrWhiteSpace(absolutePath))
         {
@@ -743,8 +749,8 @@ public partial class HomeViewModel : ObservableObject
         {
             if (HttpImageLoader.IsHttpUrl(absolutePath))
             {
-                var bitmap = await HttpImageLoader.LoadAsync(
-                    absolutePath,
+                var bitmap = await HttpImageLoader.LoadFirstAvailableAsync(
+                    [absolutePath, fallbackAbsolutePath],
                     _logger,
                     $"home:{mediaId}",
                     token);
