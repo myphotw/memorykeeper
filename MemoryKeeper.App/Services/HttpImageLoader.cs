@@ -101,7 +101,7 @@ public static class HttpImageLoader
 
         try
         {
-            var bytes = await downloader.GetBytesAsync(absoluteUrl!, cancellationToken);
+            var bytes = await downloader.GetBytesAsync(absoluteUrl!, cancellationToken, context);
             var bitmap = new BitmapImage { CreateOptions = BitmapCreateOptions.None };
             using var stream = new InMemoryRandomAccessStream();
             using (var writer = new DataWriter(stream))
@@ -161,10 +161,15 @@ public static class HttpImageLoader
             var image = await LoadAsync(candidate, logger, context, cancellationToken);
             if (image is not null)
             {
+                logger?.LogInformation(
+                    "HttpImageLoader selected media source. Context={Context}, Path={Path}",
+                    context,
+                    ApiErrorClassifier.SafePath(candidate));
                 return image;
             }
         }
 
+        logger?.LogWarning("HttpImageLoader exhausted media sources. Context={Context}", context);
         return null;
     }
 
@@ -177,7 +182,7 @@ public static class HttpImageLoader
     {
         try
         {
-            var bytes = await downloader.GetBytesAsync(url);
+            var bytes = await downloader.GetBytesAsync(url, context: context);
             using var stream = new InMemoryRandomAccessStream();
             using (var writer = new DataWriter(stream))
             {

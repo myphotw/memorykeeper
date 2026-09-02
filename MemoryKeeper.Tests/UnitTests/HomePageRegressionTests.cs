@@ -95,9 +95,26 @@ public sealed class HomePageRegressionTests
         var bridge = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Services", "GalleryBackendBridge.cs"));
         var viewModel = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "ViewModels", "HomeViewModel.cs"));
 
-        Assert.Contains("FallbackAbsoluteLibraryPath = GalleryBackendMapper.ToAbsoluteUrl", bridge, StringComparison.Ordinal);
+        Assert.Contains("FallbackAbsoluteLibraryPath = preview", bridge, StringComparison.Ordinal);
+        Assert.Contains("BackendMediaUrlResolver.ToAbsoluteUrl(apiBaseUrl, photo.PreviewUrl)", bridge, StringComparison.Ordinal);
         Assert.Contains("item.FallbackAbsoluteLibraryPath", viewModel, StringComparison.Ordinal);
         Assert.Contains("LoadFirstAvailableAsync", viewModel, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void HomeFirstPaint_StartsAuthoritativeAggregateOnlyAfterShellAndGuardsStaleResults()
+    {
+        var viewModel = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "ViewModels", "HomeViewModel.cs"));
+        var dashboardApplied = viewModel.IndexOf("ApplyDashboard(dashboard);", StringComparison.Ordinal);
+        var aggregateStarted = viewModel.IndexOf("_ = RefreshAuthoritativePlacesAsync(dashboard, generation, token);", StringComparison.Ordinal);
+        var heroStarted = viewModel.IndexOf("_ = PreloadHeroThumbnailsAsync(token);", StringComparison.Ordinal);
+        var sectionsStarted = viewModel.IndexOf("_ = LoadSectionThumbnailsAsync(token);", StringComparison.Ordinal);
+
+        Assert.True(dashboardApplied >= 0 && aggregateStarted > dashboardApplied && heroStarted > dashboardApplied && sectionsStarted > dashboardApplied);
+        Assert.Contains("generation != Volatile.Read(ref _dashboardGeneration)", viewModel, StringComparison.Ordinal);
+        Assert.DoesNotContain("await RefreshAuthoritativePlacesAsync", viewModel, StringComparison.Ordinal);
+        Assert.DoesNotContain("await PreloadHeroThumbnailsAsync(token);", viewModel, StringComparison.Ordinal);
+        Assert.DoesNotContain("await LoadSectionThumbnailsAsync(token);", viewModel, StringComparison.Ordinal);
     }
 
     private static int CountOccurrences(string source, string value)

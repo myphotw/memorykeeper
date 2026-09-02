@@ -470,6 +470,44 @@ public class TravelRecordsServiceTests
     }
 
     [Fact]
+    public async Task GetDashboardAsync_FastMemoryCandidatesRetainAllFourClientSideCategories()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var exactYear = Enumerable.Range(2, 12)
+            .Select(offset => today.Year - offset)
+            .First(year => DateTime.DaysInMonth(year, today.Month) >= today.Day);
+        var aroundYear = today.Year - 10;
+        var rediscoveredYear = today.Year - 14;
+        var nearbyDay = today.Day == 1 ? 2 : today.Day - 1;
+        var placeId = Guid.NewGuid();
+        var candidates = new[]
+        {
+            MemoryCandidate("exact", placeId, new DateOnly(exactYear, today.Month, today.Day), "exact_anniversary"),
+            MemoryCandidate("last-year", placeId, new DateOnly(today.Year - 1, today.Month, nearbyDay), "previous_year_period"),
+            MemoryCandidate("around", placeId, new DateOnly(aroundYear, today.Month, nearbyDay), "previous_year_period"),
+            MemoryCandidate("rediscovered", placeId, new DateOnly(rediscoveredYear, today.Month == 1 ? 7 : 1, 1), "previous_year_period"),
+        };
+
+        var dashboard = await CreateService(new FixedAggregates(
+        [
+            new TravelPlaceAggregateRaw
+            {
+                PlaceId = placeId,
+                PlaceName = "추억 장소",
+                Country = "대한민국",
+                PhotoCount = candidates.Length,
+            },
+        ],
+        candidates)).GetDashboardAsync();
+
+        Assert.Equal(4, dashboard.MemoryCards.Count);
+        Assert.Contains(dashboard.MemoryCards, card => card.Kind == TravelMemoryCardKind.YearsAgoToday);
+        Assert.Contains(dashboard.MemoryCards, card => card.Kind == TravelMemoryCardKind.LastYearAroundNow);
+        Assert.Contains(dashboard.MemoryCards, card => card.Kind == TravelMemoryCardKind.YearsAgoAroundNow);
+        Assert.Contains(dashboard.MemoryCards, card => card.Kind == TravelMemoryCardKind.Rediscovered);
+    }
+
+    [Fact]
     public async Task GetDashboardAsync_DomesticTrips_ExcludesDailyRadiusAndMergesDistantPlaceDates()
     {
         var home = (Latitude: 37.5665d, Longitude: 126.9780d);
@@ -690,6 +728,21 @@ public class TravelRecordsServiceTests
         CapturedAt = new DateTimeOffset(DateTime.SpecifyKind(capturedAt, DateTimeKind.Local)),
     };
 
+    private static TravelMemoryCandidateRaw MemoryCandidate(
+        string id,
+        Guid placeId,
+        DateOnly captureDate,
+        string category) => new()
+    {
+        MediaId = Guid.NewGuid(),
+        PlaceId = placeId,
+        PlaceName = "추억 장소",
+        Country = "대한민국",
+        CaptureDate = captureDate,
+        ThumbnailPath = $"https://backend.example/thumbnails/{id}",
+        Category = category,
+    };
+
     private static TravelPlaceAggregateRaw CreateDomesticAggregate(
         string placeName,
         string? country,
@@ -739,12 +792,25 @@ public class TravelRecordsServiceTests
     private sealed class FixedAggregates : ITravelRecordsRepository
     {
         private readonly IReadOnlyList<TravelPlaceAggregateRaw> _items;
+        private readonly IReadOnlyList<TravelMemoryCandidateRaw> _memoryCandidates;
 
-        public FixedAggregates(IReadOnlyList<TravelPlaceAggregateRaw> items) => _items = items;
+        public FixedAggregates(
+            IReadOnlyList<TravelPlaceAggregateRaw> items,
+            IReadOnlyList<TravelMemoryCandidateRaw>? memoryCandidates = null)
+        {
+            _items = items;
+            _memoryCandidates = memoryCandidates ?? [];
+        }
 
         public Task<IReadOnlyList<TravelPlaceAggregateRaw>> GetPlaceAggregatesAsync(
             CancellationToken cancellationToken = default) =>
             Task.FromResult(_items);
+
+        public Task<IReadOnlyList<TravelMemoryCandidateRaw>> GetMemoryCandidatesAsync(
+            DateOnly referenceDate,
+            int limit,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(_memoryCandidates);
     }
 
     private static Place CreatePlace(string name, string country, double lat, double lon) => new()

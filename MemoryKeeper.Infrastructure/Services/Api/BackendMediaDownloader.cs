@@ -27,7 +27,8 @@ public sealed class BackendMediaDownloader
 
     public async Task<byte[]> GetBytesAsync(
         string pathOrUrl,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? context = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(pathOrUrl);
         var uri = TcBackendRequestPolicy.ResolveUri(pathOrUrl, _options.CurrentValue.ApiBaseUrl);
@@ -47,6 +48,12 @@ public sealed class BackendMediaDownloader
 
             if (!response.IsSuccessStatusCode)
             {
+                _logger.LogDebug(
+                    "Media request completed. Context={Context}, Path={Path}, StatusCode={StatusCode}, BearerExpected={BearerExpected}",
+                    context,
+                    uri.AbsolutePath,
+                    (int)response.StatusCode,
+                    TcBackendRequestPolicy.RequiresBearer(uri, _options.CurrentValue.ApiBaseUrl));
                 throw new ApiException(
                     response.StatusCode,
                     $"TC-Backend media request failed: {(int)response.StatusCode} ({uri.AbsolutePath})",
@@ -56,6 +63,12 @@ public sealed class BackendMediaDownloader
             var bytes = await response.Content
                 .ReadAsByteArrayAsync(cancellationToken)
                 .ConfigureAwait(false);
+            _logger.LogDebug(
+                "Media request completed. Context={Context}, Path={Path}, StatusCode={StatusCode}, BearerExpected={BearerExpected}",
+                context,
+                uri.AbsolutePath,
+                (int)response.StatusCode,
+                TcBackendRequestPolicy.RequiresBearer(uri, _options.CurrentValue.ApiBaseUrl));
             AddToCache(cacheKey, bytes);
             return bytes;
         }
@@ -70,9 +83,10 @@ public sealed class BackendMediaDownloader
         catch (Exception ex)
         {
             _logger.LogWarning(
-                "TC-Backend media request failed. Host={Host}, Path={Path}",
-                uri.Host,
-                uri.AbsolutePath);
+                "TC-Backend media request failed. Context={Context}, Path={Path}, BearerExpected={BearerExpected}",
+                context,
+                uri.AbsolutePath,
+                TcBackendRequestPolicy.RequiresBearer(uri, _options.CurrentValue.ApiBaseUrl));
             throw ApiErrorClassifier.FromTransport(ex, HttpMethod.Get, uri.AbsolutePath);
         }
     }

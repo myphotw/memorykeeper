@@ -216,7 +216,10 @@
                                                 Height="24"
                                                 IsActive="{Binding IsThumbnailLoading, Mode=OneWay}"
                                                 Visibility="{Binding IsThumbnailLoading, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
-                                            <Image Style="{StaticResource MkImageStyle}" Source="{Binding ThumbnailImage, Mode=OneWay}" />
+                                            <Image
+                                                Style="{StaticResource MkImageStyle}"
+                                                Source="{Binding ThumbnailImage, Mode=OneWay}"
+                                                Stretch="Uniform" />
                                             <TextBlock
                                                 Text="★"
                                                 FontSize="14"

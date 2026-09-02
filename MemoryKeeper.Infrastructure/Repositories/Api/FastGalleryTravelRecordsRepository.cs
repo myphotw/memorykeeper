@@ -72,11 +72,7 @@ public sealed class FastGalleryTravelRecordsRepository : ITravelRecordsRepositor
     public async Task<IReadOnlyList<TravelMemoryCandidateRaw>> GetMemoryCandidatesAsync(DateOnly referenceDate, int limit, CancellationToken cancellationToken = default)
     {
         var response = await _travel.GetMemoriesAsync(referenceDate, limit, cancellationToken).ConfigureAwait(false);
-        var candidates = response.Items.Count > 0
-            ? response.Items.Select(item => (Item: item, Category: item.Category ?? item.Candidate)).ToList()
-            : response.ExactAnniversary.Select(item => (Item: item, Category: (string?)"exact_anniversary"))
-                .Concat(response.PreviousYearPeriod.Select(item => (Item: item, Category: (string?)"previous_year_period")))
-                .ToList();
+        var candidates = ProjectMemoryCandidates(response, _apiClient.ApiBaseUrl);
 
         _logger.LogInformation(
             "Fast Travel memories received. Items={Items}, ExactAnniversary={Exact}, PreviousYearPeriod={Previous}, Projected={Projected}",
@@ -85,14 +81,38 @@ public sealed class FastGalleryTravelRecordsRepository : ITravelRecordsRepositor
             response.PreviousYearPeriod.Count,
             candidates.Count);
 
-        return candidates.Select(source => new TravelMemoryCandidateRaw
+        return candidates;
+    }
+
+    /// <summary>
+    /// Accepts both deployed Fast Travel response shapes together.  A rollout may include
+    /// generic items and the category arrays in one response; neither is authoritative alone.
+    /// </summary>
+    public static IReadOnlyList<TravelMemoryCandidateRaw> ProjectMemoryCandidates(
+        FastTravelMemoriesDto response,
+        string apiBaseUrl)
+    {
+        ArgumentNullException.ThrowIfNull(response);
+        var sources = response.Items.Select(item => (Item: item, Category: item.Category ?? item.Candidate))
+            .Concat(response.ExactAnniversary.Select(item => (Item: item, Category: (string?)"exact_anniversary")))
+            .Concat(response.PreviousYearPeriod.Select(item => (Item: item, Category: (string?)"previous_year_period")))
+            .GroupBy(source => MemoryCandidateKey(source.Item), StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                var categorized = group.FirstOrDefault(source => !string.IsNullOrWhiteSpace(source.Category));
+                return categorized.Item is null ? group.First() : categorized;
+            })
+            .ToList();
+
+        return sources.Select(source => new TravelMemoryCandidateRaw
         {
             MediaId = ToMediaId(source.Item.FileId),
             PlaceId = source.Item.MemorykeeperPlaceId ?? source.Item.PlaceId,
             PlaceName = source.Item.PlaceDisplayName ?? string.Empty,
             Country = source.Item.Country ?? string.Empty,
             CaptureDate = source.Item.EffectiveCaptureDate,
-            ThumbnailPath = ResolveThumbnailUrl(
+            ThumbnailPath = BackendMediaUrlResolver.ResolveDisplayUrl(
+                                apiBaseUrl,
                                 source.Item.FileId,
                                 source.Item.ThumbnailUrl,
                                 source.Item.PreviewUrl)
@@ -105,6 +125,16 @@ public sealed class FastGalleryTravelRecordsRepository : ITravelRecordsRepositor
     {
         var value = BackendFileIdCodec.ToGuid(fileId);
         return value == Guid.Empty ? null : value;
+    }
+
+    private static string MemoryCandidateKey(FastTravelMemoryCandidateDto item)
+    {
+        if (!string.IsNullOrWhiteSpace(item.FileId))
+        {
+            return $"file:{item.FileId.Trim()}";
+        }
+
+        return $"candidate:{item.MemorykeeperPlaceId ?? item.PlaceId}:{item.EffectiveCaptureDate:yyyyMMdd}:{item.ThumbnailUrl ?? item.PreviewUrl}";
     }
 
     private string? ResolveThumbnailUrl(string? fileId, string? thumbnail, string? preview) =>

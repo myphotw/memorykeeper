@@ -38,13 +38,34 @@ public sealed class TravelRecordsService
     public async Task<TravelRecordsDashboardDto> GetDashboardAsync(
         CancellationToken cancellationToken = default)
     {
-        var aggregates = await _travelRecordsRepository.GetPlaceAggregatesAsync(cancellationToken);
-        var countryAggregates = await _travelRecordsRepository.GetCountryAggregatesAsync(cancellationToken);
+        // The aggregate payload, memory candidates, and local Home setting are independent.
+        // Start them together so the Travel screen can render its text/cards as soon as the
+        // aggregate response is ready; image loading remains post-render in the ViewModel.
+        var aggregatesTask = _travelRecordsRepository.GetPlaceAggregatesAsync(cancellationToken);
+        var countryAggregatesTask = _travelRecordsRepository.GetCountryAggregatesAsync(cancellationToken);
+        var memoryCandidatesTask = _travelRecordsRepository.GetMemoryCandidatesAsync(
+            DateOnly.FromDateTime(DateTime.Today), MemoryCardPhotoTake * 5, cancellationToken);
+        var homeTask = _homeLocationService.GetAsync(cancellationToken);
+
+        IReadOnlyList<TravelPlaceAggregateRaw> aggregates;
+        try
+        {
+            aggregates = await aggregatesTask;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "FarthestTrip aggregate request failed. Result=unavailable");
+            throw;
+        }
+        var countryAggregates = await countryAggregatesTask;
         IReadOnlyList<TravelMemoryCandidateRaw> memoryCandidates;
         try
         {
-            memoryCandidates = await _travelRecordsRepository.GetMemoryCandidatesAsync(
-                DateOnly.FromDateTime(DateTime.Today), MemoryCardPhotoTake * 5, cancellationToken);
+            memoryCandidates = await memoryCandidatesTask;
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
@@ -62,7 +83,7 @@ public sealed class TravelRecordsService
             return new TravelRecordsDashboardDto();
         }
 
-        var home = await _homeLocationService.GetAsync(cancellationToken);
+        var home = await homeTask;
         var mostVisited = OrderMostVisited(aggregates).FirstOrDefault();
         var longUnvisited = OrderLongUnvisited(aggregates).FirstOrDefault();
         var recent = OrderRecent(aggregates).Take(RecentCardTake).ToList();
@@ -70,6 +91,15 @@ public sealed class TravelRecordsService
         var countryVisitStatistics = countryAggregates.Count > 0
             ? BuildCountryVisitStatistics(countryAggregates)
             : BuildCountryVisitStatistics(aggregates);
+        var farthestCandidates = OrderFarthest(aggregates, home);
+        _logger.LogInformation(
+            "FarthestTrip HomeConfigured={HomeConfigured}, HomeCoordinatesPresent={HomeCoordinatesPresent}, AggregatePlaces={AggregatePlaces}, ValidCoordinatePlaces={ValidCoordinatePlaces}, Candidates={Candidates}, Result={Result}",
+            home.IsConfigured,
+            home.Latitude.HasValue && home.Longitude.HasValue,
+            aggregates.Count,
+            aggregates.Count(item => PlaceIdentity.HasValidCoordinates(item.Latitude, item.Longitude)),
+            farthestCandidates.Count,
+            farthestCandidates.Count > 0 ? "selected" : "none");
 
         return new TravelRecordsDashboardDto
         {
@@ -97,7 +127,7 @@ public sealed class TravelRecordsService
             SeasonHighlights = BuildSeasonHighlights(aggregates),
             RecentPlaces = await MapPlacesAsync(recent, cancellationToken),
             TopCountry = countries.FirstOrDefault(),
-            FarthestPlace = OrderFarthest(aggregates, home).FirstOrDefault(),
+            FarthestPlace = farthestCandidates.FirstOrDefault(),
             CountryVisitStatistics = countryVisitStatistics,
             ForeignCountries = countryAggregates.Count > 0
                 ? BuildForeignCountries(countryAggregates)
@@ -357,39 +387,127 @@ public sealed class TravelRecordsService
         IReadOnlyList<TravelMemoryCandidateRaw> candidates,
         DateOnly today)
     {
-        var cards = new List<TravelMemoryCardDto>();
-        foreach (var group in candidates
-                     .Where(item => item.CaptureDate < today && item.PlaceId.HasValue)
-                     .GroupBy(item => NormalizeMemoryCategory(item.Category))
-                     .OrderBy(group => group.Key == TravelMemoryCardKind.YearsAgoToday ? 0 : 1)
-                     .Take(2))
+        // Fast Travel returns candidates rather than pre-built cards.  Keep the established
+        // client-side selection semantics: the backend category is advisory only and must not
+        // collapse "N년 전 이맘때" and rediscovered memories into one generic bucket.
+        var usable = candidates
+            .Where(item => item.CaptureDate < today && item.PlaceId is Guid placeId && placeId != Guid.Empty)
+            .GroupBy(MemoryCandidateKey, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToList();
+        if (usable.Count == 0)
         {
-            var first = group.OrderByDescending(item => item.CaptureDate).First();
-            var kind = group.Key;
-            var years = Math.Max(1, today.Year - first.CaptureDate.Year);
-            cards.Add(new TravelMemoryCardDto
-            {
-                Kind = kind,
-                Title = kind == TravelMemoryCardKind.YearsAgoToday ? $"{years}년 전 오늘" : "작년 이맘때",
-                Subtitle = first.CaptureDate.ToString("yyyy.MM.dd"),
-                FocusPlaceId = first.PlaceId!.Value,
-                RepresentativeMediaId = first.MediaId,
-                Photos = group.Take(MemoryCardPhotoTake).Select(item => new TravelMemoryPhotoDto
-                {
-                    MediaId = item.MediaId, PlaceId = item.PlaceId!.Value, PlaceName = item.PlaceName,
-                    Country = item.Country,
-                    CapturedAt = new DateTimeOffset(item.CaptureDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero),
-                    ThumbnailPath = item.ThumbnailPath,
-                }).ToList(),
-            });
+            return [];
         }
+
+        var cards = new List<TravelMemoryCardDto>(4);
+        var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var usedYears = new HashSet<int>();
+
+        var exactYear = usable
+            .Where(item => item.CaptureDate.Month == today.Month
+                           && item.CaptureDate.Day == today.Day
+                           && item.CaptureDate.Year < today.Year)
+            .GroupBy(item => item.CaptureDate.Year)
+            .OrderByDescending(group => group.Count())
+            .ThenBy(group => group.Key)
+            .FirstOrDefault();
+        if (exactYear is not null)
+        {
+            AddCandidateMemoryCard(cards, used, usedYears, TravelMemoryCardKind.YearsAgoToday,
+                $"{today.Year - exactYear.Key}년 전 오늘",
+                new DateTime(exactYear.Key, today.Month, today.Day).ToString("yyyy.MM.dd"),
+                exactYear.OrderByDescending(item => item.CaptureDate));
+        }
+
+        var lastYear = today.Year - 1;
+        if (!usedYears.Contains(lastYear))
+        {
+            AddCandidateMemoryCard(cards, used, usedYears, TravelMemoryCardKind.LastYearAroundNow,
+                "작년 이맘때", $"{lastYear}년 {today.Month}월의 추억",
+                usable.Where(item => item.CaptureDate.Year == lastYear && item.CaptureDate.Month == today.Month)
+                    .OrderBy(item => Math.Abs(item.CaptureDate.Day - today.Day)));
+        }
+
+        var aroundYear = usable
+            .Where(item => item.CaptureDate.Year < lastYear
+                           && item.CaptureDate.Month == today.Month
+                           && !usedYears.Contains(item.CaptureDate.Year))
+            .GroupBy(item => item.CaptureDate.Year)
+            .OrderByDescending(group => group.Count())
+            .ThenByDescending(group => group.Key)
+            .FirstOrDefault();
+        if (aroundYear is not null)
+        {
+            AddCandidateMemoryCard(cards, used, usedYears, TravelMemoryCardKind.YearsAgoAroundNow,
+                $"{today.Year - aroundYear.Key}년 전 이맘때",
+                $"{aroundYear.Key}년 {today.Month}월의 추억",
+                aroundYear.OrderBy(item => Math.Abs(item.CaptureDate.Day - today.Day)));
+        }
+
+        var rediscoveredYear = usable
+            .Where(item => !usedYears.Contains(item.CaptureDate.Year))
+            .GroupBy(item => item.CaptureDate.Year)
+            .OrderBy(group => group.Key)
+            .ThenByDescending(group => group.Count())
+            .FirstOrDefault();
+        if (rediscoveredYear is not null)
+        {
+            AddCandidateMemoryCard(cards, used, usedYears, TravelMemoryCardKind.Rediscovered,
+                "오랜만에 꺼내본 추억", $"{rediscoveredYear.Key}년의 추억",
+                rediscoveredYear.OrderBy(item => item.CaptureDate));
+        }
+
         return cards;
     }
 
-    private static TravelMemoryCardKind NormalizeMemoryCategory(string category) =>
-        string.Equals(category, "exact_anniversary", StringComparison.OrdinalIgnoreCase)
-            ? TravelMemoryCardKind.YearsAgoToday
-            : TravelMemoryCardKind.LastYearAroundNow;
+    private static string MemoryCandidateKey(TravelMemoryCandidateRaw item) =>
+        item.MediaId is Guid mediaId && mediaId != Guid.Empty
+            ? $"media:{mediaId:N}"
+            : $"{item.PlaceId?.ToString("N")}|{item.CaptureDate:yyyyMMdd}|{item.ThumbnailPath}";
+
+    private static void AddCandidateMemoryCard(
+        ICollection<TravelMemoryCardDto> cards,
+        ISet<string> used,
+        ISet<int> usedYears,
+        TravelMemoryCardKind kind,
+        string title,
+        string subtitle,
+        IEnumerable<TravelMemoryCandidateRaw> candidates)
+    {
+        var selected = candidates
+            .Where(item => !used.Contains(MemoryCandidateKey(item)))
+            .Take(MemoryCardPhotoTake)
+            .ToList();
+        if (selected.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var item in selected)
+        {
+            used.Add(MemoryCandidateKey(item));
+        }
+
+        usedYears.Add(selected[0].CaptureDate.Year);
+        cards.Add(new TravelMemoryCardDto
+        {
+            Kind = kind,
+            Title = title,
+            Subtitle = subtitle,
+            FocusPlaceId = selected[0].PlaceId!.Value,
+            RepresentativeMediaId = selected[0].MediaId,
+            Photos = selected.Select(item => new TravelMemoryPhotoDto
+            {
+                MediaId = item.MediaId,
+                PlaceId = item.PlaceId!.Value,
+                PlaceName = item.PlaceName,
+                Country = item.Country,
+                CapturedAt = new DateTimeOffset(item.CaptureDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero),
+                ThumbnailPath = item.ThumbnailPath,
+            }).ToList(),
+        });
+    }
 
     private static IReadOnlyList<TravelMemoryCardDto> BuildMemoryCards(
         IReadOnlyList<TravelPlaceAggregateRaw> aggregates,

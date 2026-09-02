@@ -144,6 +144,14 @@ public partial class App : Microsoft.UI.Xaml.Application
                     return;
                 }
 
+                // Show the shell before best-effort storage validation/path maintenance.
+                // Those operations can touch unavailable legacy locations and must not delay
+                // the first Home render.
+                _mainWindow = mainWindow;
+                ErrorDialog.RegisterUiDispatcher(DispatcherQueue.GetForCurrentThread());
+                _mainWindow.Activate();
+                StartupDiagnostics.WriteStep("[6] MainWindow Activate 완료");
+
                 try
                 {
                     using var scope = _host.Services.CreateScope();
@@ -173,11 +181,6 @@ public partial class App : Microsoft.UI.Xaml.Application
                     StartupDiagnostics.WriteException("[5.1] Storage validation", ex);
                     logger.LogWarning(ex, "Storage validation skipped due to error.");
                 }
-
-                _mainWindow = mainWindow;
-                ErrorDialog.RegisterUiDispatcher(DispatcherQueue.GetForCurrentThread());
-                _mainWindow.Activate();
-                StartupDiagnostics.WriteStep("[6] MainWindow Activate 완료");
             }
             catch (Exception ex)
             {

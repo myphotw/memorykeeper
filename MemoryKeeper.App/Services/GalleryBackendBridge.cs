@@ -3,6 +3,7 @@ using MemoryKeeper.Application.DTOs;
 using MemoryKeeper.Application.DTOs.Gallery;
 using MemoryKeeper.Application.Interfaces;
 using MemoryKeeper.Application.Services;
+using Microsoft.Extensions.Logging;
 
 namespace MemoryKeeper.App.Services;
 
@@ -14,13 +15,12 @@ public static class GalleryBackendBridge
     /// <summary>Fast Gallery home read: one first page plus summary, never a complete catalog snapshot.</summary>
     public static async Task<HomeDashboardDto> GetFastHomeDashboardAsync(
         IFastGalleryApiRepository fastGallery,
-        ITravelRecordsRepository travelRecords,
         string apiBaseUrl,
+        ILogger? logger = null,
         CancellationToken cancellationToken = default)
     {
         var pageTask = fastGallery.GetPhotosAsync(new FastGalleryPhotoQuery { Limit = 50 }, cancellationToken);
         var summaryTask = fastGallery.GetSummaryAsync(cancellationToken);
-        var placesTask = travelRecords.GetPlaceAggregatesAsync(cancellationToken);
         var page = await pageTask.ConfigureAwait(false);
         FastGallerySummaryDto summary;
         try
@@ -36,51 +36,30 @@ public static class GalleryBackendBridge
             // A summary outage must not hide the immediately useful first photo page.
             summary = new FastGallerySummaryDto();
         }
-        IReadOnlyList<TravelPlaceAggregateRaw> placeAggregates;
-        try
-        {
-            placeAggregates = await placesTask.ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch
-        {
-            // Home remains useful with the first Gallery page and summary alone.
-            placeAggregates = [];
-        }
         var photos = page.Items;
-        var dashboardPhotos = photos.Take(6).Select(photo => new DashboardPhotoDto
+        var dashboardPhotos = photos.Take(6).Select(photo =>
         {
-            MediaId = GalleryBackendMapper.ParseFileId(photo.FileId),
-            FileName = photo.Filename,
-            IsFavorite = photo.Favorite,
-            PlaceName = photo.PlaceDisplayName,
-            Country = photo.Country,
-            CapturedAt = photo.EffectiveCaptureDatetime,
-            AbsoluteLibraryPath = ResolveThumbnailUrl(apiBaseUrl, photo.FileId, photo.ThumbnailUrl)
-                                  ?? GalleryBackendMapper.ToAbsoluteUrl(apiBaseUrl, photo.PreviewUrl)
-                                  ?? string.Empty,
-            FallbackAbsoluteLibraryPath = GalleryBackendMapper.ToAbsoluteUrl(apiBaseUrl, photo.PreviewUrl),
+            var thumbnail = ResolveThumbnailUrl(apiBaseUrl, photo.FileId, photo.ThumbnailUrl);
+            var preview = BackendMediaUrlResolver.ToAbsoluteUrl(apiBaseUrl, photo.PreviewUrl);
+            logger?.LogDebug(
+                "Fast media mapped. Surface=HomeRecent FileId={FileId} Thumbnail={Thumbnail} Preview={Preview} Candidate={Candidate}",
+                photo.FileId,
+                BackendMediaUrlResolver.DescribeForDiagnostics(apiBaseUrl, photo.ThumbnailUrl),
+                BackendMediaUrlResolver.DescribeForDiagnostics(apiBaseUrl, photo.PreviewUrl),
+                BackendMediaUrlResolver.DescribeForDiagnostics(apiBaseUrl, thumbnail ?? preview));
+            return new DashboardPhotoDto
+            {
+                MediaId = GalleryBackendMapper.ParseFileId(photo.FileId),
+                FileName = photo.Filename,
+                IsFavorite = photo.Favorite,
+                PlaceName = photo.PlaceDisplayName,
+                Country = photo.Country,
+                CapturedAt = photo.EffectiveCaptureDatetime,
+                AbsoluteLibraryPath = thumbnail ?? preview ?? string.Empty,
+                FallbackAbsoluteLibraryPath = preview,
+            };
         }).Where(photo => photo.MediaId != Guid.Empty).ToList();
-        var recentVisits = placeAggregates.Count > 0
-            ? placeAggregates
-                .Where(place => !place.IsUnclassified && place.VisitDates.Count > 0)
-                .OrderByDescending(place => place.VisitDates.Max())
-                .Take(3)
-                .Select(place => new RecentVisitDto
-                {
-                    PlaceId = place.PlaceId,
-                    PlaceName = string.IsNullOrWhiteSpace(place.PlaceName) ? "장소" : place.PlaceName,
-                    Country = place.Country,
-                    PhotoCount = place.PhotoCount,
-                    VisitRecordCount = place.ResolvedVisitCount,
-                    LastVisitDate = ToLocalDateOffset(place.VisitDates.Max()),
-                    RepresentativeMediaId = place.RepresentativeMediaId,
-                    AbsoluteLibraryPath = place.AbsoluteLibraryPath,
-                }).ToList()
-            : photos.Where(photo => photo.MemorykeeperPlaceId.HasValue)
+        var recentVisits = photos.Where(photo => photo.MemorykeeperPlaceId.HasValue)
                 .GroupBy(photo => photo.MemorykeeperPlaceId!.Value)
                 .Select(group =>
                 {
@@ -115,13 +94,22 @@ public static class GalleryBackendBridge
             Statistics = new DashboardStatisticsDto
             {
                 PhotoCount = summary.TotalPhotos, FavoriteCount = summary.FavoriteCount, GpsCount = summary.GpsCount,
-                PlaceCount = placeAggregates.Count(place => !place.IsUnclassified), CountryCount = summary.ByCountry.Count,
+                PlaceCount = 0, CountryCount = summary.ByCountry.Count,
                 ByYear = summary.ByYear.Select(item => new DashboardStatBucketDto { Name = item.Name, Count = item.Count }).ToList(),
                 ByCountry = summary.ByCountry.Select(item => new DashboardStatBucketDto { Name = item.Name, Count = item.Count }).ToList(),
                 LastUpdatedText = summary.EffectiveDateMax?.ToString("yyyy.MM.dd") ?? string.Empty,
             },
         };
     }
+
+    /// <summary>
+    /// Applies the authoritative Travel aggregate after the Fast Gallery home shell is visible.
+    /// This deliberately does not perform I/O so callers can preserve first-paint responsiveness.
+    /// </summary>
+    public static HomeDashboardDto ApplyAuthoritativePlaceAggregates(
+        HomeDashboardDto dashboard,
+        IReadOnlyList<TravelPlaceAggregateRaw> placeAggregates) =>
+        HomeDashboardProjection.ApplyAuthoritativePlaceAggregates(dashboard, placeAggregates);
 
     private static DateTimeOffset ToLocalDateOffset(DateTime value)
     {

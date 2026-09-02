@@ -31,6 +31,7 @@ public partial class HomeViewModel : ObservableObject
     private CancellationTokenSource? _thumbnailCts;
     private bool _heroPaused;
     private int _heroIndex;
+    private int _dashboardGeneration;
 
     [ObservableProperty]
     private ObservableCollection<HomeHeroItem> heroMemories = [];
@@ -210,6 +211,7 @@ public partial class HomeViewModel : ObservableObject
 
         StopHeroTimer();
         CancelThumbnailLoading();
+        var generation = Interlocked.Increment(ref _dashboardGeneration);
         _thumbnailCts = new CancellationTokenSource();
         var token = _thumbnailCts.Token;
 
@@ -220,11 +222,12 @@ public partial class HomeViewModel : ObservableObject
             {
                 var dashboard = await GalleryBackendBridge.GetFastHomeDashboardAsync(
                     _fastGallery,
-                    _travelRecordsRepository,
                     _apiClient.ApiBaseUrl,
+                    _logger,
                     token);
                 ApplyDashboard(dashboard);
                 StatusMessage = "추억을 불러왔습니다.";
+                _ = RefreshAuthoritativePlacesAsync(dashboard, generation, token);
             }
             catch (Exception ex)
             {
@@ -249,9 +252,42 @@ public partial class HomeViewModel : ObservableObject
             return;
         }
 
-        await PreloadHeroThumbnailsAsync(token);
+        // Hero and section images are optional visual enrichment.  Start both immediately
+        // after the dashboard shell is visible; recent-photo thumbnails must not wait for
+        // the hero carousel's sequential preloading.
+        _ = PreloadHeroThumbnailsAsync(token);
         _ = LoadSectionThumbnailsAsync(token);
         StartHeroTimer();
+    }
+
+    private async Task RefreshAuthoritativePlacesAsync(
+        HomeDashboardDto initialDashboard,
+        int generation,
+        CancellationToken token)
+    {
+        try
+        {
+            var placeAggregates = await _travelRecordsRepository.GetPlaceAggregatesAsync(token);
+            if (token.IsCancellationRequested || generation != Volatile.Read(ref _dashboardGeneration))
+            {
+                return;
+            }
+
+            ApplyDashboard(GalleryBackendBridge.ApplyAuthoritativePlaceAggregates(initialDashboard, placeAggregates));
+            _ = PreloadHeroThumbnailsAsync(token);
+            _logger.LogDebug(
+                "Home authoritative place aggregate applied. Generation={Generation}, Places={PlaceCount}",
+                generation,
+                Statistics.PlaceCount);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            // A newer Home generation owns the screen.
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Home authoritative place aggregate unavailable; retaining Fast Gallery shell.");
+        }
     }
 
     [RelayCommand]

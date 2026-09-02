@@ -37,6 +37,7 @@ public partial class GalleryViewModel : ObservableObject
     private string? _nextCursor;
     private bool _hasMore;
     private int _queryGeneration;
+    private int _fastMediaDiagnosticsRemaining;
     private FastGalleryHierarchyDto? _fastHierarchy;
 
     [ObservableProperty]
@@ -701,6 +702,8 @@ public partial class GalleryViewModel : ObservableObject
                 return;
             }
 
+            // Keep Fast-media diagnostics useful without producing one log per gallery item.
+            Interlocked.Exchange(ref _fastMediaDiagnosticsRemaining, 3);
             var page = await _fastGallery.GetPhotosAsync(ToFastQuery(node), token);
             if (generation != _queryGeneration || token.IsCancellationRequested)
             {
@@ -851,7 +854,16 @@ public partial class GalleryViewModel : ObservableObject
             _apiClient.ApiBaseUrl,
             photo.FileId,
             photo.ThumbnailUrl);
-        var preview = GalleryBackendMapper.ToAbsoluteUrl(_apiClient.ApiBaseUrl, photo.PreviewUrl);
+        var preview = BackendMediaUrlResolver.ToAbsoluteUrl(_apiClient.ApiBaseUrl, photo.PreviewUrl);
+        if (_fastMediaDiagnosticsRemaining > 0 && Interlocked.Decrement(ref _fastMediaDiagnosticsRemaining) >= 0)
+        {
+            _logger.LogDebug(
+                "Fast media mapped. Surface=Gallery FileId={FileId} Thumbnail={Thumbnail} Preview={Preview} Candidate={Candidate}",
+                photo.FileId,
+                BackendMediaUrlResolver.DescribeForDiagnostics(_apiClient.ApiBaseUrl, photo.ThumbnailUrl),
+                BackendMediaUrlResolver.DescribeForDiagnostics(_apiClient.ApiBaseUrl, photo.PreviewUrl),
+                BackendMediaUrlResolver.DescribeForDiagnostics(_apiClient.ApiBaseUrl, thumbnail ?? preview));
+        }
         return new GalleryItem(new GalleryMediaDto
         {
             Id = GalleryBackendMapper.ParseFileId(photo.FileId),

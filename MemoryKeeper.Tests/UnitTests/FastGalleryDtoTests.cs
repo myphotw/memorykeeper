@@ -1,6 +1,9 @@
 using System.Text.Json;
 using MemoryKeeper.Application;
 using MemoryKeeper.Application.DTOs;
+using MemoryKeeper.Application.Interfaces;
+using MemoryKeeper.Application.Services;
+using MemoryKeeper.Infrastructure.Repositories.Api;
 
 namespace MemoryKeeper.Tests.UnitTests;
 
@@ -9,12 +12,15 @@ public sealed class FastGalleryDtoTests
     [Fact]
     public void PhotosPage_DeserializesOpaqueCursorAndEffectiveDate()
     {
-        const string json = """{"items":[{"common_file_id":42,"file_id":"000000000000002a","filename":"a.jpg","favorite":true,"has_gps":true,"effective_capture_datetime":"2025-01-02T03:04:05+09:00","effective_capture_date":"2025-01-02","effective_capture_year":2025,"date_basis":"EXIF"}],"next_cursor":"opaque+/=","has_more":true,"sync_cursor":null}""";
+        const string json = """{"items":[{"common_file_id":42,"file_id":"000000000000002a","filename":"a.jpg","thumbnail_url":"/api/common/gallery/000000000000002a/thumbnail","preview_url":"/api/common/gallery/000000000000002a/preview","favorite":true,"has_gps":true,"effective_capture_datetime":"2025-01-02T03:04:05+09:00","effective_capture_date":"2025-01-02","effective_capture_year":2025,"date_basis":"EXIF"}],"next_cursor":"opaque+/=","has_more":true,"sync_cursor":null}""";
         var page = JsonSerializer.Deserialize<FastGalleryPhotoPageDto>(json)!;
         Assert.True(page.HasMore);
         Assert.Equal("opaque+/=", page.NextCursor);
         Assert.Equal(42, page.Items[0].CommonFileId);
         Assert.Equal(2025, page.Items[0].EffectiveCaptureYear);
+        Assert.Equal("000000000000002a", page.Items[0].FileId);
+        Assert.Equal("/api/common/gallery/000000000000002a/thumbnail", page.Items[0].ThumbnailUrl);
+        Assert.Equal("/api/common/gallery/000000000000002a/preview", page.Items[0].PreviewUrl);
     }
 
     [Fact]
@@ -94,6 +100,81 @@ public sealed class FastGalleryDtoTests
         Assert.Equal(
             "http://memorykeeper.local:8000/api/common/gallery/sha256/preview",
             resolved);
+    }
+
+    [Fact]
+    public void TravelMemories_MixedPayloadProjectsAllCategoriesAndDeduplicatesFileIds()
+    {
+        const string json = """{"items":[{"file_id":"0000000000000001","effective_capture_date":"2024-09-01","memorykeeper_place_id":"00000000-0000-0000-0000-000000000001","category":"exact_anniversary"}],"exact_anniversary":[{"file_id":"0000000000000001","effective_capture_date":"2024-09-01","memorykeeper_place_id":"00000000-0000-0000-0000-000000000001"}],"previous_year_period":[{"file_id":"0000000000000002","effective_capture_date":"2025-08-28","memorykeeper_place_id":"00000000-0000-0000-0000-000000000002"}]}""";
+        var response = JsonSerializer.Deserialize<FastTravelMemoriesDto>(json)!;
+
+        var candidates = FastGalleryTravelRecordsRepository.ProjectMemoryCandidates(
+            response,
+            "https://backend.example");
+
+        Assert.Equal(2, candidates.Count);
+        Assert.Contains(candidates, item => item.Category == "exact_anniversary");
+        Assert.Contains(candidates, item => item.Category == "previous_year_period");
+        Assert.Equal(2, candidates.Select(item => item.MediaId).Distinct().Count());
+    }
+
+    [Fact]
+    public void MediaUrlResolver_RebasesProtectedAbsoluteMediaToConfiguredBackendOrigin()
+    {
+        var resolved = BackendMediaUrlResolver.ToAbsoluteUrl(
+            "https://backend.example:8443",
+            "http://192.168.0.20:8000/api/common/gallery/sha256/thumbnail?size=small");
+
+        Assert.Equal(
+            "https://backend.example:8443/api/common/gallery/sha256/thumbnail?size=small",
+            resolved);
+    }
+
+    [Theory]
+    [InlineData("/api/common/gallery/id/thumbnail", "https://backend.example:8443/api/common/gallery/id/thumbnail")]
+    [InlineData("https://backend.example:8443/api/common/gallery/id/thumbnail", "https://backend.example:8443/api/common/gallery/id/thumbnail")]
+    [InlineData("http://192.168.0.20:8000/api/common/gallery/id/thumbnail", "https://backend.example:8443/api/common/gallery/id/thumbnail")]
+    [InlineData("https://cdn.example/images/photo.jpg", "https://cdn.example/images/photo.jpg")]
+    public void MediaUrlResolver_NormalizesOnlyProtectedApiMedia(string source, string expected)
+    {
+        Assert.Equal(expected, BackendMediaUrlResolver.ToAbsoluteUrl("https://backend.example:8443", source));
+    }
+
+    [Fact]
+    public void HomeDashboardProjection_UpdatesAuthoritativePlacesWithoutDiscardingShellPhotos()
+    {
+        var retainedPhoto = new DashboardPhotoDto { MediaId = Guid.NewGuid(), FileName = "recent.jpg" };
+        var shell = new HomeDashboardDto
+        {
+            RecentImports = [retainedPhoto],
+            Statistics = new DashboardStatisticsDto { PhotoCount = 8, PlaceCount = 0 },
+        };
+        var aggregate = new TravelPlaceAggregateRaw
+        {
+            PlaceId = Guid.NewGuid(),
+            PlaceName = "부산",
+            Country = "대한민국",
+            PhotoCount = 3,
+            VisitCount = 1,
+            VisitDates = [new DateTime(2026, 1, 2)],
+        };
+
+        var updated = HomeDashboardProjection.ApplyAuthoritativePlaceAggregates(shell, [aggregate]);
+
+        Assert.Equal(1, updated.Statistics.PlaceCount);
+        Assert.Single(updated.RecentVisits);
+        Assert.Single(updated.HeroMemories);
+        Assert.Equal(retainedPhoto.MediaId, Assert.Single(updated.RecentImports).MediaId);
+    }
+
+    [Fact]
+    public void MediaUrlResolver_KeepsExternalCdnUrlUnchanged()
+    {
+        var resolved = BackendMediaUrlResolver.ToAbsoluteUrl(
+            "https://backend.example:8443",
+            "https://cdn.example/images/photo.jpg");
+
+        Assert.Equal("https://cdn.example/images/photo.jpg", resolved);
     }
 
     [Fact]

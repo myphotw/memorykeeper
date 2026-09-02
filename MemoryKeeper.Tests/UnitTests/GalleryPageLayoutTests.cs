@@ -16,6 +16,20 @@ public sealed class GalleryPageLayoutTests
         Assert.Contains("<Grid Grid.Row=\"1\">", xaml, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void GalleryThumbnailCards_PreserveWholeImageContext()
+    {
+        var xaml = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Views", "GalleryPage.xaml"));
+        var cardStart = xaml.IndexOf("Style=\"{StaticResource GalleryPhotoCardStyle}\"", StringComparison.Ordinal);
+        var cardEnd = xaml.IndexOf("<!-- Soft primary wash", cardStart, StringComparison.Ordinal);
+
+        Assert.True(cardStart >= 0 && cardEnd > cardStart);
+        var card = xaml[cardStart..cardEnd];
+        Assert.Contains("Source=\"{Binding ThumbnailImage, Mode=OneWay}\"", card, StringComparison.Ordinal);
+        Assert.Contains("Stretch=\"Uniform\"", card, StringComparison.Ordinal);
+        Assert.DoesNotContain("Stretch=\"UniformToFill\"", card, StringComparison.Ordinal);
+    }
+
     private static string FindSourceFile(params string[] parts)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
