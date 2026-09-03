@@ -48,6 +48,9 @@ public sealed class TravelPlaceAggregateRaw
 
     public string? AbsoluteLibraryPath { get; init; }
 
+    /// <summary>Optional authenticated preview if the representative thumbnail cannot be loaded.</summary>
+    public string? FallbackAbsoluteLibraryPath { get; init; }
+
     public DateOnly? RepresentativeCaptureDate { get; init; }
 
     /// <summary>

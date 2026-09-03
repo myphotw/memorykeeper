@@ -18,6 +18,9 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <!-- Exercise the actual pure mapper without referencing the WinUI executable. -->
+    <Compile Include="..\MemoryKeeper.App\Services\GalleryBackendMapper.cs" Link="App\GalleryBackendMapper.cs" />
+    <Compile Include="..\MemoryKeeper.App\Services\GalleryBackendBridge.cs" Link="App\GalleryBackendBridge.cs" />
   </ItemGroup>
 
   <ItemGroup>

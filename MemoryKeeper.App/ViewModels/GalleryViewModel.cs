@@ -37,6 +37,7 @@ public partial class GalleryViewModel : ObservableObject
     private string? _nextCursor;
     private bool _hasMore;
     private int _queryGeneration;
+    private int _thumbnailBatchSequence;
     private int _fastMediaDiagnosticsRemaining;
     private FastGalleryHierarchyDto? _fastHierarchy;
 
@@ -833,6 +834,10 @@ public partial class GalleryViewModel : ObservableObject
             OnPropertyChanged(nameof(TotalCount));
             StatusMessage = $"{_pagingNode.Title} · {Items.Count}장";
             _photoNavigationState.SetPlaylist(Items.Select(item => item.MediaId).ToList());
+            _logger.LogInformation(
+                "MK_GALLERY_THUMB_BATCH event=load_more_appended appended={AppendedCount} total={TotalCount} starts_thumbnail_batch=true",
+                appended.Count,
+                Items.Count);
             _ = LoadThumbnailsAsync(appended);
         }, "LoadMoreAsync");
     }
@@ -872,7 +877,7 @@ public partial class GalleryViewModel : ObservableObject
             AbsoluteLibraryPath = preview ?? thumbnail ?? string.Empty,
             CapturedAt = photo.EffectiveCaptureDatetime,
             PlaceId = photo.MemorykeeperPlaceId,
-            MediaType = MemoryKeeper.Domain.Enums.MediaType.Photo,
+            MediaType = MediaTypeResolver.Resolve(photo.MimeType, photo.Extension, photo.Filename),
             IsFavorite = photo.Favorite,
             ThumbnailUrl = thumbnail,
             PreviewUrl = preview,
@@ -949,9 +954,18 @@ public partial class GalleryViewModel : ObservableObject
 
     private async Task LoadThumbnailsAsync(IReadOnlyList<GalleryItem> galleryItems)
     {
+        var canceledExisting = _thumbnailCts is not null;
         CancelThumbnailLoading();
         _thumbnailCts = new CancellationTokenSource();
         var token = _thumbnailCts.Token;
+        var batchId = Interlocked.Increment(ref _thumbnailBatchSequence);
+        var processedCount = 0;
+
+        _logger.LogInformation(
+            "MK_GALLERY_THUMB_BATCH event=start batch={BatchId} targets={TargetCount} canceled_existing={CanceledExisting}",
+            batchId,
+            galleryItems.Count,
+            canceledExisting);
 
         try
         {
@@ -1013,12 +1027,26 @@ public partial class GalleryViewModel : ObservableObject
                 finally
                 {
                     item.IsThumbnailLoading = false;
+                    processedCount++;
                 }
             }
+
+            _logger.LogInformation(
+                "MK_GALLERY_THUMB_BATCH event=complete batch={BatchId} targets={TargetCount} processed={ProcessedCount} thumbnail_null={ThumbnailNullCount}",
+                batchId,
+                galleryItems.Count,
+                processedCount,
+                galleryItems.Count(item => item.ThumbnailImage is null));
         }
         catch (OperationCanceledException)
         {
             // expected on filter change
+            _logger.LogInformation(
+                "MK_GALLERY_THUMB_BATCH event=cancel batch={BatchId} targets={TargetCount} processed={ProcessedCount} thumbnail_null={ThumbnailNullCount}",
+                batchId,
+                galleryItems.Count,
+                processedCount,
+                galleryItems.Count(item => item.ThumbnailImage is null));
         }
     }
 

@@ -49,6 +49,7 @@ public static class ApiClientFactory
         services.AddSingleton<BaseApiClient>();
         services.AddSingleton<BackendConnectionService>();
         services.AddSingleton<BackendMediaDownloader>();
+        services.AddSingleton<VideoPlaybackCache>();
         return services;
     }
 

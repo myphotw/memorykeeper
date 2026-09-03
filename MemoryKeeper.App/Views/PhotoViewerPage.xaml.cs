@@ -6,7 +6,11 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
+using Windows.Media.Core;
+using Windows.Media.Playback;
+using Windows.Storage;
 using Windows.Foundation;
 using Windows.System;
 using WinRT.Interop;
@@ -30,6 +34,8 @@ public sealed partial class PhotoViewerPage : Page
 
     private readonly IResponsiveLayoutService _responsiveLayout;
     private readonly DispatcherTimer _chromeHideTimer;
+    private readonly KeyEventHandler _viewerKeyHandler;
+    private bool _usesVideoKeyRouting;
     private bool _chromeVisible = true;
     private bool _navButtonsVisible;
     private bool _filmStripPinned;
@@ -42,6 +48,12 @@ public sealed partial class PhotoViewerPage : Page
     private double _panStartVertical;
     private uint? _panPointerId;
     private AppWindow? _appWindow;
+    private Window? _ownerWindow;
+    private MediaPlayer? _videoPlayer;
+    private MediaSource? _videoSource;
+    private int _videoSourceGeneration;
+    private bool _viewerActive;
+    private bool _videoOpened;
 
     public PhotoViewerViewModel ViewModel { get; }
 
@@ -61,8 +73,12 @@ public sealed partial class PhotoViewerPage : Page
         ViewModel.FilmStripUpdated += OnFilmStripUpdated;
         _responsiveLayout.BreakpointChanged += OnBreakpointChanged;
         _responsiveLayout.LayoutChanged += OnLayoutChanged;
-        // Capture keys even when a child control (chrome button) has focus.
-        AddHandler(KeyDownEvent, new KeyEventHandler(PhotoViewerPage_OnKeyDown), handledEventsToo: true);
+        // Keep photo key routing unchanged; video mode moves this same handler to preview.
+        _viewerKeyHandler = PhotoViewerPage_OnKeyDown;
+        AddHandler(KeyDownEvent, _viewerKeyHandler, handledEventsToo: true);
+        // Native controls can handle the routed tap; classify its source before toggling.
+        VideoPlayerElement.AddHandler(TappedEvent,
+            new TappedEventHandler(VideoPlayerElement_OnTapped), handledEventsToo: true);
         // Wheel over any overlay (side zones, chrome) still zooms.
         AddHandler(PointerWheelChangedEvent, new PointerEventHandler(OnViewerPointerWheelChanged), handledEventsToo: true);
 
@@ -77,15 +93,27 @@ public sealed partial class PhotoViewerPage : Page
 
     private async void PhotoViewerPage_OnLoaded(object sender, RoutedEventArgs e)
     {
+        _viewerActive = true;
+        ViewModel.PropertyChanged -= OnViewerStateChanged;
+        ViewModel.PropertyChanged += OnViewerStateChanged;
+        _ownerWindow = (Microsoft.UI.Xaml.Application.Current as App)?.MainWindow;
+        if (_ownerWindow is not null) _ownerWindow.Closed += OnOwnerWindowClosed;
         _appWindow = GetAppWindow();
         ResetChromeTimer();
         await ViewModel.LoadCommand.ExecuteAsync(null);
+        if (!_viewerActive) return;
         ResetZoom();
         EnsureViewerKeyboardFocus();
     }
 
     private void PhotoViewerPage_OnUnloaded(object sender, RoutedEventArgs e)
     {
+        _viewerActive = false;
+        ++_videoSourceGeneration;
+        StopVideo();
+        ViewModel.PropertyChanged -= OnViewerStateChanged;
+        if (_ownerWindow is not null) _ownerWindow.Closed -= OnOwnerWindowClosed;
+        _ownerWindow = null;
         _chromeHideTimer.Stop();
         EndPan();
         ViewModel.NavigateSlideRequested -= OnNavigateSlideRequested;
@@ -93,6 +121,110 @@ public sealed partial class PhotoViewerPage : Page
         _responsiveLayout.BreakpointChanged -= OnBreakpointChanged;
         _responsiveLayout.LayoutChanged -= OnLayoutChanged;
         ViewModel.DisposeImages();
+    }
+
+    private void OnOwnerWindowClosed(object sender, WindowEventArgs args)
+    {
+        _viewerActive = false;
+        ++_videoSourceGeneration;
+        StopVideo();
+        ViewModel.DisposeImages();
+    }
+
+    private void OnViewerStateChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName == nameof(PhotoViewerViewModel.IsVideo)) ResetZoom();
+        if (args.PropertyName == nameof(PhotoViewerViewModel.VideoPath))
+            _ = SetVideoPathAsync(ViewModel.VideoPath);
+    }
+
+    private async Task SetVideoPathAsync(string? path)
+    {
+        var generation = ++_videoSourceGeneration;
+        StopVideo();
+        if (!_viewerActive || string.IsNullOrWhiteSpace(path)) return;
+        try
+        {
+            var file = await StorageFile.GetFileFromPathAsync(path);
+            if (!_viewerActive || generation != _videoSourceGeneration || ViewModel.VideoPath != path) return;
+            _videoSource = MediaSource.CreateFromStorageFile(file);
+            _videoPlayer = new MediaPlayer { AutoPlay = false };
+            _videoPlayer.MediaOpened += OnVideoOpened;
+            _videoPlayer.MediaFailed += OnVideoFailed;
+            VideoPlayerElement.SetMediaPlayer(_videoPlayer);
+            _videoPlayer.Source = _videoSource;
+            VideoPlayerElement.Visibility = Visibility.Visible;
+            if (ReferenceEquals(FocusManager.GetFocusedElement(XamlRoot), this))
+                EnsureViewerKeyboardFocus();
+        }
+        catch (Exception ex)
+        {
+            if (_viewerActive && generation == _videoSourceGeneration)
+            {
+                StopVideo();
+                ViewModel.ReportVideoPlaybackFailure(ex.GetType().Name);
+            }
+        }
+    }
+
+    private void OnVideoOpened(MediaPlayer sender, object args) => DispatcherQueue.TryEnqueue(() =>
+    {
+        // Each source has its own player. Queued events from a disposed/stale player cannot play.
+        if (!_viewerActive || !ViewModel.IsVideo || !ReferenceEquals(sender, _videoPlayer) || _videoOpened)
+            return;
+        _videoOpened = true; // Guard before Play, including duplicate ready notifications.
+        try
+        {
+            sender.Play();
+            ViewModel.IsVideoLoading = false;
+            ViewModel.VideoStatus = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            StopVideo();
+            ViewModel.ReportVideoPlaybackFailure(ex.GetType().Name);
+        }
+    });
+
+    private void OnVideoFailed(MediaPlayer sender, MediaPlayerFailedEventArgs args)
+    {
+        var errorKind = args.Error.ToString();
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (!_viewerActive || !ReferenceEquals(sender, _videoPlayer)) return;
+            StopVideo();
+            ViewModel.ReportVideoPlaybackFailure(errorKind);
+        });
+    }
+
+    private void StopVideo()
+    {
+        var player = _videoPlayer;
+        var source = _videoSource;
+        _videoPlayer = null;
+        _videoSource = null;
+        _videoOpened = false;
+        TryReleaseVideoResource(() => VideoPlayerElement.Visibility = Visibility.Collapsed);
+        TryReleaseVideoResource(() => VideoPlayerElement.IsFullWindow = false);
+        TryReleaseVideoResource(() => VideoPlayerElement.SetMediaPlayer(null));
+        if (player is not null)
+        {
+            player.MediaOpened -= OnVideoOpened;
+            player.MediaFailed -= OnVideoFailed;
+            TryReleaseVideoResource(player.Pause);
+            TryReleaseVideoResource(() => player.Source = null);
+            TryReleaseVideoResource(player.Dispose);
+        }
+        if (source is not null) TryReleaseVideoResource(source.Dispose);
+    }
+
+    private static void TryReleaseVideoResource(Action release)
+    {
+        try { release(); }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Video resource cleanup: {ex.GetType().Name}");
+        }
     }
 
     private void OnBreakpointChanged(object? sender, LayoutBreakpointChangedEventArgs e) =>
@@ -156,7 +288,11 @@ public sealed partial class PhotoViewerPage : Page
         var width = RootGrid.ActualWidth;
         var height = RootGrid.ActualHeight;
 
-        if (position.Y > height * 0.72)
+        // Video controls own the player surface; viewer navigation stays in the bottom gutter.
+        var inBottomBand = position.Y > (ViewModel.IsVideo
+            ? height - VideoHost.Margin.Bottom
+            : height * 0.72);
+        if (inBottomBand)
         {
             ShowFilmStrip();
         }
@@ -165,11 +301,12 @@ public sealed partial class PhotoViewerPage : Page
             HideFilmStrip();
         }
 
-        if (position.X < width * 0.25 && position.Y < height * 0.72)
+        var showNavigation = ViewModel.IsVideo ? inBottomBand : position.Y < height * 0.72;
+        if (position.X < width * 0.25 && showNavigation)
         {
             ShowNavButton(PreviousButton);
         }
-        else if (position.X > width * 0.75 && position.Y < height * 0.72)
+        else if (position.X > width * 0.75 && showNavigation)
         {
             ShowNavButton(NextButton);
         }
@@ -260,6 +397,7 @@ public sealed partial class PhotoViewerPage : Page
 
     private void ShowNavButton(Button button)
     {
+        if (ViewModel.IsVideo) button.IsHitTestVisible = true;
         if (button.Opacity > 0.9)
         {
             return;
@@ -271,6 +409,11 @@ public sealed partial class PhotoViewerPage : Page
 
     private void HideNavButtons()
     {
+        if (ViewModel.IsVideo)
+        {
+            PreviousButton.IsHitTestVisible = false;
+            NextButton.IsHitTestVisible = false;
+        }
         if (!_navButtonsVisible)
         {
             return;
@@ -361,6 +504,7 @@ public sealed partial class PhotoViewerPage : Page
         {
             ResetZoom();
             await ViewModel.SelectFilmStripItemCommand.ExecuteAsync(item);
+            if (_viewerActive && ViewModel.IsVideo) EnsureViewerKeyboardFocus();
             e.Handled = true;
         }
     }
@@ -428,6 +572,7 @@ public sealed partial class PhotoViewerPage : Page
 
     private void PhotoScrollViewer_OnDoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
     {
+        if (ViewModel.IsVideo) return;
         if (IsZoomed)
         {
             ResetZoom();
@@ -443,6 +588,7 @@ public sealed partial class PhotoViewerPage : Page
 
     private void OnViewerPointerWheelChanged(object sender, PointerRoutedEventArgs e)
     {
+        if (ViewModel.IsVideo) return;
         var delta = e.GetCurrentPoint(PhotoScrollViewer).Properties.MouseWheelDelta;
         if (delta == 0)
         {
@@ -477,6 +623,7 @@ public sealed partial class PhotoViewerPage : Page
 
     private void PhotoScrollViewer_OnPointerPressed(object sender, PointerRoutedEventArgs e)
     {
+        if (ViewModel.IsVideo) return;
         if (!IsZoomed || !e.GetCurrentPoint(PhotoScrollViewer).Properties.IsLeftButtonPressed)
         {
             return;
@@ -544,10 +691,29 @@ public sealed partial class PhotoViewerPage : Page
 
     private void UpdateInteractionMode()
     {
+        if (_usesVideoKeyRouting != ViewModel.IsVideo)
+        {
+            if (ViewModel.IsVideo)
+            {
+                RemoveHandler(KeyDownEvent, _viewerKeyHandler);
+                PreviewKeyDown += _viewerKeyHandler;
+            }
+            else
+            {
+                PreviewKeyDown -= _viewerKeyHandler;
+                AddHandler(KeyDownEvent, _viewerKeyHandler, handledEventsToo: true);
+            }
+            _usesVideoKeyRouting = ViewModel.IsVideo;
+        }
         var zoomed = IsZoomed;
         // When zoomed, side zones must not steal drag; use buttons/keys for prev/next.
-        LeftClickZone.IsHitTestVisible = !zoomed;
-        RightClickZone.IsHitTestVisible = !zoomed;
+        LeftClickZone.IsHitTestVisible = !zoomed && !ViewModel.IsVideo;
+        RightClickZone.IsHitTestVisible = !zoomed && !ViewModel.IsVideo;
+        PreviousButton.VerticalAlignment = NextButton.VerticalAlignment = ViewModel.IsVideo
+            ? VerticalAlignment.Bottom : VerticalAlignment.Center;
+        PreviousButton.Margin = new Thickness(16, 0, 0, ViewModel.IsVideo ? 30 : 0);
+        NextButton.Margin = new Thickness(0, 0, 16, ViewModel.IsVideo ? 30 : 0);
+        PreviousButton.IsHitTestVisible = NextButton.IsHitTestVisible = !ViewModel.IsVideo;
         PhotoScrollViewer.ManipulationMode = zoomed
             ? ManipulationModes.TranslateX | ManipulationModes.TranslateY
             : ManipulationModes.System;
@@ -555,6 +721,14 @@ public sealed partial class PhotoViewerPage : Page
 
     private void PhotoViewerPage_OnKeyDown(object sender, KeyRoutedEventArgs e)
     {
+        if (ViewModel.IsVideo && e.Handled) return;
+        // Holding Space must not repeatedly toggle playback.
+        if (ViewModel.IsVideo && e.Key == VirtualKey.Space && e.KeyStatus.WasKeyDown
+            && !HasKeyModifiers() && CanHandleVideoShortcut())
+        {
+            e.Handled = true;
+            return;
+        }
         if (HandleNavigationKey(e.Key))
         {
             e.Handled = true;
@@ -563,6 +737,18 @@ public sealed partial class PhotoViewerPage : Page
 
     private bool HandleNavigationKey(VirtualKey key)
     {
+        // Leave Alt+arrows to MainWindow and modified keys to the focused control.
+        if (ViewModel.IsVideo && (HasKeyModifiers() || !CanHandleVideoShortcut())) return false;
+        if (ViewModel.IsVideo && key == VirtualKey.Escape && VideoPlayerElement.IsFullWindow)
+        {
+            VideoPlayerElement.IsFullWindow = false;
+            return true;
+        }
+        if (ViewModel.IsVideo && key is VirtualKey.Space or VirtualKey.Left or VirtualKey.Right)
+        {
+            HandleVideoPlaybackKey(key);
+            return true; // Also consume while loading: never navigate to another photo.
+        }
         switch (key)
         {
             case VirtualKey.Left:
@@ -597,7 +783,15 @@ public sealed partial class PhotoViewerPage : Page
 
                 return true;
             case VirtualKey.F11:
-                ToggleFullscreen();
+                if (ViewModel.IsVideo)
+                {
+                    if (_videoPlayer is not null)
+                        VideoPlayerElement.IsFullWindow = !VideoPlayerElement.IsFullWindow;
+                }
+                else
+                {
+                    ToggleFullscreen();
+                }
                 return true;
             default:
                 return false;
@@ -607,8 +801,93 @@ public sealed partial class PhotoViewerPage : Page
     /// <summary>Used by MainWindow when the viewer page does not hold keyboard focus.</summary>
     public bool TryHandleKey(VirtualKey key) => HandleNavigationKey(key);
 
+    private static bool HasKeyModifiers() =>
+        IsKeyDown(VirtualKey.Menu) || IsKeyDown(VirtualKey.Control) || IsKeyDown(VirtualKey.Shift);
+
+    private static bool IsKeyDown(VirtualKey key) =>
+        Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(key)
+            .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+
+    private bool CanHandleVideoShortcut()
+    {
+        if (!_viewerActive || XamlRoot is null) return false;
+        var focused = FocusManager.GetFocusedElement(XamlRoot) as DependencyObject;
+        if (ReferenceEquals(focused, this)) return true;
+        for (var current = focused; current is not null; current = VisualTreeHelper.GetParent(current))
+        {
+            // Editors/popups and keyboard-focused transport buttons/sliders keep their native keys.
+            if (current is TextBox or RichEditBox or PasswordBox or AutoSuggestBox or ComboBox)
+                return false;
+            if (current is Control { FocusState: FocusState.Keyboard }
+                && current is (Microsoft.UI.Xaml.Controls.Primitives.ButtonBase
+                    or Microsoft.UI.Xaml.Controls.Primitives.RangeBase))
+                return false;
+            if (ReferenceEquals(current, VideoPlayerElement)) return true;
+        }
+        return false;
+    }
+
+    private void HandleVideoPlaybackKey(VirtualKey key)
+    {
+        var player = _videoPlayer;
+        if (!_viewerActive || !ViewModel.IsVideo || !_videoOpened || player is null) return;
+        try
+        {
+            var session = player.PlaybackSession;
+            if (key == VirtualKey.Space)
+            {
+                if (session.PlaybackState is MediaPlaybackState.Playing or MediaPlaybackState.Buffering)
+                {
+                    player.Pause();
+                    VideoPlayerElement.TransportControls.Show();
+                }
+                else if (session.PlaybackState == MediaPlaybackState.Paused)
+                    player.Play();
+            }
+            else if (session.CanSeek && session.NaturalDuration > TimeSpan.Zero)
+            {
+                var seconds = session.Position.TotalSeconds + (key == VirtualKey.Left ? -5 : 5);
+                session.Position = TimeSpan.FromSeconds(Math.Clamp(seconds, 0, session.NaturalDuration.TotalSeconds));
+            }
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.Runtime.InteropServices.COMException)
+        {
+            // The media session may become unavailable while a source is opening/closing.
+            System.Diagnostics.Debug.WriteLine($"Video keyboard control: {ex.GetType().Name}");
+        }
+    }
+
+    private void VideoPlayerElement_OnTapped(object sender, TappedRoutedEventArgs e)
+    {
+        if (!_viewerActive || !ViewModel.IsVideo || !_videoOpened
+            || !IsVideoSurface(e.OriginalSource as DependencyObject)) return;
+
+        HandleVideoPlaybackKey(VirtualKey.Space);
+        EnsureViewerKeyboardFocus();
+        e.Handled = true;
+    }
+
+    private bool IsVideoSurface(DependencyObject? source)
+    {
+        for (var current = source; current is not null; current = VisualTreeHelper.GetParent(current))
+        {
+            // WinUI 1.6's transport RootGrid is transparent and spans the whole video.
+            // Exclude its actual ControlPanelGrid (including empty bar space), not the whole control.
+            if (current is FrameworkElement { Name: "ControlPanelGrid" }
+                or Microsoft.UI.Xaml.Controls.Primitives.ButtonBase
+                or Microsoft.UI.Xaml.Controls.Primitives.RangeBase
+                or CommandBar or TextBox or RichEditBox or PasswordBox or AutoSuggestBox or ComboBox)
+                return false;
+            if (ReferenceEquals(current, VideoPlayerElement)) return true;
+        }
+        // Flyout content or a detached transport subtree is not the video surface.
+        return false;
+    }
+
     private void EnsureViewerKeyboardFocus()
     {
+        if (ViewModel.IsVideo && VideoPlayerElement.Visibility == Visibility.Visible
+            && VideoPlayerElement.Focus(FocusState.Programmatic)) return;
         if (!Focus(FocusState.Programmatic))
         {
             PhotoScrollViewer.Focus(FocusState.Programmatic);

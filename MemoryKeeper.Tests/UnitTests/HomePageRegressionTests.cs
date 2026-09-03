@@ -105,7 +105,7 @@ public sealed class HomePageRegressionTests
     public void HomeFirstPaint_StartsAuthoritativeAggregateOnlyAfterShellAndGuardsStaleResults()
     {
         var viewModel = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "ViewModels", "HomeViewModel.cs"));
-        var dashboardApplied = viewModel.IndexOf("ApplyDashboard(dashboard);", StringComparison.Ordinal);
+        var dashboardApplied = viewModel.IndexOf("ApplyDashboard(dashboard", StringComparison.Ordinal);
         var aggregateStarted = viewModel.IndexOf("_ = RefreshAuthoritativePlacesAsync(dashboard, generation, token);", StringComparison.Ordinal);
         var heroStarted = viewModel.IndexOf("_ = PreloadHeroThumbnailsAsync(token);", StringComparison.Ordinal);
         var sectionsStarted = viewModel.IndexOf("_ = LoadSectionThumbnailsAsync(token);", StringComparison.Ordinal);
@@ -115,6 +115,38 @@ public sealed class HomePageRegressionTests
         Assert.DoesNotContain("await RefreshAuthoritativePlacesAsync", viewModel, StringComparison.Ordinal);
         Assert.DoesNotContain("await PreloadHeroThumbnailsAsync(token);", viewModel, StringComparison.Ordinal);
         Assert.DoesNotContain("await LoadSectionThumbnailsAsync(token);", viewModel, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AuthoritativeRefresh_ReloadsSectionsAndRetainsUnchangedPhotoItems()
+    {
+        var source = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "ViewModels", "HomeViewModel.cs"));
+        var start = source.IndexOf("private async Task RefreshAuthoritativePlacesAsync(", StringComparison.Ordinal);
+        var end = source.IndexOf("[RelayCommand]", start, StringComparison.Ordinal);
+        var refresh = source[start..end];
+        Assert.True(refresh.IndexOf("_ = LoadSectionThumbnailsAsync(token);", StringComparison.Ordinal)
+                    > refresh.IndexOf("ApplyDashboard(", StringComparison.Ordinal));
+        Assert.Contains("RecentImports.FirstOrDefault(item => ReferenceEquals(item.Dto, dto))", source);
+        Assert.Contains("Favorites.FirstOrDefault(item => ReferenceEquals(item.Dto, dto))", source);
+        Assert.Contains("TodayMemories.FirstOrDefault(item => ReferenceEquals(item.Dto, dto))", source);
+        Assert.Contains("ThumbnailImage = RecentVisits.FirstOrDefault", source);
+        Assert.Contains("item.AbsoluteLibraryPath == dto.AbsoluteLibraryPath", source);
+        Assert.Contains("if (item.ThumbnailImage is not null || item.IsThumbnailLoading) continue;", source);
+    }
+
+    [Fact]
+    public void ThumbnailLoader_ReturnsFromAuthenticatedBranchBeforeLocalService_AndGuardsCanceledCallbacks()
+    {
+        var source = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "ViewModels", "HomeViewModel.cs"));
+        var start = source.IndexOf("private async Task LoadThumbnailAsync(", StringComparison.Ordinal);
+        var remote = source.IndexOf("if (HttpImageLoader.IsHttpUrl(absolutePath))", start, StringComparison.Ordinal);
+        var local = source.IndexOf("_thumbnailService.GetOrCreateThumbnailAsync", remote, StringComparison.Ordinal);
+        var remoteBranch = source[remote..local];
+        Assert.Contains("HttpImageLoader.LoadFirstAvailableAsync", remoteBranch);
+        Assert.Contains("[absolutePath, fallbackAbsolutePath]", remoteBranch);
+        Assert.Contains("if (!token.IsCancellationRequested) setImage(bitmap);", remoteBranch);
+        Assert.Contains("return;", remoteBranch);
+        Assert.DoesNotContain("image => CurrentHero.ThumbnailImage", source);
     }
 
     private static int CountOccurrences(string source, string value)

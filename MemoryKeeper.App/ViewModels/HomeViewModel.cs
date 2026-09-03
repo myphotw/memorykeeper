@@ -225,7 +225,7 @@ public partial class HomeViewModel : ObservableObject
                     _apiClient.ApiBaseUrl,
                     _logger,
                     token);
-                ApplyDashboard(dashboard);
+                ApplyDashboard(dashboard, "initial", generation);
                 StatusMessage = "추억을 불러왔습니다.";
                 _ = RefreshAuthoritativePlacesAsync(dashboard, generation, token);
             }
@@ -273,8 +273,24 @@ public partial class HomeViewModel : ObservableObject
                 return;
             }
 
-            ApplyDashboard(GalleryBackendBridge.ApplyAuthoritativePlaceAggregates(initialDashboard, placeAggregates));
+            _logger.LogInformation(
+                "MK_HOME_IMAGE_STATE phase=authoritative_received generation={Generation} places={PlaceCount}",
+                generation,
+                placeAggregates.Count);
+            LogHomeImageState("authoritative_before", generation);
+
+            ApplyDashboard(
+                GalleryBackendBridge.ApplyAuthoritativePlaceAggregates(initialDashboard, placeAggregates),
+                "authoritative",
+                generation);
+
+            LogHomeImageState("authoritative_after", generation);
+            _logger.LogInformation(
+                "MK_HOME_IMAGE_STATE phase=authoritative_preload_hero generation={Generation}",
+                generation);
             _ = PreloadHeroThumbnailsAsync(token);
+            // ApplyDashboard replaces place cards; the new sections need their own preload too.
+            _ = LoadSectionThumbnailsAsync(token);
             _logger.LogDebug(
                 "Home authoritative place aggregate applied. Generation={Generation}, Places={PlaceCount}",
                 generation,
@@ -589,21 +605,37 @@ public partial class HomeViewModel : ObservableObject
         HasCountryChart = CountrySlices.Count > 0;
     }
 
-    private void ApplyDashboard(HomeDashboardDto dashboard)
+    private void ApplyDashboard(HomeDashboardDto dashboard, string phase, int generation)
     {
         HeroMemories = new ObservableCollection<HomeHeroItem>(
-            dashboard.HeroMemories.Select(dto => new HomeHeroItem(dto)));
+            dashboard.HeroMemories.Select(dto => new HomeHeroItem(dto)
+            {
+                ThumbnailImage = HeroMemories.FirstOrDefault(item =>
+                    item.PlaceId == dto.PlaceId && item.RepresentativeMediaId == dto.RepresentativeMediaId
+                    && item.AbsoluteLibraryPath == dto.AbsoluteLibraryPath)?.ThumbnailImage,
+            }));
         HeroIndicators = new ObservableCollection<HomeHeroIndicator>(
             HeroMemories.Select((_, index) => new HomeHeroIndicator(index)));
         TodayMemories = new ObservableCollection<HomeTodayItem>(
-            dashboard.TodayMemories.Select(dto => new HomeTodayItem(dto)));
+            dashboard.TodayMemories.Select(dto =>
+                TodayMemories.FirstOrDefault(item => ReferenceEquals(item.Dto, dto)) ?? new HomeTodayItem(dto)));
         RecentVisits = new ObservableCollection<HomeRecentVisitItem>(
-            dashboard.RecentVisits.Take(3).Select(dto => new HomeRecentVisitItem(dto)));
+            dashboard.RecentVisits.Take(3).Select(dto => new HomeRecentVisitItem(dto)
+            {
+                ThumbnailImage = RecentVisits.FirstOrDefault(item =>
+                    item.PlaceId == dto.PlaceId && item.RepresentativeMediaId == dto.RepresentativeMediaId
+                    && item.AbsoluteLibraryPath == dto.AbsoluteLibraryPath)?.ThumbnailImage,
+            }));
+        // The authoritative projection retains these DTOs. Keep their UI objects as well,
+        // including images and any in-flight loader callbacks targeting those objects.
         Favorites = new ObservableCollection<HomePhotoItem>(
-            dashboard.Favorites.Select(dto => new HomePhotoItem(dto)));
+            dashboard.Favorites.Select(dto =>
+                Favorites.FirstOrDefault(item => ReferenceEquals(item.Dto, dto)) ?? new HomePhotoItem(dto)));
         RecentImports = new ObservableCollection<HomePhotoItem>(
-            dashboard.RecentImports.Take(6).Select(dto => new HomePhotoItem(dto)));
+            dashboard.RecentImports.Take(6).Select(dto =>
+                RecentImports.FirstOrDefault(item => ReferenceEquals(item.Dto, dto)) ?? new HomePhotoItem(dto)));
         RecentQueries = new ObservableCollection<string>(dashboard.RecentQueries);
+        if (!ReferenceEquals(PendingSummary, dashboard.PendingSummary)) PendingThumbnailImage = null;
         PendingSummary = dashboard.PendingSummary;
         Statistics = dashboard.Statistics;
         PendingSummaryText =
@@ -612,7 +644,6 @@ public partial class HomeViewModel : ObservableObject
         PendingLatestImportedText = PendingSummary.LatestImportedAt.HasValue
             ? $"최근 담은 날 {PendingSummary.LatestImportedAt.Value.ToLocalTime():yyyy.MM.dd}"
             : string.Empty;
-        PendingThumbnailImage = null;
         UpdateStatisticsSummary();
 
         HasHero = HeroMemories.Count > 0;
@@ -626,6 +657,25 @@ public partial class HomeViewModel : ObservableObject
 
         _heroIndex = 0;
         SetHeroIndex(0);
+        LogHomeImageState(phase, generation);
+    }
+
+    private void LogHomeImageState(string phase, int generation)
+    {
+        _logger.LogInformation(
+            "MK_HOME_IMAGE_STATE phase={Phase} generation={Generation} heroes={HeroCount} heroes_with_image={HeroImageCount} today={TodayCount} today_with_image={TodayImageCount} recent_visits={RecentVisitCount} recent_visits_with_image={RecentVisitImageCount} favorites={FavoriteCount} favorites_with_image={FavoriteImageCount} recent_imports={RecentImportCount} recent_imports_with_image={RecentImportImageCount}",
+            phase,
+            generation,
+            HeroMemories.Count,
+            HeroMemories.Count(item => item.ThumbnailImage is not null),
+            TodayMemories.Count,
+            TodayMemories.Count(item => item.ThumbnailImage is not null),
+            RecentVisits.Count,
+            RecentVisits.Count(item => item.ThumbnailImage is not null),
+            Favorites.Count,
+            Favorites.Count(item => item.ThumbnailImage is not null),
+            RecentImports.Count,
+            RecentImports.Count(item => item.ThumbnailImage is not null));
     }
 
     private void SetHeroIndex(int index)
@@ -684,26 +734,37 @@ public partial class HomeViewModel : ObservableObject
 
     private async Task PreloadHeroThumbnailsAsync(CancellationToken token)
     {
-        foreach (var hero in HeroMemories.ToList())
+        try
         {
-            token.ThrowIfCancellationRequested();
-            await LoadThumbnailAsync(
-                hero.RepresentativeMediaId,
-                hero.AbsoluteLibraryPath,
-                image => hero.ThumbnailImage = image,
-                loading => hero.IsThumbnailLoading = loading,
-                token);
-        }
+            foreach (var hero in HeroMemories.ToList())
+            {
+                token.ThrowIfCancellationRequested();
+                if (hero.ThumbnailImage is not null || hero.IsThumbnailLoading) continue;
+                await LoadThumbnailAsync(
+                    hero.RepresentativeMediaId,
+                    hero.AbsoluteLibraryPath,
+                    image => hero.ThumbnailImage = image,
+                    loading => hero.IsThumbnailLoading = loading,
+                    token,
+                    hero.FallbackAbsoluteLibraryPath);
+            }
 
-        // Background preload already done sequentially; keep CurrentHero image ready.
-        if (CurrentHero?.ThumbnailImage is null && CurrentHero is not null)
+            // Capture the target: carousel/aggregate changes must not redirect an old callback.
+            var currentHero = CurrentHero;
+            if (currentHero is { ThumbnailImage: null, IsThumbnailLoading: false })
+            {
+                await LoadThumbnailAsync(
+                    currentHero.RepresentativeMediaId,
+                    currentHero.AbsoluteLibraryPath,
+                    image => currentHero.ThumbnailImage = image,
+                    loading => currentHero.IsThumbnailLoading = loading,
+                    token,
+                    currentHero.FallbackAbsoluteLibraryPath);
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
-            await LoadThumbnailAsync(
-                CurrentHero.RepresentativeMediaId,
-                CurrentHero.AbsoluteLibraryPath,
-                image => CurrentHero.ThumbnailImage = image,
-                loading => CurrentHero.IsThumbnailLoading = loading,
-                token);
+            // Expected for the fire-and-forget preload on reload/unload.
         }
     }
 
@@ -714,6 +775,7 @@ public partial class HomeViewModel : ObservableObject
             foreach (var item in TodayMemories.ToList())
             {
                 token.ThrowIfCancellationRequested();
+                if (item.ThumbnailImage is not null || item.IsThumbnailLoading) continue;
                 await LoadThumbnailAsync(
                     item.MediaId,
                     item.AbsoluteLibraryPath,
@@ -725,17 +787,20 @@ public partial class HomeViewModel : ObservableObject
             foreach (var item in RecentVisits.ToList())
             {
                 token.ThrowIfCancellationRequested();
+                if (item.ThumbnailImage is not null || item.IsThumbnailLoading) continue;
                 await LoadThumbnailAsync(
                     item.RepresentativeMediaId,
                     item.AbsoluteLibraryPath,
                     image => item.ThumbnailImage = image,
                     loading => item.IsThumbnailLoading = loading,
-                    token);
+                    token,
+                    item.FallbackAbsoluteLibraryPath);
             }
 
             foreach (var item in Favorites.Concat(RecentImports).ToList())
             {
                 token.ThrowIfCancellationRequested();
+                if (item.ThumbnailImage is not null || item.IsThumbnailLoading) continue;
                 await LoadThumbnailAsync(
                     item.MediaId,
                     item.AbsoluteLibraryPath,
@@ -746,6 +811,7 @@ public partial class HomeViewModel : ObservableObject
             }
 
             if (PendingSummary.RepresentativeMediaId is Guid pendingMediaId
+                && PendingThumbnailImage is null
                 && !string.IsNullOrWhiteSpace(PendingSummary.RepresentativeAbsoluteLibraryPath))
             {
                 token.ThrowIfCancellationRequested();
@@ -775,6 +841,7 @@ public partial class HomeViewModel : ObservableObject
         CancellationToken token,
         string? fallbackAbsolutePath = null)
     {
+        token.ThrowIfCancellationRequested();
         if (string.IsNullOrWhiteSpace(absolutePath))
         {
             return;
@@ -790,7 +857,10 @@ public partial class HomeViewModel : ObservableObject
                     _logger,
                     $"home:{mediaId}",
                     token);
-                await EnqueueAsync(() => setImage(bitmap));
+                await EnqueueAsync(() =>
+                {
+                    if (!token.IsCancellationRequested) setImage(bitmap);
+                });
                 return;
             }
 
@@ -805,7 +875,10 @@ public partial class HomeViewModel : ObservableObject
                 return;
             }
 
-            await EnqueueAsync(() => setImage(new BitmapImage(new Uri(path))));
+            await EnqueueAsync(() =>
+            {
+                if (!token.IsCancellationRequested) setImage(new BitmapImage(new Uri(path)));
+            });
         }
         catch (OperationCanceledException)
         {

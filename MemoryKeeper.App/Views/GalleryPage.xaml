@@ -295,7 +295,7 @@
                         </TextBlock>
                     </StackPanel>
                     <StackPanel Grid.Column="2" Spacing="6" VerticalAlignment="Center">
-                        <Button Content="사진 보기" Style="{StaticResource MkSecondaryButtonStyle}" Click="OpenPhotoViewer_OnClick" />
+                        <Button x:Name="OpenMediaViewerButton" Content="사진 보기" Style="{StaticResource MkSecondaryButtonStyle}" Click="OpenPhotoViewer_OnClick" />
                         <Button Content="상세" Style="{StaticResource MkSecondaryButtonStyle}" Click="ToggleDetailPanel_OnClick" />
                     </StackPanel>
                 </Grid>

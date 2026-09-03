@@ -75,6 +75,7 @@ public static class GalleryBackendBridge
                         RepresentativeMediaId = GalleryBackendMapper.ParseFileId(rep.FileId),
                         AbsoluteLibraryPath = ResolveThumbnailUrl(apiBaseUrl, rep.FileId, rep.ThumbnailUrl)
                                                ?? GalleryBackendMapper.ToAbsoluteUrl(apiBaseUrl, rep.PreviewUrl),
+                        FallbackAbsoluteLibraryPath = BackendMediaUrlResolver.ToAbsoluteUrl(apiBaseUrl, rep.PreviewUrl),
                     };
                 }).OrderByDescending(item => item.LastVisitDate).Take(3).ToList();
         var heroes = recentVisits.Take(3).Select(visit => new HeroMemoryDto
@@ -83,6 +84,7 @@ public static class GalleryBackendBridge
             Year = visit.LastVisitDate?.Year ?? 0, PhotoCount = visit.PhotoCount,
             VisitRecordCount = visit.VisitRecordCount, RepresentativeMediaId = visit.RepresentativeMediaId,
             AbsoluteLibraryPath = visit.AbsoluteLibraryPath, KindLabel = "최근 방문",
+            FallbackAbsoluteLibraryPath = visit.FallbackAbsoluteLibraryPath,
             DateText = visit.LastVisitDate?.ToLocalTime().ToString("yyyy.MM.dd") ?? string.Empty,
         }).ToList();
         return new HomeDashboardDto

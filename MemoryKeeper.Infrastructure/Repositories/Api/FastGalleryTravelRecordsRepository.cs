@@ -41,6 +41,8 @@ public sealed class FastGalleryTravelRecordsRepository : ITravelRecordsRepositor
                 item.RepresentativeFileId,
                 item.RepresentativeThumbnailUrl,
                 item.RepresentativePreviewUrl),
+            FallbackAbsoluteLibraryPath = BackendMediaUrlResolver.ToAbsoluteUrl(
+                _apiClient.ApiBaseUrl, item.RepresentativePreviewUrl),
             RepresentativeCaptureDate = item.RepresentativeCaptureDate,
             Photos = [],
         }).ToList();

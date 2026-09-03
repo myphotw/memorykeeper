@@ -37,6 +37,8 @@ public sealed class HeroMemoryDto
 
     public string? AbsoluteLibraryPath { get; init; }
 
+    public string? FallbackAbsoluteLibraryPath { get; init; }
+
     public IReadOnlyList<string> TopTags { get; init; } = [];
 
     /// <summary>예: 오늘의 추억, 최근 여행</summary>
@@ -80,6 +82,8 @@ public sealed class RecentVisitDto
     public string Country { get; init; } = string.Empty;
 
     public string? AbsoluteLibraryPath { get; init; }
+
+    public string? FallbackAbsoluteLibraryPath { get; init; }
 
     public Guid? RepresentativeMediaId { get; init; }
 

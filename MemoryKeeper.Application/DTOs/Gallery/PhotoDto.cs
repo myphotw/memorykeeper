@@ -11,6 +11,12 @@ public sealed class PhotoDto
     [JsonPropertyName("filename")]
     public string Filename { get; init; } = string.Empty;
 
+    [JsonPropertyName("extension")]
+    public string? Extension { get; init; }
+
+    [JsonPropertyName("mime_type")]
+    public string? MimeType { get; init; }
+
     [JsonPropertyName("preview_url")]
     public string? PreviewUrl { get; init; }
 

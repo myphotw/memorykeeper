@@ -24,6 +24,7 @@
         <!-- Interaction surface: wheel zoom + drag pan when zoomed -->
         <ScrollViewer
             x:Name="PhotoScrollViewer"
+            Visibility="{Binding IsPhoto, Converter={StaticResource BoolToVisibilityConverter}}"
             ZoomMode="Enabled"
             MinZoomFactor="1"
             MaxZoomFactor="8"
@@ -59,6 +60,31 @@
                     MaxHeight="{Binding ElementName=RootGrid, Path=ActualHeight}" />
             </Grid>
         </ScrollViewer>
+
+        <!-- Video has its own interaction surface; the JPEG stays visible while loading/on failure. -->
+        <Grid x:Name="VideoHost" Margin="0,52,0,100" Background="Black"
+              Visibility="{Binding IsVideo, Converter={StaticResource BoolToVisibilityConverter}}">
+            <Image Source="{Binding PhotoImage, Mode=OneWay}" Stretch="Uniform" />
+            <MediaPlayerElement x:Name="VideoPlayerElement"
+                                Visibility="Collapsed"
+                                IsTabStop="True"
+                                AreTransportControlsEnabled="True"
+                                AutoPlay="False"
+                                Stretch="Uniform">
+                <MediaPlayerElement.TransportControls>
+                    <MediaTransportControls ShowAndHideAutomatically="True"
+                                            AllowFocusOnInteraction="False" />
+                </MediaPlayerElement.TransportControls>
+            </MediaPlayerElement>
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Spacing="12" IsHitTestVisible="False">
+                <ProgressRing IsActive="{Binding IsVideoLoading, Mode=OneWay}"
+                              Visibility="{Binding IsVideoLoading, Converter={StaticResource BoolToVisibilityConverter}}"
+                              Width="40" Height="40" />
+                <TextBlock Text="{Binding VideoStatus, Mode=OneWay}" Foreground="White"
+                           TextAlignment="Center" TextWrapping="Wrap" />
+            </StackPanel>
+        </Grid>
 
         <!-- Side tap zones: only when not zoomed (disabled for pan when zoomed) -->
         <Grid

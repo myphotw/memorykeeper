@@ -37,6 +37,8 @@ public partial class HomeHeroItem : ObservableObject
 
     public Guid? RepresentativeMediaId => Dto.RepresentativeMediaId;
 
+    public string? FallbackAbsoluteLibraryPath => Dto.FallbackAbsoluteLibraryPath;
+
     [ObservableProperty]
     private BitmapImage? thumbnailImage;
 
@@ -140,6 +142,8 @@ public partial class HomeRecentVisitItem : ObservableObject
     public string AbsoluteLibraryPath => Dto.AbsoluteLibraryPath ?? string.Empty;
 
     public Guid? RepresentativeMediaId => Dto.RepresentativeMediaId;
+
+    public string? FallbackAbsoluteLibraryPath => Dto.FallbackAbsoluteLibraryPath;
 
     [ObservableProperty]
     private BitmapImage? thumbnailImage;

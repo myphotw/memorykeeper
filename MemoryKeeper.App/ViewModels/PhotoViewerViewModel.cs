@@ -9,6 +9,7 @@ using MemoryKeeper.Application.DTOs;
 using MemoryKeeper.Application.Interfaces;
 using MemoryKeeper.Application.Layout;
 using MemoryKeeper.Infrastructure.Services.Api;
+using MemoryKeeper.Domain.Enums;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml.Media.Imaging;
@@ -19,6 +20,7 @@ public partial class PhotoViewerViewModel : ObservableObject
 {
     private readonly IGalleryApiRepository _galleryApiRepository;
     private readonly BaseApiClient _apiClient;
+    private readonly VideoPlaybackCache _videoCache;
     private readonly IPhotoNavigationState _photoNavigationState;
     private readonly IPlaceFocusState _placeFocusState;
     private readonly ILogger<PhotoViewerViewModel> _logger;
@@ -29,6 +31,17 @@ public partial class PhotoViewerViewModel : ObservableObject
     private CancellationTokenSource? _filmStripCts;
     private int _filmStripRadius = ResponsiveLayoutRules.FilmStripVisibleRadius(LayoutBreakpoint.Medium);
     private Guid? _currentMediaId;
+    private CancellationTokenSource? _mediaCts;
+    private int _mediaGeneration;
+    private VideoPlaybackCache.Lease? _videoLease;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsPhoto))]
+    private bool isVideo;
+    public bool IsPhoto => !IsVideo;
+    [ObservableProperty] private string? videoPath;
+    [ObservableProperty] private string videoStatus = string.Empty;
+    [ObservableProperty] private bool isVideoLoading;
 
     [ObservableProperty] private BitmapImage? photoImage;
     [ObservableProperty] private string capturedAtText = "-";
@@ -51,12 +64,14 @@ public partial class PhotoViewerViewModel : ObservableObject
     public PhotoViewerViewModel(
         IGalleryApiRepository galleryApiRepository,
         BaseApiClient apiClient,
+        VideoPlaybackCache videoCache,
         IPhotoNavigationState photoNavigationState,
         IPlaceFocusState placeFocusState,
         ILogger<PhotoViewerViewModel> logger)
     {
         _galleryApiRepository = galleryApiRepository;
         _apiClient = apiClient;
+        _videoCache = videoCache;
         _photoNavigationState = photoNavigationState;
         _placeFocusState = placeFocusState;
         _logger = logger;
@@ -155,25 +170,36 @@ public partial class PhotoViewerViewModel : ObservableObject
         _filmStripRadius = ResponsiveLayoutRules.FilmStripVisibleRadius(breakpoint);
         if (_currentMediaId is Guid mediaId)
         {
-            _ = RefreshFilmStripAsync(mediaId);
+            _ = RefreshFilmStripAsync(mediaId, _mediaCts?.Token ?? default);
         }
     }
 
     public async Task LoadMediaAsync(Guid mediaId, int slideDirection = 0)
     {
+        _mediaCts?.Cancel();
+        _mediaCts?.Dispose();
+        _mediaCts = new CancellationTokenSource();
+        var token = _mediaCts.Token;
+        var generation = ++_mediaGeneration;
+        _filmStripCts?.Cancel();
+        ReleaseVideo();
+        PhotoImage = null;
+        IsVideo = false;
+        VideoStatus = string.Empty;
+        _photoNavigationState.FocusMediaId = mediaId;
+        _currentMediaId = mediaId;
+        RefreshNavigationState();
         IsBusy = true;
         try
         {
-            if (slideDirection != 0)
-            {
-                NavigateSlideRequested?.Invoke(this, slideDirection);
-            }
-
-            var apiDetail = await _galleryApiRepository.GetPhotoAsync(mediaId);
+            var apiDetail = await _galleryApiRepository.GetPhotoAsync(mediaId, token);
+            if (token.IsCancellationRequested || generation != _mediaGeneration) return;
             var detail = GalleryBackendMapper.ToPhotoDetail(apiDetail, _apiClient.ApiBaseUrl);
-            _photoNavigationState.FocusMediaId = mediaId;
-            _currentMediaId = mediaId;
-            RefreshNavigationState();
+            IsVideo = detail.MediaType == MediaType.Video;
+            IsVideoLoading = IsVideo;
+            VideoStatus = IsVideo ? "영상 준비 중…" : string.Empty;
+            if (!IsVideo && slideDirection != 0)
+                NavigateSlideRequested?.Invoke(this, slideDirection);
 
             CapturedAtText = detail.CapturedAt?.ToLocalTime().ToString("yyyy.MM.dd HH:mm", CultureInfo.InvariantCulture) ?? "-";
             PlaceOverlayText = BuildPlaceOverlay(detail);
@@ -194,6 +220,7 @@ public partial class PhotoViewerViewModel : ObservableObject
             BitmapImage? image = null;
             await EnqueueAsync(() =>
             {
+                if (token.IsCancellationRequested || generation != _mediaGeneration) return;
                 image = LoadDisplayImage(displayUrl, context: $"PhotoViewer:{apiDetail.FileId}");
                 DisposePreviousImage();
                 _previousImage = PhotoImage;
@@ -204,18 +231,71 @@ public partial class PhotoViewerViewModel : ObservableObject
                     ApiErrorClassifier.SafePath(displayUrl));
             });
 
-            await RefreshFilmStripAsync(mediaId);
-            await PreloadAdjacentAsync();
+            if (token.IsCancellationRequested || generation != _mediaGeneration) return;
+            var videoTask = IsVideo ? LoadVideoAsync(detail, generation, token) : Task.CompletedTask;
+            await Task.WhenAll(RefreshFilmStripAsync(mediaId, token), videoTask);
+            token.ThrowIfCancellationRequested();
+            await PreloadAdjacentAsync(token);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            // A newer selection or page unload owns the viewer.
         }
         catch (Exception ex)
         {
+            if (generation != _mediaGeneration) return;
             _logger.LogError(ex, "Failed to load photo viewer media. MediaId={MediaId}", mediaId);
-            await EnqueueAsync(() => PhotoImage = null);
+            await EnqueueAsync(() =>
+            {
+                if (generation != _mediaGeneration) return;
+                if (IsVideo) ReportVideoPlaybackFailure(ex.GetType().Name);
+                else PhotoImage = null;
+            });
         }
         finally
         {
-            IsBusy = false;
+            if (generation == _mediaGeneration) IsBusy = false;
         }
+    }
+
+    private async Task LoadVideoAsync(PhotoDetailDto detail, int generation, CancellationToken token)
+    {
+        VideoPlaybackCache.Lease? lease = null;
+        try
+        {
+            if (!HttpImageLoader.IsHttpUrl(detail.OriginalPath))
+                throw new InvalidOperationException("Missing video original URL.");
+            lease = await _videoCache.AcquireAsync(detail.MediaId, detail.OriginalPath,
+                detail.Extension ?? Path.GetExtension(detail.FileName), detail.FileSizeBytes, token);
+            if (token.IsCancellationRequested || generation != _mediaGeneration) return;
+            _videoLease = lease;
+            lease = null;
+            VideoPath = _videoLease.Path;
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            if (generation == _mediaGeneration && !token.IsCancellationRequested)
+                ReportVideoPlaybackFailure(ex is ApiException api ? api.Category.ToString() : ex.GetType().Name);
+        }
+        finally { lease?.Dispose(); }
+    }
+
+    public void ReportVideoPlaybackFailure(string errorKind)
+    {
+        _logger.LogWarning("Video playback unavailable. MediaId={MediaId}, ErrorKind={ErrorKind}", _currentMediaId, errorKind);
+        ReleaseVideo();
+        VideoStatus = "영상을 재생할 수 없습니다.";
+    }
+
+    private void ReleaseVideo()
+    {
+        IsVideoLoading = false;
+        VideoStatus = string.Empty;
+        // The page synchronously stops/releases the player on this notification, before unpinning the file.
+        VideoPath = null;
+        _videoLease?.Dispose();
+        _videoLease = null;
     }
 
     private void RefreshNavigationState()
@@ -224,11 +304,12 @@ public partial class PhotoViewerViewModel : ObservableObject
         CanGoNext = _photoNavigationState.TryGetNext(out _);
     }
 
-    private async Task RefreshFilmStripAsync(Guid currentMediaId)
+    private async Task RefreshFilmStripAsync(Guid currentMediaId, CancellationToken mediaToken = default)
     {
+        if (mediaToken.IsCancellationRequested || _currentMediaId != currentMediaId) return;
         _filmStripCts?.Cancel();
         _filmStripCts?.Dispose();
-        _filmStripCts = new CancellationTokenSource();
+        _filmStripCts = CancellationTokenSource.CreateLinkedTokenSource(mediaToken);
         var token = _filmStripCts.Token;
 
         var playlist = _photoNavigationState.Playlist;
@@ -267,6 +348,7 @@ public partial class PhotoViewerViewModel : ObservableObject
             }
         }
 
+        if (token.IsCancellationRequested || _currentMediaId != currentMediaId) return;
         FilmStripItems = new ObservableCollection<FilmStripItem>(items);
         CurrentFilmStripItem = FilmStripItems.FirstOrDefault(item => item.IsCurrent);
         FilmStripUpdated?.Invoke(this, EventArgs.Empty);
@@ -355,7 +437,7 @@ public partial class PhotoViewerViewModel : ObservableObject
         return tcs.Task;
     }
 
-    private async Task PreloadAdjacentAsync()
+    private async Task PreloadAdjacentAsync(CancellationToken token)
     {
         _preloadedNextUrl = null;
         _preloadedPreviousUrl = null;
@@ -365,13 +447,17 @@ public partial class PhotoViewerViewModel : ObservableObject
             try
             {
                 var next = GalleryBackendMapper.ToPhotoDetail(
-                    await _galleryApiRepository.GetPhotoAsync(nextId),
+                    await _galleryApiRepository.GetPhotoAsync(nextId, token),
                     _apiClient.ApiBaseUrl);
+                token.ThrowIfCancellationRequested();
                 _preloadedNextUrl = ResolveDisplayUrl(next);
                 if (HttpImageLoader.IsHttpUrl(_preloadedNextUrl))
                 {
                     await EnqueueAsync(() =>
-                        _ = HttpImageLoader.TryCreate(_preloadedNextUrl, _logger, "PhotoViewer:PreloadNext"));
+                    {
+                        if (!token.IsCancellationRequested)
+                            _ = HttpImageLoader.TryCreate(_preloadedNextUrl, _logger, "PhotoViewer:PreloadNext");
+                    });
                 }
             }
             catch (Exception ex)
@@ -385,13 +471,17 @@ public partial class PhotoViewerViewModel : ObservableObject
             try
             {
                 var previous = GalleryBackendMapper.ToPhotoDetail(
-                    await _galleryApiRepository.GetPhotoAsync(previousId),
+                    await _galleryApiRepository.GetPhotoAsync(previousId, token),
                     _apiClient.ApiBaseUrl);
+                token.ThrowIfCancellationRequested();
                 _preloadedPreviousUrl = ResolveDisplayUrl(previous);
                 if (HttpImageLoader.IsHttpUrl(_preloadedPreviousUrl))
                 {
                     await EnqueueAsync(() =>
-                        _ = HttpImageLoader.TryCreate(_preloadedPreviousUrl, _logger, "PhotoViewer:PreloadPrevious"));
+                    {
+                        if (!token.IsCancellationRequested)
+                            _ = HttpImageLoader.TryCreate(_preloadedPreviousUrl, _logger, "PhotoViewer:PreloadPrevious");
+                    });
                 }
             }
             catch (Exception ex)
@@ -462,6 +552,14 @@ public partial class PhotoViewerViewModel : ObservableObject
 
     public void DisposeImages()
     {
+        ++_mediaGeneration;
+        _mediaCts?.Cancel();
+        _mediaCts?.Dispose();
+        _mediaCts = null;
+        _currentMediaId = null;
+        ReleaseVideo();
+        PhotoImage = null;
+        IsBusy = false;
         _filmStripCts?.Cancel();
         _filmStripCts?.Dispose();
         _filmStripCts = null;

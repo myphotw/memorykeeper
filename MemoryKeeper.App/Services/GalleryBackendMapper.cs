@@ -28,7 +28,7 @@ public static class GalleryBackendMapper
             AbsoluteLibraryPath = preview ?? thumb ?? string.Empty,
             CapturedAt = photo.CaptureDatetime,
             PlaceId = photo.MemorykeeperPlaceId,
-            MediaType = MediaType.Photo,
+            MediaType = MediaTypeResolver.Resolve(photo.MimeType, photo.Extension, photo.Filename),
             IsFavorite = photo.Favorite,
             ThumbnailUrl = thumb,
             PreviewUrl = preview,
@@ -56,6 +56,9 @@ public static class GalleryBackendMapper
         return new PhotoDetailDto
         {
             IsBackendOnly = true,
+            MediaType = MediaTypeResolver.Resolve(detail.MimeType, detail.Extension, detail.Filename),
+            Extension = detail.Extension,
+            MimeType = detail.MimeType,
             MediaId = mediaId,
             ThumbnailPath = thumb,
             ThumbnailUrl = thumb,

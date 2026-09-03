@@ -27,6 +27,7 @@ public static class HomeDashboardProjection
                 LastVisitDate = ToLocalDateOffset(place.VisitDates.Max()),
                 RepresentativeMediaId = place.RepresentativeMediaId,
                 AbsoluteLibraryPath = place.AbsoluteLibraryPath,
+                FallbackAbsoluteLibraryPath = place.FallbackAbsoluteLibraryPath,
             }).ToList();
         var heroes = recentVisits.Select(visit => new HeroMemoryDto
         {
@@ -37,6 +38,7 @@ public static class HomeDashboardProjection
             VisitRecordCount = visit.VisitRecordCount,
             RepresentativeMediaId = visit.RepresentativeMediaId,
             AbsoluteLibraryPath = visit.AbsoluteLibraryPath,
+            FallbackAbsoluteLibraryPath = visit.FallbackAbsoluteLibraryPath,
             KindLabel = "최근 방문",
             DateText = visit.LastVisitDate?.ToLocalTime().ToString("yyyy.MM.dd") ?? string.Empty,
         }).ToList();

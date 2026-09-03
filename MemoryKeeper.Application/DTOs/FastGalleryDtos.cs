@@ -8,6 +8,8 @@ public sealed class FastGalleryPhotoDto
     [JsonPropertyName("common_file_id")] public long CommonFileId { get; init; }
     [JsonPropertyName("file_id")] public string FileId { get; init; } = string.Empty;
     [JsonPropertyName("filename")] public string Filename { get; init; } = string.Empty;
+    [JsonPropertyName("extension")] public string? Extension { get; init; }
+    [JsonPropertyName("mime_type")] public string? MimeType { get; init; }
     [JsonPropertyName("preview_url")] public string? PreviewUrl { get; init; }
     [JsonPropertyName("thumbnail_url")] public string? ThumbnailUrl { get; init; }
     [JsonPropertyName("favorite")] public bool Favorite { get; init; }

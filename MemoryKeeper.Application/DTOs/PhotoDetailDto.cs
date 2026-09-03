@@ -18,6 +18,12 @@ public sealed class PhotoDetailDto
     /// <summary>True when the item exists only in TC-Backend and local SQLite writes are unsafe.</summary>
     public bool IsBackendOnly { get; init; }
 
+    public MemoryKeeper.Domain.Enums.MediaType MediaType { get; init; }
+
+    public string? Extension { get; init; }
+
+    public string? MimeType { get; init; }
+
     public Guid MediaId { get; init; }
 
     public string? ThumbnailPath { get; init; }
@@ -28,7 +34,7 @@ public sealed class PhotoDetailDto
     /// <summary>Absolute HTTP preview URL (TC-Backend). Prefer for Viewer display.</summary>
     public string? PreviewUrl { get; init; }
 
-    /// <summary>Absolute original URL/path. Export / original-view only — not auto-loaded in Viewer.</summary>
+    /// <summary>Original URL/path for export or video playback; never auto-loaded as a photo.</summary>
     public string OriginalPath { get; init; } = string.Empty;
 
     public string RelativePath { get; init; } = string.Empty;

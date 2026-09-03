@@ -206,6 +206,9 @@ public sealed partial class GalleryPage : Page
 
         DetailCard.Visibility = Visibility.Visible;
         DetailThumbImage.Source = focus.ThumbnailImage;
+        OpenMediaViewerButton.Content = focus.Media.MediaType == MemoryKeeper.Domain.Enums.MediaType.Video
+            ? "영상 보기"
+            : "사진 보기";
         DetailFileName.Text = focus.FileName;
         DetailCapturedAt.Text = focus.CapturedAtText;
         DetailPlace.Text = ResolvePlaceLabel();
