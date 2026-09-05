@@ -40,6 +40,7 @@ public partial class GalleryViewModel : ObservableObject
     private int _thumbnailBatchSequence;
     private int _fastMediaDiagnosticsRemaining;
     private FastGalleryHierarchyDto? _fastHierarchy;
+    private GalleryPlaceScope _placeScope;
 
     [ObservableProperty]
     private ObservableCollection<GalleryTreeNode> treeRoots = [];
@@ -122,10 +123,24 @@ public partial class GalleryViewModel : ObservableObject
     {
         GalleryDiagnostics.WriteStep("GalleryViewModel.LoadAsync start");
         var restore = _galleryFocusState.ConsumeRestore();
+        if (restore is not null)
+        {
+            BrowseModeIndex = restore.BrowseModeIndex;
+            _placeScope = restore.PlaceScope;
+            if (!string.IsNullOrWhiteSpace(restore.SearchText))
+            {
+                SearchText = restore.SearchText;
+            }
+        }
+
         await RunBusyAsync(async () =>
         {
             await RebuildTreeRootsAsync();
-            if (!string.IsNullOrWhiteSpace(restore?.CountryFilter))
+            if (restore?.RequestedPlaceLevel is GalleryPlaceNavigationLevel requestedLevel)
+            {
+                await ApplyPlaceNavigationAsync(restore.PlaceScope, requestedLevel);
+            }
+            else if (!string.IsNullOrWhiteSpace(restore?.CountryFilter))
             {
                 await SelectCountryFilterAsync(restore.CountryFilter);
             }
@@ -155,24 +170,35 @@ public partial class GalleryViewModel : ObservableObject
             FocusMediaId = mediaId ?? SelectedItem?.MediaId,
             GridScrollOffset = gridScrollOffset,
             BrowseModeIndex = BrowseModeIndex,
-            CountryFilter = SelectedNode is { Kind: GalleryTreeNodeKind.Country, Year: null } node
-                ? node.Country
-                : null,
+            PlaceScope = _placeScope,
         });
     }
 
     private async Task SelectCountryFilterAsync(string country)
     {
-        var node = new GalleryTreeNode
+        BrowseModeIndex = 1;
+        _placeScope = GalleryPlaceScope.All;
+        var normalized = PlaceNormalizer.NormalizeCountry(country);
+        var node = TreeRoots.FirstOrDefault(item =>
+            item.Kind == GalleryTreeNodeKind.Country
+            && string.Equals(item.Country, normalized, StringComparison.OrdinalIgnoreCase));
+        if (node is null)
         {
-            Kind = GalleryTreeNodeKind.Country,
-            Country = country,
-            Title = country,
-            Count = 0,
-        };
-        SelectedNode = node;
-        BreadcrumbText = BuildBreadcrumb(node);
-        await QueryForNodeAsync(node);
+            node = new GalleryTreeNode
+            {
+                Kind = GalleryTreeNodeKind.Country,
+                Country = normalized,
+                Title = normalized,
+                Count = 0,
+            };
+        }
+        else
+        {
+            node.IsExpanded = node.CanExpand;
+            RebuildVisibleTree();
+        }
+
+        await SelectNodeAsync(node);
     }
 
     partial void OnBrowseModeIndexChanged(int value)
@@ -189,6 +215,7 @@ public partial class GalleryViewModel : ObservableObject
             return;
         }
 
+        _placeScope = GalleryPlaceScope.All;
         BrowseModeIndex = 0;
         await SwitchBrowseModeAsync();
     }
@@ -201,6 +228,7 @@ public partial class GalleryViewModel : ObservableObject
             return;
         }
 
+        _placeScope = GalleryPlaceScope.All;
         BrowseModeIndex = 1;
         await SwitchBrowseModeAsync();
     }
@@ -213,7 +241,7 @@ public partial class GalleryViewModel : ObservableObject
             var first = TreeRoots.FirstOrDefault(node => node.Kind != GalleryTreeNodeKind.Separator);
             if (first is not null)
             {
-                await SelectNodeAsync(first);
+                await SelectTreeNodeAsync(first);
             }
         }, "SwitchBrowseMode");
     }
@@ -244,6 +272,12 @@ public partial class GalleryViewModel : ObservableObject
         if (node is null || node.Kind == GalleryTreeNodeKind.Separator)
         {
             return;
+        }
+
+        if (IsPlaceBrowseMode && node.Kind == GalleryTreeNodeKind.Country && node.CanExpand)
+        {
+            node.IsExpanded = true;
+            RebuildVisibleTree();
         }
 
         await SelectNodeAsync(node);
@@ -284,7 +318,7 @@ public partial class GalleryViewModel : ObservableObject
                 var first = TreeRoots.FirstOrDefault();
                 if (first is not null)
                 {
-                    await SelectNodeAsync(first);
+                    await SelectTreeNodeAsync(first);
                 }
                 else
                 {
@@ -396,23 +430,130 @@ public partial class GalleryViewModel : ObservableObject
     {
         _fastHierarchy ??= await _fastGallery.GetHierarchyAsync();
         var term = string.IsNullOrWhiteSpace(SearchText) ? null : SearchText.Trim();
-        var places = FlattenFastHierarchy(_fastHierarchy.Roots)
-            .Where(node => node.MemorykeeperPlaceId.HasValue || node.PlaceId.HasValue)
-            .Where(node => term is null || (node.DisplayName ?? string.Empty).Contains(term, StringComparison.OrdinalIgnoreCase))
-            .GroupBy(node => node.MemorykeeperPlaceId ?? node.PlaceId!.Value)
-            .Select(group => group.First());
-        var roots = places.Select(place => new GalleryTreeNode
-        {
-            Kind = GalleryTreeNodeKind.PlaceBrowse,
-            PlaceId = place.MemorykeeperPlaceId ?? place.PlaceId,
-            Title = place.DisplayName ?? "미분류",
-            Count = place.Count,
-            Depth = 0,
-            CanExpand = false,
-        }).ToList();
+        var roots = GalleryPlaceHierarchyProjection.Build(_fastHierarchy)
+            .Where(country => _placeScope switch
+            {
+                GalleryPlaceScope.Domestic => country.IsDomestic,
+                GalleryPlaceScope.International => !country.IsDomestic && !country.IsUnclassified,
+                _ => true,
+            })
+            .Select(country =>
+            {
+                var countryMatches = term is null
+                                     || country.DisplayName.Contains(term, StringComparison.OrdinalIgnoreCase);
+                var places = country.Places
+                    .Where(place => countryMatches
+                                    || place.DisplayName.Contains(term!, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                if (!countryMatches && places.Count == 0)
+                {
+                    return null;
+                }
+
+                var root = new GalleryTreeNode
+                {
+                    Kind = GalleryTreeNodeKind.Country,
+                    Country = country.CountryFilter,
+                    Title = country.DisplayName,
+                    Count = countryMatches ? country.PhotoCount : places.Sum(place => place.PhotoCount),
+                    Depth = 0,
+                    CanExpand = places.Count > 0,
+                    ChildrenLoaded = true,
+                };
+                foreach (var place in places)
+                {
+                    root.Children.Add(new GalleryTreeNode
+                    {
+                        Kind = GalleryTreeNodeKind.PlaceBrowse,
+                        Country = country.CountryFilter,
+                        PlaceId = place.PlaceId,
+                        Title = place.DisplayName,
+                        Count = place.PhotoCount,
+                        Depth = 1,
+                        CanExpand = false,
+                        ChildrenLoaded = true,
+                    });
+                }
+
+                return root;
+            })
+            .Where(node => node is not null)
+            .Cast<GalleryTreeNode>()
+            .ToList();
 
         TreeRoots = new ObservableCollection<GalleryTreeNode>(roots);
         RebuildVisibleTree();
+    }
+
+    private async Task ApplyPlaceNavigationAsync(
+        GalleryPlaceScope scope,
+        GalleryPlaceNavigationLevel level)
+    {
+        BrowseModeIndex = 1;
+        _placeScope = scope;
+
+        if (scope == GalleryPlaceScope.Domestic)
+        {
+            var domestic = TreeRoots.FirstOrDefault(node =>
+                node.Kind == GalleryTreeNodeKind.Country
+                && string.Equals(
+                    PlaceNormalizer.NormalizeCountry(node.Country),
+                    "대한민국",
+                    StringComparison.OrdinalIgnoreCase));
+            if (domestic is not null)
+            {
+                domestic.IsExpanded = domestic.CanExpand;
+                RebuildVisibleTree();
+                await SelectNodeAsync(domestic);
+                return;
+            }
+
+            ClearPlaceScopeSelection("사진첩 > 장소 > 대한민국", "표시할 국내 사진이 없습니다.");
+            return;
+        }
+
+        if (scope == GalleryPlaceScope.International)
+        {
+            if (level is GalleryPlaceNavigationLevel.Places or GalleryPlaceNavigationLevel.Photos)
+            {
+                foreach (var country in TreeRoots)
+                {
+                    country.IsExpanded = country.CanExpand;
+                }
+
+                RebuildVisibleTree();
+            }
+
+            var message = TreeRoots.Count == 0
+                ? "표시할 해외 사진이 없습니다."
+                : level == GalleryPlaceNavigationLevel.Countries
+                    ? "해외 국가를 선택해 사진을 탐색하세요."
+                    : "해외 국가 또는 장소를 선택해 사진을 탐색하세요.";
+            ClearPlaceScopeSelection("사진첩 > 장소 > 해외", message);
+        }
+    }
+
+    private void ClearPlaceScopeSelection(string breadcrumb, string status, bool clearSelection = true)
+    {
+        if (clearSelection)
+        {
+            foreach (var node in VisibleTreeNodes)
+            {
+                node.IsSelected = false;
+            }
+
+            SelectedNode = null;
+        }
+
+        Items = [];
+        _nextCursor = null;
+        _hasMore = false;
+        _totalCount = 0;
+        OnPropertyChanged(nameof(CanLoadMore));
+        OnPropertyChanged(nameof(TotalCount));
+        BreadcrumbText = breadcrumb;
+        StatusMessage = status;
+        _photoNavigationState.SetPlaylist([]);
     }
 
     private async Task EnsureChildrenAsync(GalleryTreeNode node)
@@ -511,18 +652,6 @@ public partial class GalleryViewModel : ObservableObject
     private FastGalleryHierarchyNodeDto? FindYearNode(int year) =>
         _fastHierarchy?.Roots.FirstOrDefault(node => node.Year == year);
 
-    private static IEnumerable<FastGalleryHierarchyNodeDto> FlattenFastHierarchy(IEnumerable<FastGalleryHierarchyNodeDto> nodes)
-    {
-        foreach (var node in nodes)
-        {
-            yield return node;
-            foreach (var child in FlattenFastHierarchy(node.ChildNodes))
-            {
-                yield return child;
-            }
-        }
-    }
-
     private void RebuildVisibleTree()
     {
         var visible = new List<GalleryTreeNode>();
@@ -562,13 +691,6 @@ public partial class GalleryViewModel : ObservableObject
 
     private async Task RestoreSnapshotAsync(GalleryFocusSnapshot snapshot)
     {
-        BrowseModeIndex = snapshot.BrowseModeIndex;
-        if (!string.IsNullOrWhiteSpace(snapshot.SearchText))
-        {
-            SearchText = snapshot.SearchText;
-        }
-
-        await RebuildTreeRootsAsync();
         await ExpandNodesByKeysAsync(snapshot.ExpandedNodeKeys);
         var node = FindNodeByKey(snapshot.SelectedNodeKey)
                    ?? TreeRoots.FirstOrDefault(n => n.Kind != GalleryTreeNodeKind.Separator);
@@ -694,6 +816,17 @@ public partial class GalleryViewModel : ObservableObject
 
         try
         {
+            if (IsPlaceBrowseMode
+                && node.Kind == GalleryTreeNodeKind.Country
+                && string.IsNullOrWhiteSpace(node.Country))
+            {
+                ClearPlaceScopeSelection(
+                    BuildBreadcrumb(node),
+                    "미분류 사진은 아래 장소를 선택하거나 연도 보기에서 탐색하세요.",
+                    clearSelection: false);
+                return;
+            }
+
             // Keyword and legacy-only nodes retain their curated common-Gallery behaviour, but are lazy:
             // ordinary Gallery entry never constructs the old all-photo snapshot.
             if (!string.IsNullOrWhiteSpace(query.SearchText)
@@ -912,7 +1045,7 @@ public partial class GalleryViewModel : ObservableObject
                 parts.Add(LibraryConstants.UnclassifiedTitle);
                 break;
             case GalleryTreeNodeKind.Country:
-                parts.Add(node.Year?.ToString() ?? "");
+                parts.Add(node.Year.HasValue ? node.Year.Value.ToString() : "장소");
                 parts.Add(node.Country ?? node.Title);
                 break;
             case GalleryTreeNodeKind.City:
@@ -928,6 +1061,7 @@ public partial class GalleryViewModel : ObservableObject
                 break;
             case GalleryTreeNodeKind.PlaceBrowse:
                 parts.Add("장소");
+                parts.Add(node.Country ?? LibraryConstants.UnclassifiedTitle);
                 parts.Add(node.Title);
                 break;
             case GalleryTreeNodeKind.PlaceYear:
@@ -947,8 +1081,9 @@ public partial class GalleryViewModel : ObservableObject
             return null;
         }
 
-        return TreeRoots.FirstOrDefault(node =>
-                node.Kind == GalleryTreeNodeKind.PlaceBrowse && node.PlaceId == placeId)
+        return TreeRoots
+            .SelectMany(root => root.Children.Prepend(root))
+            .FirstOrDefault(node => node.Kind == GalleryTreeNodeKind.PlaceBrowse && node.PlaceId == placeId)
             ?.Title;
     }
 

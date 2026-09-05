@@ -435,8 +435,21 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        var current = _navigation.Current;
         if (_navigation.TryGoBack(out var entry))
         {
+            if (current is
+                {
+                    Tag: "gallery",
+                    Kind: NavigationKind.DrillDown,
+                    RootTag: "travel",
+                    ContextKey: string contextKey,
+                }
+                && contextKey.StartsWith("travel-gallery:", StringComparison.Ordinal))
+            {
+                _serviceProvider.GetRequiredService<IGalleryFocusState>().Clear();
+            }
+
             _navigatingBack = true;
             try
             {
@@ -731,7 +744,7 @@ public sealed partial class MainWindow : Window
         _travelRecordsViewModel = page.ViewModel;
         _travelRecordsViewModel.OpenVisitRecordRequested += OnTravelOpenVisitRecordRequested;
         _travelRecordsViewModel.OpenDetailRequested += OnTravelOpenDetailRequested;
-        _travelRecordsViewModel.OpenForeignCountriesRequested += OnTravelOpenForeignCountriesRequested;
+        _travelRecordsViewModel.OpenGalleryRequested += OnTravelOpenGalleryRequested;
         _travelRecordsViewModel.BackRequested += OnShellBackRequested;
         page.OpenImportRequested += OnTravelOpenImportRequested;
         ContentFrame.Content = page;
@@ -1056,8 +1069,24 @@ public sealed partial class MainWindow : Window
     private void OnTravelOpenDetailRequested(object? sender, EventArgs e) =>
         SelectNavigationItem(CreateTravelDetailEntry());
 
-    private void OnTravelOpenForeignCountriesRequested(object? sender, EventArgs e) =>
-        NavigateDrillDown("travel-countries", "foreign-countries", "해외 방문 국가");
+    private void OnTravelOpenGalleryRequested(
+        object? sender,
+        GalleryPlaceNavigationRequestedEventArgs e)
+    {
+        var galleryFocus = _serviceProvider.GetRequiredService<IGalleryFocusState>();
+        galleryFocus.RequestPlaceBrowse(e.Scope, e.Level);
+        var scope = e.Scope == GalleryPlaceScope.Domestic ? "국내" : "해외";
+        var subject = e.Level switch
+        {
+            GalleryPlaceNavigationLevel.Countries => "방문 국가",
+            GalleryPlaceNavigationLevel.Places => "방문 장소",
+            _ => "사진",
+        };
+        NavigateDrillDown(
+            "gallery",
+            $"travel-gallery:{e.Scope}:{e.Level}",
+            $"{scope} {subject}");
+    }
 
     private void OnTravelCountryOpenGalleryRequested(object? sender, string country)
     {
@@ -1145,7 +1174,7 @@ public sealed partial class MainWindow : Window
         {
             _travelRecordsViewModel.OpenVisitRecordRequested -= OnTravelOpenVisitRecordRequested;
             _travelRecordsViewModel.OpenDetailRequested -= OnTravelOpenDetailRequested;
-            _travelRecordsViewModel.OpenForeignCountriesRequested -= OnTravelOpenForeignCountriesRequested;
+            _travelRecordsViewModel.OpenGalleryRequested -= OnTravelOpenGalleryRequested;
             _travelRecordsViewModel.BackRequested -= OnShellBackRequested;
             _travelRecordsViewModel = null;
         }

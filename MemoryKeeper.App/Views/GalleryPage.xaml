@@ -160,12 +160,30 @@
         <!-- Photo-first main column -->
         <Grid
             Grid.Column="1"
-            RowDefinitions="Auto,*,Auto"
+            RowDefinitions="Auto,*"
             RowSpacing="{StaticResource MkSectionSpacing}"
             MinWidth="240">
 
             <!-- Section header -->
             <StackPanel Spacing="8">
+                <Button
+                    x:Name="BackNavigationButton"
+                    Command="{Binding GoBackCommand}"
+                    Style="{StaticResource MkBackNavigationButtonStyle}"
+                    Visibility="Collapsed">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon
+                            FontFamily="{StaticResource MkIconFontFamily}"
+                            FontSize="14"
+                            Glyph="&#xE72B;" />
+                        <TextBlock
+                            x:Name="BackNavigationLabel"
+                            MaxWidth="280"
+                            Text="뒤로"
+                            TextTrimming="CharacterEllipsis"
+                            TextWrapping="NoWrap" />
+                    </StackPanel>
+                </Button>
                     <TextBlock
                         Text="사진첩"
                         Style="{StaticResource MkPageTitleStyle}"
@@ -208,6 +226,14 @@
                                 PointerExited="PhotoCard_OnPointerExited"
                                 DoubleTapped="PhotoCard_OnDoubleTapped"
                                 Loaded="PhotoCard_OnLoaded">
+                                <Border.ContextFlyout>
+                                    <MenuFlyout>
+                                        <MenuFlyoutItem
+                                            Text="상세"
+                                            Tag="{Binding}"
+                                            Click="PhotoDetail_OnClick" />
+                                    </MenuFlyout>
+                                </Border.ContextFlyout>
                                 <Grid>
                                     <Border Style="{StaticResource MkThumbnailBorderStyle}">
                                         <Grid>
@@ -267,39 +293,6 @@
                 </Border>
             </Grid>
 
-            <!-- Selected photo detail (촬영일 · 장소 · 파일명) -->
-            <Border
-                x:Name="DetailCard"
-                Grid.Row="2"
-                Style="{StaticResource MkCardStyle}"
-                Visibility="Collapsed">
-                <Grid ColumnDefinitions="96,*,Auto" ColumnSpacing="{StaticResource MkComponentSpacing}">
-                    <Border Width="96" Height="96" Style="{StaticResource MkThumbnailBorderStyle}">
-                        <Image
-                            x:Name="DetailThumbImage"
-                            Style="{StaticResource MkImageStyle}" />
-                    </Border>
-                    <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center">
-                        <TextBlock
-                            x:Name="DetailFileName"
-                            Style="{StaticResource MkPlaceNameStyle}"
-                            TextTrimming="CharacterEllipsis"
-                            MaxLines="1" />
-                        <TextBlock Style="{StaticResource MkCaptionTextStyle}">
-                            <Run Text="촬영일  " />
-                            <Run x:Name="DetailCapturedAt" />
-                        </TextBlock>
-                        <TextBlock Style="{StaticResource MkCaptionTextStyle}">
-                            <Run Text="장소  " />
-                            <Run x:Name="DetailPlace" />
-                        </TextBlock>
-                    </StackPanel>
-                    <StackPanel Grid.Column="2" Spacing="6" VerticalAlignment="Center">
-                        <Button x:Name="OpenMediaViewerButton" Content="사진 보기" Style="{StaticResource MkSecondaryButtonStyle}" Click="OpenPhotoViewer_OnClick" />
-                        <Button Content="상세" Style="{StaticResource MkSecondaryButtonStyle}" Click="ToggleDetailPanel_OnClick" />
-                    </StackPanel>
-                </Grid>
-            </Border>
         </Grid>
 
         <!-- Gallery-local reusable photo detail. Auto column is zero while collapsed. -->

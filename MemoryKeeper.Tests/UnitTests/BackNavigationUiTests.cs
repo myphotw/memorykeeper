@@ -46,6 +46,21 @@ public sealed class BackNavigationUiTests
         Assert.Contains("? \"여행기록\"", code, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Gallery_BackUiUsesNavigationHistoryAndHidesForTopLevelEntry()
+    {
+        var xaml = LoadSource("MemoryKeeper.App", "Views", "GalleryPage.xaml");
+        var code = LoadSource("MemoryKeeper.App", "Views", "GalleryPage.xaml.cs");
+
+        Assert.Contains("x:Name=\"BackNavigationButton\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Command=\"{Binding GoBackCommand}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Style=\"{StaticResource MkBackNavigationButtonStyle}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Glyph=\"&#xE72B;\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("entry.Kind != NavigationKind.TopLevel", code, StringComparison.Ordinal);
+        Assert.Contains("&& _navigation.CanGoBack", code, StringComparison.Ordinal);
+        Assert.Contains("_navigation.BackEntry?.DisplayLabel", code, StringComparison.Ordinal);
+    }
+
     private static string LoadSource(params string[] parts)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

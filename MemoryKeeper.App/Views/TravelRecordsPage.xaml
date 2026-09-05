@@ -206,7 +206,7 @@
                         </StackPanel>
                         <StackPanel Grid.Column="1" Spacing="4">
                             <Button
-                                AutomationProperties.Name="해외 방문 국가 상세 보기"
+                                AutomationProperties.Name="해외 방문 국가 사진첩에서 보기"
                                 Background="Transparent"
                                 BorderThickness="0"
                                 Command="{Binding OpenForeignCountriesCommand}"
@@ -218,14 +218,32 @@
                                 </StackPanel>
                             </Button>
                         </StackPanel>
-                        <StackPanel Grid.Column="2" Spacing="4">
-                            <TextBlock Text="해외 방문 장소" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
-                            <TextBlock x:Name="StatForeignPlaces" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
-                        </StackPanel>
-                        <StackPanel Grid.Column="3" Spacing="4">
-                            <TextBlock Text="해외 사진" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
-                            <TextBlock x:Name="StatForeignPhotos" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
-                        </StackPanel>
+                        <Button
+                            Grid.Column="2"
+                            AutomationProperties.Name="해외 방문 장소 사진첩에서 보기"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Command="{Binding OpenForeignPlacesCommand}"
+                            HorizontalAlignment="Left"
+                            Padding="0">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="해외 방문 장소" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
+                                <TextBlock x:Name="StatForeignPlaces" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
+                            </StackPanel>
+                        </Button>
+                        <Button
+                            Grid.Column="3"
+                            AutomationProperties.Name="해외 사진 사진첩에서 보기"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Command="{Binding OpenForeignPhotosCommand}"
+                            HorizontalAlignment="Left"
+                            Padding="0">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="해외 사진" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
+                                <TextBlock x:Name="StatForeignPhotos" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
+                            </StackPanel>
+                        </Button>
                     </Grid>
 
                     <TextBlock Text="국내" Style="{StaticResource MkCaptionTextStyle}" FontWeight="SemiBold" Opacity="0.75" Margin="0,8,0,0" />
@@ -234,14 +252,32 @@
                             <TextBlock Text="국내여행 횟수" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
                             <TextBlock x:Name="StatDomesticTrips" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
                         </StackPanel>
-                        <StackPanel Grid.Column="1" Spacing="4">
-                            <TextBlock Text="국내 방문 장소" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
-                            <TextBlock x:Name="StatDomesticPlaces" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
-                        </StackPanel>
-                        <StackPanel Grid.Column="2" Spacing="4">
-                            <TextBlock Text="국내 사진" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
-                            <TextBlock x:Name="StatDomesticPhotos" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
-                        </StackPanel>
+                        <Button
+                            Grid.Column="1"
+                            AutomationProperties.Name="국내 방문 장소 사진첩에서 보기"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Command="{Binding OpenDomesticPlacesCommand}"
+                            HorizontalAlignment="Left"
+                            Padding="0">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="국내 방문 장소" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
+                                <TextBlock x:Name="StatDomesticPlaces" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
+                            </StackPanel>
+                        </Button>
+                        <Button
+                            Grid.Column="2"
+                            AutomationProperties.Name="국내 사진 사진첩에서 보기"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Command="{Binding OpenDomesticPhotosCommand}"
+                            HorizontalAlignment="Left"
+                            Padding="0">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="국내 사진" Style="{StaticResource MkCaptionTextStyle}" Opacity="0.7" />
+                                <TextBlock x:Name="StatDomesticPhotos" Style="{StaticResource MkPlaceNameStyle}" FontSize="22" />
+                            </StackPanel>
+                        </Button>
                     </Grid>
                 </StackPanel>
 

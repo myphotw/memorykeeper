@@ -135,7 +135,7 @@ public partial class TravelRecordsViewModel : ObservableObject
 
     public event EventHandler? OpenVisitRecordRequested;
     public event EventHandler? OpenDetailRequested;
-    public event EventHandler? OpenForeignCountriesRequested;
+    public event EventHandler<GalleryPlaceNavigationRequestedEventArgs>? OpenGalleryRequested;
     public event EventHandler? BackRequested;
 
     public TravelRecordsViewModel(
@@ -280,7 +280,32 @@ public partial class TravelRecordsViewModel : ObservableObject
     private void OpenCountriesDetail() => OpenDetail(TravelRecordsDetailKind.Countries);
 
     [RelayCommand]
-    private void OpenForeignCountries() => OpenForeignCountriesRequested?.Invoke(this, EventArgs.Empty);
+    private void OpenForeignCountries() => RequestGallery(
+        GalleryPlaceScope.International,
+        GalleryPlaceNavigationLevel.Countries);
+
+    [RelayCommand]
+    private void OpenForeignPlaces() => RequestGallery(
+        GalleryPlaceScope.International,
+        GalleryPlaceNavigationLevel.Places);
+
+    [RelayCommand]
+    private void OpenDomesticPlaces() => RequestGallery(
+        GalleryPlaceScope.Domestic,
+        GalleryPlaceNavigationLevel.Places);
+
+    [RelayCommand]
+    private void OpenForeignPhotos() => RequestGallery(
+        GalleryPlaceScope.International,
+        GalleryPlaceNavigationLevel.Photos);
+
+    [RelayCommand]
+    private void OpenDomesticPhotos() => RequestGallery(
+        GalleryPlaceScope.Domestic,
+        GalleryPlaceNavigationLevel.Photos);
+
+    private void RequestGallery(GalleryPlaceScope scope, GalleryPlaceNavigationLevel level) =>
+        OpenGalleryRequested?.Invoke(this, new GalleryPlaceNavigationRequestedEventArgs(scope, level));
 
     [RelayCommand]
     private void OpenFarthestDetail() => OpenDetail(TravelRecordsDetailKind.Farthest);

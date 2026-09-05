@@ -25,11 +25,11 @@ public sealed class TravelCountryListRegressionTests
         Assert.Contains("Text=\"{Binding PhotoCountText}\"", page, StringComparison.Ordinal);
         Assert.Contains("Source=\"{Binding ThumbnailImage}\"", page, StringComparison.Ordinal);
         Assert.Contains("OpenForeignCountriesCommand", travelPage, StringComparison.Ordinal);
-        Assert.Contains("NavigateDrillDown(\"travel-countries\", \"foreign-countries\", \"해외 방문 국가\")", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("galleryFocus.RequestPlaceBrowse(e.Scope, e.Level)", mainWindow, StringComparison.Ordinal);
         Assert.Contains("RequestCountryFilter(country)", mainWindow, StringComparison.Ordinal);
         Assert.Contains("NavigateDrillDown(\"gallery\", $\"country:{country}\", country)", mainWindow, StringComparison.Ordinal);
         Assert.Contains("\"travel-detail\" or \"travel-countries\" or \"travel\" => \"travel\"", mainWindow, StringComparison.Ordinal);
-        Assert.Contains("CountryFilter", gallery, StringComparison.Ordinal);
+        Assert.Contains("GalleryPlaceHierarchyProjection.Build", gallery, StringComparison.Ordinal);
         Assert.Contains("SelectCountryFilterAsync", gallery, StringComparison.Ordinal);
     }
 

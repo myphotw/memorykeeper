@@ -1,7 +1,9 @@
 using MemoryKeeper.App.Diagnostics;
 using MemoryKeeper.App.Models;
 using MemoryKeeper.App.ViewModels;
+using MemoryKeeper.Application.Navigation;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
@@ -16,6 +18,7 @@ public sealed partial class GalleryPage : Page
     private GalleryItem? _pageSelectedItem;
     private ObservableCollection<GalleryItem>? _subscribedItems;
     private readonly PhotoDetailView _photoDetailView;
+    private readonly INavigationService _navigation;
     private bool _detailViewHosted;
     private ScrollViewer? _photoScrollViewer;
 
@@ -27,11 +30,15 @@ public sealed partial class GalleryPage : Page
 
     public GalleryViewModel ViewModel { get; }
 
-    public GalleryPage(GalleryViewModel viewModel, PhotoDetailView photoDetailView)
+    public GalleryPage(
+        GalleryViewModel viewModel,
+        PhotoDetailView photoDetailView,
+        INavigationService navigation)
     {
         GalleryDiagnostics.WriteStep("GalleryPage constructor start");
         ViewModel = viewModel;
         _photoDetailView = photoDetailView;
+        _navigation = navigation;
         _photoDetailView.ConfigurePanelMode();
         DataContext = viewModel;
         try
@@ -61,14 +68,29 @@ public sealed partial class GalleryPage : Page
     private void GalleryPage_OnLoaded(object sender, RoutedEventArgs e)
     {
         GalleryDiagnostics.WriteStep("GalleryPage Loaded");
+        RefreshBackNavigation();
         UpdateEmptyState();
-        RefreshDetail();
         _photoScrollViewer ??= FindDescendant<ScrollViewer>(PhotoGrid);
         if (_photoScrollViewer is not null)
         {
             _photoScrollViewer.ViewChanged -= PhotoScrollViewer_OnViewChanged;
             _photoScrollViewer.ViewChanged += PhotoScrollViewer_OnViewChanged;
         }
+    }
+
+    private void RefreshBackNavigation()
+    {
+        var current = _navigation.Current;
+        var isVisible = current is { } entry
+                        && entry.Kind != NavigationKind.TopLevel
+                        && _navigation.CanGoBack;
+        var label = _navigation.BackEntry?.DisplayLabel;
+        label = string.IsNullOrWhiteSpace(label) ? "뒤로" : label.Trim();
+
+        BackNavigationLabel.Text = label;
+        BackNavigationButton.Visibility = isVisible ? Visibility.Visible : Visibility.Collapsed;
+        ToolTipService.SetToolTip(BackNavigationButton, $"{label}(으)로 돌아가기");
+        AutomationProperties.SetName(BackNavigationButton, $"이전 화면: {label}");
     }
 
     private void PhotoScrollViewer_OnViewChanged(object sender, ScrollViewerViewChangedEventArgs e)
@@ -94,13 +116,10 @@ public sealed partial class GalleryPage : Page
             }
 
             UpdateEmptyState();
-            RefreshDetail();
         }
-        else if (e.PropertyName is nameof(GalleryViewModel.BreadcrumbText)
-                 or nameof(GalleryViewModel.SelectedNode)
-                 or nameof(GalleryViewModel.SelectedItem))
+        else if (e.PropertyName is nameof(GalleryViewModel.SelectedNode))
         {
-            RefreshDetail();
+            UpdateEmptyState();
         }
     }
 
@@ -109,59 +128,24 @@ public sealed partial class GalleryPage : Page
         if (_subscribedItems is not null)
         {
             _subscribedItems.CollectionChanged -= Items_OnCollectionChanged;
-            foreach (var item in _subscribedItems)
-            {
-                item.PropertyChanged -= GalleryItem_OnPropertyChanged;
-            }
         }
 
         _subscribedItems = ViewModel.Items;
         _subscribedItems.CollectionChanged += Items_OnCollectionChanged;
-        foreach (var item in _subscribedItems)
-        {
-            item.PropertyChanged += GalleryItem_OnPropertyChanged;
-        }
     }
 
     private void Items_OnCollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
     {
-        if (e.OldItems is not null)
-        {
-            foreach (GalleryItem item in e.OldItems)
-            {
-                item.PropertyChanged -= GalleryItem_OnPropertyChanged;
-            }
-        }
-
-        if (e.NewItems is not null)
-        {
-            foreach (GalleryItem item in e.NewItems)
-            {
-                item.PropertyChanged += GalleryItem_OnPropertyChanged;
-            }
-        }
-
         UpdateEmptyState();
-        RefreshDetail();
-    }
-
-    private void GalleryItem_OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName is nameof(GalleryItem.ThumbnailImage) or nameof(GalleryItem.IsSelected))
-        {
-            DispatcherQueue.TryEnqueue(RefreshDetail);
-        }
     }
 
     private void UpdateEmptyState()
     {
-        var empty = !ViewModel.IsBusy && ViewModel.Items.Count == 0;
+        var empty = !ViewModel.IsBusy
+                    && ViewModel.SelectedNode is not null
+                    && ViewModel.Items.Count == 0;
         GalleryEmptyState.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
-        PhotoGrid.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;
-        if (empty)
-        {
-            DetailCard.Visibility = Visibility.Collapsed;
-        }
+        PhotoGrid.Visibility = ViewModel.Items.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void Gallery_OnItemClick(object sender, ItemClickEventArgs e)
@@ -188,51 +172,7 @@ public sealed partial class GalleryPage : Page
 
         _pageSelectedItem = item;
         ViewModel.SelectedItem = item;
-        RefreshDetail();
         ApplySelectionVisuals();
-    }
-
-    private void RefreshDetail()
-    {
-        var focus = ViewModel.SelectedItem
-            ?? _pageSelectedItem
-            ?? ViewModel.Items.FirstOrDefault();
-
-        if (focus is null || ViewModel.Items.Count == 0)
-        {
-            DetailCard.Visibility = Visibility.Collapsed;
-            return;
-        }
-
-        DetailCard.Visibility = Visibility.Visible;
-        DetailThumbImage.Source = focus.ThumbnailImage;
-        OpenMediaViewerButton.Content = focus.Media.MediaType == MemoryKeeper.Domain.Enums.MediaType.Video
-            ? "영상 보기"
-            : "사진 보기";
-        DetailFileName.Text = focus.FileName;
-        DetailCapturedAt.Text = focus.CapturedAtText;
-        DetailPlace.Text = ResolvePlaceLabel();
-    }
-
-    private string ResolvePlaceLabel()
-    {
-        var node = ViewModel.SelectedNode;
-        if (node is not null
-            && node.Kind is GalleryTreeNodeKind.Place
-                or GalleryTreeNodeKind.PlaceBrowse
-                or GalleryTreeNodeKind.City
-                or GalleryTreeNodeKind.Country)
-        {
-            return string.IsNullOrWhiteSpace(node.Title) ? "장소 미상" : node.Title;
-        }
-
-        var crumb = ViewModel.BreadcrumbText;
-        if (!string.IsNullOrWhiteSpace(crumb) && !string.Equals(crumb, "사진첩", StringComparison.Ordinal))
-        {
-            return crumb;
-        }
-
-        return "장소 미상";
     }
 
     private void ApplySelectionVisuals()
@@ -305,12 +245,11 @@ public sealed partial class GalleryPage : Page
     private void ImportPhotos_OnClick(object sender, RoutedEventArgs e) =>
         OpenImportRequested?.Invoke(this, EventArgs.Empty);
 
-    private void ToggleDetailPanel_OnClick(object sender, RoutedEventArgs e)
+    private void PhotoDetail_OnClick(object sender, RoutedEventArgs e)
     {
-        var selected = ViewModel.SelectedItem ?? _pageSelectedItem ?? ViewModel.Items.FirstOrDefault();
-        if (selected is not null)
+        if (sender is FrameworkElement { Tag: GalleryItem item })
         {
-            _ = ShowDetailPanelAsync(selected, toggle: true);
+            _ = ShowDetailPanelAsync(item, toggle: true);
         }
     }
 
@@ -323,18 +262,6 @@ public sealed partial class GalleryPage : Page
             ViewModel.OpenPhotoViewerCommand.Execute(item);
             e.Handled = true;
         }
-    }
-
-    private void OpenPhotoViewer_OnClick(object sender, RoutedEventArgs e)
-    {
-        var selected = ViewModel.SelectedItem ?? _pageSelectedItem ?? ViewModel.Items.FirstOrDefault();
-        if (selected is null)
-        {
-            return;
-        }
-
-        ViewModel.CaptureFocusState(GetGridScrollOffset(), selected.MediaId);
-        ViewModel.OpenPhotoViewerCommand.Execute(selected);
     }
 
     private async Task ShowDetailPanelAsync(GalleryItem item, bool toggle)
@@ -441,7 +368,6 @@ public sealed partial class GalleryPage : Page
         }
 
         UpdateEmptyState();
-        RefreshDetail();
         _ = ViewModel.LoadCommand.ExecuteAsync(null);
     }
 

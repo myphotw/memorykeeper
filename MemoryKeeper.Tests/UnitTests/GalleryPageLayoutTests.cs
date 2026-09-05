@@ -11,9 +11,15 @@ public sealed class GalleryPageLayoutTests
         Assert.DoesNotContain("HeroThumbHost", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("HeroThumbImage", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("HeroThumbHost", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("RowDefinitions=\"Auto,*,Auto\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("RowDefinitions=\"Auto,*\"", xaml, StringComparison.Ordinal);
         Assert.Contains("<!-- Photo grid -->", xaml, StringComparison.Ordinal);
         Assert.Contains("<Grid Grid.Row=\"1\">", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("x:Name=\"DetailCard\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("OpenMediaViewerButton", xaml, StringComparison.Ordinal);
+        Assert.Contains("DoubleTapped=\"PhotoCard_OnDoubleTapped\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.OpenPhotoViewerCommand.Execute(item)", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("Text=\"상세\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"PhotoDetail_OnClick\"", xaml, StringComparison.Ordinal);
     }
 
     [Fact]
