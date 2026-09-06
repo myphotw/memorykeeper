@@ -42,6 +42,9 @@ public sealed class FastGallerySummaryDto
 {
     [JsonPropertyName("total_photos")] public int TotalPhotos { get; init; }
     [JsonPropertyName("favorite_count")] public int FavoriteCount { get; init; }
+    [JsonPropertyName("recent_count")] public int RecentCount { get; init; }
+    [JsonPropertyName("pending_count")] public int PendingCount { get; init; }
+    [JsonPropertyName("place_cleanup_count")] public int PlaceCleanupCount { get; init; }
     [JsonPropertyName("gps_count")] public int GpsCount { get; init; }
     [JsonPropertyName("effective_date_min")] public DateOnly? EffectiveDateMin { get; init; }
     [JsonPropertyName("effective_date_max")] public DateOnly? EffectiveDateMax { get; init; }

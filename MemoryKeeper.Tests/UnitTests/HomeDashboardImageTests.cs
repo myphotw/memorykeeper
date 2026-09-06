@@ -58,6 +58,18 @@ public sealed class HomeDashboardImageTests
         Assert.Equal(Origin + "/preview.jpg", photo.FallbackAbsoluteLibraryPath);
     }
 
+    [Fact]
+    public async Task FastGallery_UsesAuthoritativePlaceCleanupCountForHomeAction()
+    {
+        var api = new FastGalleryStub(
+            new FastGalleryPhotoPageDto(),
+            new FastGallerySummaryDto { PlaceCleanupCount = 1721 });
+
+        var dashboard = await GalleryBackendBridge.GetFastHomeDashboardAsync(api, Origin);
+
+        Assert.Equal(1721, dashboard.PendingSummary.Total);
+    }
+
     [Theory]
     [InlineData("/thumb.jpg", "/thumb.jpg")]
     [InlineData(null, "/preview.jpg")]
@@ -116,7 +128,9 @@ public sealed class HomeDashboardImageTests
         Assert.Same(shell.PendingSummary, updated.PendingSummary);
     }
 
-    private sealed class FastGalleryStub(FastGalleryPhotoPageDto page) : IFastGalleryApiRepository
+    private sealed class FastGalleryStub(
+        FastGalleryPhotoPageDto page,
+        FastGallerySummaryDto? summary = null) : IFastGalleryApiRepository
     {
         public int PageRequests { get; private set; }
         public Task<FastGalleryPhotoPageDto> GetPhotosAsync(FastGalleryPhotoQuery query, CancellationToken cancellationToken = default)
@@ -126,7 +140,8 @@ public sealed class HomeDashboardImageTests
             PageRequests++;
             return Task.FromResult(page);
         }
-        public Task<FastGallerySummaryDto> GetSummaryAsync(CancellationToken cancellationToken = default) => Task.FromResult(new FastGallerySummaryDto());
+        public Task<FastGallerySummaryDto> GetSummaryAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(summary ?? new FastGallerySummaryDto());
         public Task<FastGalleryHierarchyDto> GetHierarchyAsync(CancellationToken cancellationToken = default) => throw new InvalidOperationException("Home must not load hierarchy.");
     }
 

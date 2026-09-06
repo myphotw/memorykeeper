@@ -230,6 +230,32 @@ public sealed class MemoryKeeperWriteApiRepositoryTests
     }
 
     [Fact]
+    public async Task PlaceCleanup_UsesPagedEndpointAndPreservesExistingPlaceIdentity()
+    {
+        const string cleanupKey = "GET /api/memorykeeper/place-cleanup?page=2&page_size=50";
+        var existingPlaceId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        var handler = new RecordingHandler
+        {
+            Responses =
+            {
+                [cleanupKey] = $"{{\"items\":[{{\"file_id\":\"{FileId}\",\"thumbnail_url\":\"/cleanup-thumb.jpg\",\"memorykeeper_place_id\":\"{existingPlaceId:D}\",\"place_revision\":11}}],\"total\":1721,\"page\":2,\"page_size\":50}}",
+            },
+        };
+        using var provider = BuildProvider(handler);
+        var repository = provider.GetRequiredService<IMemoryKeeperWriteApiRepository>();
+
+        var result = await repository.GetPlaceCleanupAsync(page: 2, pageSize: 50);
+
+        var item = Assert.Single(result.Items);
+        Assert.Equal(1721, result.Total);
+        Assert.Equal(2, result.Page);
+        Assert.Equal(50, result.PageSize);
+        Assert.Equal(existingPlaceId, item.MemorykeeperPlaceId);
+        Assert.Equal("http://localhost:8000/cleanup-thumb.jpg", item.ThumbnailUrl);
+        Assert.Contains(cleanupKey, handler.Requests);
+    }
+
+    [Fact]
     public async Task Conflict_IsExposedToCallerForRefreshFlow()
     {
         var key = $"PATCH /api/memorykeeper/files/{FileId}/metadata";

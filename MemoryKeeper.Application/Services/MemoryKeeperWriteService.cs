@@ -13,6 +13,7 @@ public sealed class MemoryKeeperWriteService
     private readonly IMemoryKeeperWriteApiRepository _repository;
     private readonly ICatalogInvalidation _invalidation;
     private readonly Dictionary<Guid, (string FileId, int PlaceRevision)> _pendingRevisions = [];
+    private readonly Dictionary<Guid, PendingMemoryItemDto> _placeCleanupItems = [];
 
     public MemoryKeeperWriteService(
         IMemoryKeeperWriteApiRepository repository,
@@ -346,6 +347,44 @@ public sealed class MemoryKeeperWriteService
             _pendingRevisions[item.MediaId] = (item.BackendFileId, item.PlaceRevision);
         }
 
+        return BuildPendingOverview(mapped, pending.Total, pending.Page, pending.PageSize);
+    }
+
+    public async Task<PendingMemoryOverviewDto> GetPlaceCleanupMemoriesAsync(
+        int page = 1,
+        int pageSize = 50,
+        CancellationToken cancellationToken = default)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 200);
+        var response = await _repository.GetPlaceCleanupAsync(page, pageSize, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (page == 1)
+        {
+            _placeCleanupItems.Clear();
+            _pendingRevisions.Clear();
+        }
+
+        foreach (var item in response.Items.Select(MapPending))
+        {
+            _placeCleanupItems[item.MediaId] = item;
+            _pendingRevisions[item.MediaId] = (item.BackendFileId, item.PlaceRevision);
+        }
+
+        return BuildPendingOverview(
+            _placeCleanupItems.Values.ToList(),
+            response.Total,
+            response.Page == 0 ? page : response.Page,
+            response.PageSize == 0 ? pageSize : response.PageSize);
+    }
+
+    private static PendingMemoryOverviewDto BuildPendingOverview(
+        IReadOnlyList<PendingMemoryItemDto> mapped,
+        int total,
+        int page,
+        int pageSize)
+    {
         var withGps = mapped
             .Where(item => item.HasGps)
             .OrderByDescending(item => item.CapturedAt)
@@ -358,8 +397,12 @@ public sealed class MemoryKeeperWriteService
             .ToList();
         return new PendingMemoryOverviewDto
         {
+            Items = mapped,
             ReclassificationCandidates = withGps,
             Groups = groups,
+            Total = total,
+            Page = page,
+            PageSize = pageSize,
         };
     }
 
@@ -371,7 +414,7 @@ public sealed class MemoryKeeperWriteService
         var missing = selected.Where(id => !_pendingRevisions.ContainsKey(id)).ToList();
         if (missing.Count > 0)
         {
-            throw new InvalidOperationException("미완성 추억 목록이 변경되었습니다. 목록을 새로 불러온 뒤 다시 시도하세요.");
+            throw new InvalidOperationException("장소 정리 목록이 변경되었습니다. 목록을 새로 불러온 뒤 다시 시도하세요.");
         }
 
         var fileIds = selected.Select(id => _pendingRevisions[id].FileId).ToList();
@@ -385,7 +428,21 @@ public sealed class MemoryKeeperWriteService
             MemorykeeperPlaceId = request.PlaceId,
             ExpectedRevisions = revisions,
         }, cancellationToken).ConfigureAwait(false);
-        foreach (var mediaId in selected)
+        var mediaIdByFileId = selected.ToDictionary(
+            id => _pendingRevisions[id].FileId,
+            id => id,
+            StringComparer.OrdinalIgnoreCase);
+        var updatedMediaIds = result.Items
+            .Where(item => mediaIdByFileId.ContainsKey(item.FileId))
+            .Select(item => mediaIdByFileId[item.FileId])
+            .Distinct()
+            .ToList();
+        if (updatedMediaIds.Count == 0 && result.AssignedCount == selected.Count)
+        {
+            updatedMediaIds = selected;
+        }
+
+        foreach (var mediaId in updatedMediaIds)
         {
             _pendingRevisions.Remove(mediaId);
         }
@@ -395,6 +452,7 @@ public sealed class MemoryKeeperWriteService
         {
             PlaceId = request.PlaceId,
             UpdatedCount = result.AssignedCount,
+            UpdatedMediaIds = updatedMediaIds,
         };
     }
 
@@ -412,6 +470,7 @@ public sealed class MemoryKeeperWriteService
         City = item.City ?? string.Empty,
         District = item.District ?? string.Empty,
         RawPlaceName = item.PlaceName ?? string.Empty,
+        MemorykeeperPlaceId = item.MemorykeeperPlaceId,
         PlaceRevision = item.PlaceRevision,
         SuggestedPlaceId = item.SuggestedPlaceId,
         SuggestedPlaceName = item.SuggestedPlaceName ?? string.Empty,

@@ -20,5 +20,6 @@ public interface IMemoryKeeperWriteApiRepository
     Task<MemoryKeeperFileTagMutationResponse> AssignFileTagAsync(string fileId, int tagId, int expectedRevision, CancellationToken cancellationToken = default);
     Task<MemoryKeeperFileTagMutationResponse> RemoveFileTagAsync(string fileId, int tagId, int expectedRevision, CancellationToken cancellationToken = default);
     Task<MemoryKeeperPendingListDto> GetPendingAsync(bool includeSuggestions = true, CancellationToken cancellationToken = default);
+    Task<MemoryKeeperPendingListDto> GetPlaceCleanupAsync(int page = 1, int pageSize = 50, CancellationToken cancellationToken = default);
     Task<MemoryKeeperPendingAssignResponse> AssignPendingPlaceAsync(MemoryKeeperPendingAssignRequest request, CancellationToken cancellationToken = default);
 }

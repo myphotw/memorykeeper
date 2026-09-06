@@ -58,9 +58,12 @@ public sealed partial class PendingMemoryView : UserControl
     {
         if (sender is FrameworkElement { Tag: PendingMemoryMediaItem item })
         {
-            ViewModel.OpenPhotoDetailCommand.Execute(item);
+            ViewModel.ActivateMediaCommand.Execute(item);
         }
     }
+
+    private void IncludeCheckBox_OnTapped(object sender, TappedRoutedEventArgs e) =>
+        e.Handled = true;
 
     private void PendingMediaDetail_OnClick(object sender, RoutedEventArgs e)
     {
@@ -77,9 +80,8 @@ public sealed partial class PendingMemoryView : UserControl
 
     private async void OnOpenMemoRequested(object? sender, EventArgs e)
     {
-        var item = ViewModel.SelectedGroupMedia.FirstOrDefault(media => media.IsIncluded)
-            ?? ViewModel.SelectedGroupMedia.FirstOrDefault()
-            ?? ViewModel.ReclassificationCandidates.FirstOrDefault(media => media.IsIncluded);
+        var item = ViewModel.ActiveMediaItems.FirstOrDefault(media => media.IsIncluded)
+            ?? ViewModel.ActiveMediaItems.FirstOrDefault();
         if (item is null)
         {
             await UserFeedback.ShowInfoAsync(XamlRoot, "메모", "사진을 선택하세요.");

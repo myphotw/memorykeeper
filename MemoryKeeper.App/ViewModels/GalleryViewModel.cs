@@ -122,6 +122,9 @@ public partial class GalleryViewModel : ObservableObject
     private async Task LoadAsync()
     {
         GalleryDiagnostics.WriteStep("GalleryViewModel.LoadAsync start");
+        // LoadAsync is invoked after catalog invalidation as well as first navigation.
+        // Never reuse a place hierarchy that may predate an assignment/remap.
+        _fastHierarchy = null;
         var restore = _galleryFocusState.ConsumeRestore();
         if (restore is not null)
         {
@@ -411,14 +414,14 @@ public partial class GalleryViewModel : ObservableObject
         {
             Kind = GalleryTreeNodeKind.Recent,
             Title = "최근 등록",
-            Count = 0,
+            Count = summary.RecentCount,
             Depth = 0,
         });
         roots.Add(new GalleryTreeNode
         {
             Kind = GalleryTreeNodeKind.Pending,
-            Title = "미완성 추억",
-            Count = 0,
+            Title = "장소 정리 필요",
+            Count = summary.PlaceCleanupCount,
             Depth = 0,
         });
 
@@ -1035,7 +1038,7 @@ public partial class GalleryViewModel : ObservableObject
                 parts.Add("최근 등록");
                 break;
             case GalleryTreeNodeKind.Pending:
-                parts.Add("미완성 추억");
+                parts.Add("장소 정리 필요");
                 break;
             case GalleryTreeNodeKind.Year:
                 parts.Add(node.Year?.ToString() ?? node.Title);

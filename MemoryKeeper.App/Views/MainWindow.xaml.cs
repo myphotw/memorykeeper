@@ -389,7 +389,7 @@ public sealed partial class MainWindow : Window
                 "travel-countries" => "해외 방문 국가",
                 "photo-viewer" or "photo" => "사진",
                 "favorites" => "즐겨찾기",
-                "pending" => "미완성 추억",
+                "pending" => "장소 정리 필요",
                 "import" => "사진 등록",
                 "place" => "장소 관리",
                 "tag" => "태그 관리",

@@ -180,6 +180,285 @@ public sealed class MemoryKeeperWriteServiceTests
     }
 
     [Fact]
+    public async Task PlaceCleanup_AccumulatesPagesAndAllowsRemappingAnExistingPlaceItem()
+    {
+        var existingPlaceId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        var repository = new FakeRepository
+        {
+            PlaceCleanupPages =
+            {
+                [1] = new MemoryKeeperPendingListDto
+                {
+                    Items = [new MemoryKeeperPendingItemDto { FileId = FileId, PlaceRevision = 7 }],
+                    Total = 2,
+                    Page = 1,
+                    PageSize = 1,
+                },
+                [2] = new MemoryKeeperPendingListDto
+                {
+                    Items =
+                    [
+                        new MemoryKeeperPendingItemDto
+                        {
+                            FileId = SecondFileId,
+                            GpsLat = 37.5,
+                            GpsLon = 127.0,
+                            MemorykeeperPlaceId = existingPlaceId,
+                            PlaceRevision = 8,
+                        },
+                    ],
+                    Total = 2,
+                    Page = 2,
+                    PageSize = 1,
+                },
+            },
+        };
+        var service = new MemoryKeeperWriteService(repository, new CatalogInvalidation());
+
+        var first = await service.GetPlaceCleanupMemoriesAsync(page: 1, pageSize: 1);
+        var second = await service.GetPlaceCleanupMemoriesAsync(page: 2, pageSize: 1);
+
+        Assert.True(first.HasMore);
+        Assert.False(second.HasMore);
+        Assert.Equal(2, second.Items.Count);
+        Assert.Equal(existingPlaceId, second.Items.Single(item => item.HasGps).MemorykeeperPlaceId);
+        Assert.Equal([(1, 1), (2, 1)], repository.PlaceCleanupRequests);
+
+        await service.AssignPlaceAsync(new AssignMediaPlaceRequest
+        {
+            MediaIds = [BackendFileIdCodec.ToGuid(SecondFileId)],
+            PlaceId = PlaceId,
+        });
+
+        Assert.Equal(8, repository.LastPendingAssign!.ExpectedRevisions[SecondFileId]);
+    }
+
+    [Fact]
+    public async Task PlaceCleanup_PartialAssignmentReportsOnlySuccessfulItemsAndKeepsFailedRevision()
+    {
+        var repository = new FakeRepository
+        {
+            PlaceCleanupPages =
+            {
+                [1] = new MemoryKeeperPendingListDto
+                {
+                    Items =
+                    [
+                        new MemoryKeeperPendingItemDto { FileId = FileId, PlaceRevision = 7 },
+                        new MemoryKeeperPendingItemDto { FileId = SecondFileId, PlaceRevision = 8 },
+                    ],
+                    Total = 2,
+                    Page = 1,
+                    PageSize = 50,
+                },
+            },
+            PendingAssignResponse = new MemoryKeeperPendingAssignResponse
+            {
+                Items = [new MemoryKeeperFilePlaceUpdateApiResult { FileId = FileId, PlaceRevision = 8 }],
+                AssignedCount = 1,
+            },
+        };
+        var service = new MemoryKeeperWriteService(repository, new CatalogInvalidation());
+        await service.GetPlaceCleanupMemoriesAsync();
+
+        var result = await service.AssignPlaceAsync(new AssignMediaPlaceRequest
+        {
+            MediaIds = [MediaId, BackendFileIdCodec.ToGuid(SecondFileId)],
+            PlaceId = PlaceId,
+        });
+
+        Assert.Equal([MediaId], result.UpdatedMediaIds);
+
+        await service.AssignPlaceAsync(new AssignMediaPlaceRequest
+        {
+            MediaIds = [BackendFileIdCodec.ToGuid(SecondFileId)],
+            PlaceId = PlaceId,
+        });
+        Assert.Equal(8, repository.LastPendingAssign!.ExpectedRevisions[SecondFileId]);
+    }
+
+    [Fact]
+    public async Task PlaceCleanup_FirstPageRefreshClearsAccumulatedStaleItems()
+    {
+        var repository = new FakeRepository
+        {
+            PlaceCleanupPages =
+            {
+                [1] = new MemoryKeeperPendingListDto
+                {
+                    Items = [new MemoryKeeperPendingItemDto { FileId = FileId }],
+                    Total = 2,
+                    Page = 1,
+                    PageSize = 1,
+                },
+                [2] = new MemoryKeeperPendingListDto
+                {
+                    Items = [new MemoryKeeperPendingItemDto { FileId = SecondFileId }],
+                    Total = 2,
+                    Page = 2,
+                    PageSize = 1,
+                },
+            },
+        };
+        var service = new MemoryKeeperWriteService(repository, new CatalogInvalidation());
+        await service.GetPlaceCleanupMemoriesAsync(page: 1, pageSize: 1);
+        var accumulated = await service.GetPlaceCleanupMemoriesAsync(page: 2, pageSize: 1);
+        Assert.Equal(2, accumulated.Items.Count);
+
+        repository.PlaceCleanupPages[1] = new MemoryKeeperPendingListDto
+        {
+            Items = [new MemoryKeeperPendingItemDto { FileId = SecondFileId }],
+            Total = 1,
+            Page = 1,
+            PageSize = 1,
+        };
+        var refreshed = await service.GetPlaceCleanupMemoriesAsync(page: 1, pageSize: 1);
+
+        Assert.Single(refreshed.Items);
+        Assert.Equal(BackendFileIdCodec.ToGuid(SecondFileId), refreshed.Items[0].MediaId);
+        Assert.False(refreshed.HasMore);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(10)]
+    public async Task PlaceCleanup_FirstPageRefreshRefillsShiftedPageBoundary(int processedCount)
+    {
+        var repository = new FakeRepository
+        {
+            PlaceCleanupPages =
+            {
+                [1] = CreateCleanupPage(first: 1, count: 50, total: 100, page: 1),
+            },
+        };
+        var service = new MemoryKeeperWriteService(repository, new CatalogInvalidation());
+        await service.GetPlaceCleanupMemoriesAsync(page: 1, pageSize: 50);
+
+        repository.PlaceCleanupPages[1] = CreateCleanupPage(
+            first: processedCount + 1,
+            count: 50,
+            total: 100 - processedCount,
+            page: 1);
+        var refreshed = await service.GetPlaceCleanupMemoriesAsync(page: 1, pageSize: 50);
+
+        Assert.Equal(50, refreshed.Items.Count);
+        Assert.Equal(
+            BackendFileIdCodec.ToGuid(CleanupFileId(processedCount + 1)),
+            refreshed.Items[0].MediaId);
+        Assert.Equal(
+            BackendFileIdCodec.ToGuid(CleanupFileId(processedCount + 50)),
+            refreshed.Items[^1].MediaId);
+        Assert.True(refreshed.HasMore);
+    }
+
+    [Fact]
+    public async Task PlaceCleanup_FirstPageBelowPageSizeReportsCompleteSnapshot()
+    {
+        var repository = new FakeRepository
+        {
+            PlaceCleanupPages =
+            {
+                [1] = CreateCleanupPage(first: 1, count: 37, total: 37, page: 1),
+            },
+        };
+        var service = new MemoryKeeperWriteService(repository, new CatalogInvalidation());
+
+        var overview = await service.GetPlaceCleanupMemoriesAsync(page: 1, pageSize: 50);
+
+        Assert.Equal(37, overview.Items.Count);
+        Assert.Equal(37, overview.Total);
+        Assert.False(overview.HasMore);
+    }
+
+    [Fact]
+    public async Task PlaceCleanup_RefreshAfterAccumulatedPagesRestartsPaginationWithoutDuplicates()
+    {
+        var repository = new FakeRepository
+        {
+            PlaceCleanupPages =
+            {
+                [1] = CreateCleanupPage(first: 1, count: 50, total: 100, page: 1),
+                [2] = CreateCleanupPage(first: 51, count: 50, total: 100, page: 2),
+            },
+        };
+        var service = new MemoryKeeperWriteService(repository, new CatalogInvalidation());
+        await service.GetPlaceCleanupMemoriesAsync(page: 1, pageSize: 50);
+        var oldAccumulated = await service.GetPlaceCleanupMemoriesAsync(page: 2, pageSize: 50);
+        Assert.Equal(100, oldAccumulated.Items.Count);
+
+        repository.PlaceCleanupPages[1] = CreateCleanupPage(first: 11, count: 50, total: 100, page: 1);
+        repository.PlaceCleanupPages[2] = CreateCleanupPage(first: 61, count: 50, total: 100, page: 2);
+
+        var refreshed = await service.GetPlaceCleanupMemoriesAsync(page: 1, pageSize: 50);
+        var newAccumulated = await service.GetPlaceCleanupMemoriesAsync(page: 2, pageSize: 50);
+
+        Assert.Equal(50, refreshed.Items.Count);
+        Assert.Equal(100, newAccumulated.Items.Count);
+        Assert.Equal(100, newAccumulated.Items.Select(item => item.MediaId).Distinct().Count());
+        Assert.DoesNotContain(
+            BackendFileIdCodec.ToGuid(CleanupFileId(1)),
+            newAccumulated.Items.Select(item => item.MediaId));
+        Assert.Contains(
+            BackendFileIdCodec.ToGuid(CleanupFileId(110)),
+            newAccumulated.Items.Select(item => item.MediaId));
+    }
+
+    [Fact]
+    public void PendingDisplayGeography_UsesRegisteredPlaceAndFallsBackPerField()
+    {
+        var raw = new PendingMemoryItemDto
+        {
+            BackendFileId = FileId,
+            MediaId = MediaId,
+            Country = "원시 국가",
+            Province = "원시 시도",
+            City = "원시 도시",
+            District = "원시 구",
+            RawPlaceName = "원시 장소",
+            MemorykeeperPlaceId = PlaceId,
+            PlaceRevision = 7,
+        };
+        var registeredPlace = new PlaceDto
+        {
+            Id = PlaceId,
+            Country = "대한민국",
+            City = "서울특별시",
+            DisplayName = "집",
+        };
+
+        var effective = raw.WithEffectiveGeography(registeredPlace);
+
+        Assert.Equal("대한민국", effective.Country);
+        Assert.Equal("서울특별시", effective.Province);
+        Assert.Equal("서울특별시", effective.City);
+        Assert.Equal("원시 구", effective.District);
+        Assert.Equal("집", effective.RawPlaceName);
+        Assert.Equal("원시 국가", raw.Country);
+
+        var fallback = raw.WithEffectiveGeography(new PlaceDto { Id = PlaceId });
+        Assert.Equal("원시 국가", fallback.Country);
+        Assert.Equal("원시 도시", fallback.Province);
+        Assert.Equal("원시 도시", fallback.City);
+        Assert.Equal("원시 구", fallback.District);
+        Assert.Equal("원시 장소", fallback.RawPlaceName);
+    }
+
+    [Fact]
+    public void PendingGroupLocation_DoesNotRepresentMixedEffectivePlacesAsTheFirstItem()
+    {
+        var locations = new[]
+        {
+            new PendingMemoryItemDto { Country = "대한민국", City = "서울특별시", RawPlaceName = "집" },
+            new PendingMemoryItemDto { Country = "일본", City = "도쿄", RawPlaceName = "호텔" },
+        };
+
+        Assert.Equal("여러 장소", PendingMemoryGroupDto.GetEffectiveLocationSummary(locations));
+        Assert.Equal(
+            "대한민국 서울특별시 집",
+            PendingMemoryGroupDto.GetEffectiveLocationSummary([locations[0], locations[0]]));
+    }
+
+    [Fact]
     public async Task TagRelationUsesIntegerIdentityAndMetadataRevisionSequence()
     {
         var repository = new FakeRepository();
@@ -191,6 +470,28 @@ public sealed class MemoryKeeperWriteServiceTests
         Assert.Equal(5, revision);
         Assert.Equal([(42, 3), (42, 4)], repository.FileTagMutations);
     }
+
+    private static MemoryKeeperPendingListDto CreateCleanupPage(
+        int first,
+        int count,
+        int total,
+        int page,
+        int pageSize = 50) => new()
+    {
+        Items = Enumerable.Range(first, count)
+            .Select(index => new MemoryKeeperPendingItemDto
+            {
+                FileId = CleanupFileId(index),
+                PlaceRevision = index,
+            })
+            .ToList(),
+        Total = total,
+        Page = page,
+        PageSize = pageSize,
+    };
+
+    private static string CleanupFileId(int index) =>
+        $"{index:x8}{new string('a', 56)}";
 
     [Fact]
     public async Task FileCatalogTagRestoreAndHide_ChainMetadataRevisionAndInvalidateEveryTagSurface()
@@ -253,6 +554,9 @@ public sealed class MemoryKeeperWriteServiceTests
         public List<int> MetadataExpectedRevisions { get; } = [];
         public List<MemoryKeeperFileMetadataPatchRequest> MetadataRequests { get; } = [];
         public MemoryKeeperPendingListDto Pending { get; set; } = new();
+        public Dictionary<int, MemoryKeeperPendingListDto> PlaceCleanupPages { get; } = [];
+        public List<(int Page, int PageSize)> PlaceCleanupRequests { get; } = [];
+        public MemoryKeeperPendingAssignResponse? PendingAssignResponse { get; set; }
         public MemoryKeeperPendingAssignRequest? LastPendingAssign { get; private set; }
         public List<(int TagId, int Revision)> FileTagMutations { get; } = [];
         public List<(string Identity, int Revision, bool Hidden)> FileCatalogTagMutations { get; } = [];
@@ -279,10 +583,19 @@ public sealed class MemoryKeeperWriteServiceTests
         public Task<MemoryKeeperPendingListDto> GetPendingAsync(bool includeSuggestions = true, CancellationToken cancellationToken = default) =>
             Task.FromResult(Pending);
 
+        public Task<MemoryKeeperPendingListDto> GetPlaceCleanupAsync(int page = 1, int pageSize = 50, CancellationToken cancellationToken = default)
+        {
+            PlaceCleanupRequests.Add((page, pageSize));
+            return Task.FromResult(PlaceCleanupPages.TryGetValue(page, out var response)
+                ? response
+                : new MemoryKeeperPendingListDto { Page = page, PageSize = pageSize });
+        }
+
         public Task<MemoryKeeperPendingAssignResponse> AssignPendingPlaceAsync(MemoryKeeperPendingAssignRequest request, CancellationToken cancellationToken = default)
         {
             LastPendingAssign = request;
-            return Task.FromResult(new MemoryKeeperPendingAssignResponse { AssignedCount = request.FileIds.Count });
+            return Task.FromResult(PendingAssignResponse
+                ?? new MemoryKeeperPendingAssignResponse { AssignedCount = request.FileIds.Count });
         }
 
         public Task<MemoryKeeperFileTagMutationResponse> AssignFileTagAsync(string fileId, int tagId, int expectedRevision, CancellationToken cancellationToken = default)

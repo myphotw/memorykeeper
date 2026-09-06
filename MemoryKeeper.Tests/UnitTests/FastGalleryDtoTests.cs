@@ -10,6 +10,31 @@ namespace MemoryKeeper.Tests.UnitTests;
 public sealed class FastGalleryDtoTests
 {
     [Fact]
+    public void Summary_DeserializesShortcutCounts()
+    {
+        const string json = """{"total_photos":8110,"favorite_count":0,"recent_count":48,"pending_count":1594,"place_cleanup_count":1721}""";
+
+        var summary = JsonSerializer.Deserialize<FastGallerySummaryDto>(json)!;
+
+        Assert.Equal(8110, summary.TotalPhotos);
+        Assert.Equal(0, summary.FavoriteCount);
+        Assert.Equal(48, summary.RecentCount);
+        Assert.Equal(1594, summary.PendingCount);
+        Assert.Equal(1721, summary.PlaceCleanupCount);
+    }
+
+    [Fact]
+    public void Summary_OlderPayloadDefaultsAdditiveShortcutCountsToZero()
+    {
+        var summary = JsonSerializer.Deserialize<FastGallerySummaryDto>("{\"total_photos\":42}")!;
+
+        Assert.Equal(42, summary.TotalPhotos);
+        Assert.Equal(0, summary.RecentCount);
+        Assert.Equal(0, summary.PendingCount);
+        Assert.Equal(0, summary.PlaceCleanupCount);
+    }
+
+    [Fact]
     public void PhotosPage_DeserializesOpaqueCursorAndEffectiveDate()
     {
         const string json = """{"items":[{"common_file_id":42,"file_id":"000000000000002a","filename":"a.jpg","thumbnail_url":"/api/common/gallery/000000000000002a/thumbnail","preview_url":"/api/common/gallery/000000000000002a/preview","favorite":true,"has_gps":true,"effective_capture_datetime":"2025-01-02T03:04:05+09:00","effective_capture_date":"2025-01-02","effective_capture_year":2025,"date_basis":"EXIF"}],"next_cursor":"opaque+/=","has_more":true,"sync_cursor":null}""";

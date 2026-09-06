@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using MemoryKeeper.App.Diagnostics;
 using MemoryKeeper.App.Models;
 using MemoryKeeper.App.Services;
 using MemoryKeeper.Application;
@@ -19,6 +20,7 @@ namespace MemoryKeeper.App.ViewModels;
 
 public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrationDialogViewModel
 {
+    private const int CleanupPageSize = 50;
     private readonly MemoryKeeperWriteService _pendingMemoryService;
     private readonly MemoryKeeperPlaceService _placeService;
     private readonly IGalleryApiRepository _galleryApiRepository;
@@ -29,6 +31,10 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
     private readonly DispatcherQueue _dispatcherQueue;
     private CancellationTokenSource? _thumbnailCts;
     private IReadOnlyList<PendingMemoryMediaItem> _mediaPropertySources = [];
+    private IReadOnlyList<PendingMemoryMediaItem> _loadedMediaItems = [];
+    private IReadOnlyDictionary<Guid, PlaceDto> _registeredPlacesById =
+        new Dictionary<Guid, PlaceDto>();
+    private int _cleanupPage;
 
     [ObservableProperty]
     private ObservableCollection<PendingMemoryGroupItem> groups = [];
@@ -49,7 +55,18 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
     private PlaceDto? selectedPlace;
 
     [ObservableProperty]
-    private string statusMessage = "미완성 추억을 불러오세요.";
+    private string statusMessage = "장소 정리 목록을 불러오세요.";
+
+    [ObservableProperty]
+    private int cleanupTotal;
+
+    [ObservableProperty]
+    private int cleanupLoadedCount;
+
+    [ObservableProperty]
+    private bool canLoadMoreCleanup;
+
+    public string CleanupProgressText => $"{CleanupLoadedCount:N0}/{CleanupTotal:N0}장";
 
     [ObservableProperty]
     private bool isBusy;
@@ -153,15 +170,19 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
 
     public string ActiveMediaSectionTitle =>
         IsGpsSectionSelected
-            ? "GPS 있음 · 장소 미등록 (체크 해제 시 제외)"
-            : "그룹 사진 (체크 해제 시 제외)";
+            ? "GPS 있음 · 장소 정리 필요 (체크 해제 시 제외)"
+            : SelectedGroup is not null
+                ? "장소 정리 그룹 사진 (체크 해제 시 제외)"
+                : "전체 장소 정리 사진 (체크 해제 시 제외)";
 
     public int IncludedCount =>
         ActiveMediaItems.Count(item => item.IsIncluded);
 
     public bool HasSelectionForActions => IncludedCount > 0;
 
-    /// <summary>Pending memories are always PlaceID-null — accent the register button.</summary>
+    public bool IsSelectionMode => HasSelectionForActions;
+
+    /// <summary>Selected cleanup items need place registration or remapping.</summary>
     public bool EmphasizePlaceRegistration => HasSelectionForActions;
 
     public event EventHandler? OpenPlaceRegistrationRequested;
@@ -206,23 +227,11 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
 
     public IReadOnlyList<Guid> GetSelectedMediaIdsForPlaceRegistration()
     {
-        var included = ActiveMediaItems
+        return ActiveMediaItems
             .Where(item => item.IsIncluded)
             .Select(item => item.MediaId)
             .Distinct()
             .ToList();
-
-        if (included.Count > 0)
-        {
-            return included;
-        }
-
-        if (ActiveMediaItems.Count > 0)
-        {
-            return ActiveMediaItems.Select(item => item.MediaId).Distinct().ToList();
-        }
-
-        return [];
     }
 
     partial void OnSelectedGroupChanged(PendingMemoryGroupItem? value)
@@ -234,6 +243,7 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
             ActiveMediaItems = SelectedGroupMedia;
             ResubscribeMediaPropertyChanged();
             NotifySelectionChanged();
+            OnPropertyChanged(nameof(ActiveMediaSectionTitle));
             _ = LoadThumbnailsAsync(SelectedGroupMedia);
             return;
         }
@@ -241,10 +251,30 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
         if (!IsGpsSectionSelected)
         {
             SelectedGroupMedia = [];
-            ActiveMediaItems = [];
+            ActiveMediaItems = new ObservableCollection<PendingMemoryMediaItem>(_loadedMediaItems);
             ResubscribeMediaPropertyChanged();
             NotifySelectionChanged();
+            OnPropertyChanged(nameof(ActiveMediaSectionTitle));
+            _ = LoadThumbnailsAsync(ActiveMediaItems);
         }
+    }
+
+    [RelayCommand]
+    private void SelectAllCleanup()
+    {
+        IsGpsSectionSelected = false;
+        if (SelectedGroup is not null)
+        {
+            SelectedGroup = null;
+            return;
+        }
+
+        SelectedGroupMedia = [];
+        ActiveMediaItems = new ObservableCollection<PendingMemoryMediaItem>(_loadedMediaItems);
+        ResubscribeMediaPropertyChanged();
+        NotifySelectionChanged();
+        OnPropertyChanged(nameof(ActiveMediaSectionTitle));
+        _ = LoadThumbnailsAsync(ActiveMediaItems);
     }
 
     [RelayCommand]
@@ -261,6 +291,7 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
             SelectedGroup = null;
         }
 
+        SelectedGroupMedia = [];
         ActiveMediaItems = ReclassificationCandidates;
         ResubscribeMediaPropertyChanged();
         NotifySelectionChanged();
@@ -275,16 +306,32 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
     }
 
     [RelayCommand]
-    private void OpenPhotoDetail(PendingMemoryMediaItem? item)
+    private async Task LoadMoreCleanupAsync()
     {
-        if (item is null)
+        if (!CanLoadMoreCleanup)
         {
             return;
         }
 
-        var playlist = SelectedGroupMedia
+        await RunBusyAsync(async () =>
+        {
+            var overview = await _pendingMemoryService.GetPlaceCleanupMemoriesAsync(
+                _cleanupPage + 1,
+                CleanupPageSize);
+            ApplyOverview(overview, preserveSelection: true);
+        });
+    }
+
+    [RelayCommand]
+    private void OpenPhotoDetail(PendingMemoryMediaItem? item)
+    {
+        if (item is null || IsSelectionMode)
+        {
+            return;
+        }
+
+        var playlist = ActiveMediaItems
             .Select(media => media.MediaId)
-            .Concat(ReclassificationCandidates.Select(media => media.MediaId))
             .Distinct()
             .ToList();
         if (playlist.Count == 0)
@@ -296,12 +343,27 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
     }
 
     [RelayCommand]
+    private void ActivateMedia(PendingMemoryMediaItem? item)
+    {
+        if (item is null)
+        {
+            return;
+        }
+
+        if (IsSelectionMode)
+        {
+            ToggleInclude(item);
+            return;
+        }
+
+        OpenPhotoDetail(item);
+    }
+
+    [RelayCommand]
     private void OpenSelectedPhotoDetail()
     {
-        var item = SelectedGroupMedia.FirstOrDefault(media => media.IsIncluded)
-            ?? SelectedGroupMedia.FirstOrDefault()
-            ?? ReclassificationCandidates.FirstOrDefault(media => media.IsIncluded)
-            ?? ReclassificationCandidates.FirstOrDefault();
+        var item = ActiveMediaItems.FirstOrDefault(media => media.IsIncluded)
+            ?? ActiveMediaItems.FirstOrDefault();
         OpenPhotoDetail(item);
     }
 
@@ -403,10 +465,8 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
         {
             await LoadPlacePickerDataAsync();
 
-            var previewSource = SelectedGroupMedia.FirstOrDefault(item => item.IsIncluded)
-                ?? SelectedGroupMedia.FirstOrDefault()
-                ?? ReclassificationCandidates.FirstOrDefault(item => item.IsIncluded)
-                ?? ReclassificationCandidates.FirstOrDefault();
+            var previewSource = ActiveMediaItems.FirstOrDefault(item => item.IsIncluded)
+                ?? ActiveMediaItems.FirstOrDefault();
 
             if (previewSource is not null)
             {
@@ -1044,18 +1104,46 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
                 PlaceId = place.Id,
                 MediaIds = mediaIds
             });
-            await SupplementRawLocationsAsync(
-                mediaIds,
-                BuildRawLocationSource(place, SelectedLocation));
+            PlaceReclassificationResult? reclass = null;
+            try
+            {
+                await SupplementRawLocationsAsync(
+                    result.UpdatedMediaIds,
+                    BuildRawLocationSource(place, SelectedLocation));
 
-            var reclass = await _placeService.ReclassifyMediaAsync(place.Id, reassignFromOtherPlaces: true);
+                reclass = await _placeService.ReclassifyMediaAsync(place.Id, reassignFromOtherPlaces: true);
 
-            StatusMessage = "장소가 등록되었습니다.";
-            PlaceDialogStatus = reclass.AssignedCount > 0
-                ? $"장소 '{place.DisplayName}'에 선택 {result.UpdatedCount}장 · 반경 내 {reclass.AssignedCount}장 연결"
-                : $"장소 '{place.DisplayName}'에 {result.UpdatedCount}장을 연결했습니다.";
-            await LoadCoreAsync();
-            return true;
+                StatusMessage = "장소가 등록되었습니다.";
+                PlaceDialogStatus = reclass.AssignedCount > 0
+                    ? $"장소 '{place.DisplayName}'에 선택 {result.UpdatedCount}장 · 반경 내 {reclass.AssignedCount}장 연결"
+                    : $"장소 '{place.DisplayName}'에 {result.UpdatedCount}장을 연결했습니다.";
+                return true;
+            }
+            finally
+            {
+                await LoadCoreAsync();
+                var selectedIds = mediaIds.ToHashSet();
+                var postReloadSelected = _loadedMediaItems
+                    .Where(item => selectedIds.Contains(item.MediaId))
+                    .ToList();
+                _logger.LogInformation(
+                    "PLACE_CLEANUP_ASSIGN_DIAG selected_count={SelectedCount} assigned_count={AssignedCount} updated_id_count={UpdatedIdCount} reclass_assigned_count={ReclassAssignedCount} reclass_unassigned_count={ReclassUnassignedCount} post_reload_cleanup_selected_count={PostReloadCleanupSelectedCount} post_reload_with_place_id_count={PostReloadWithPlaceIdCount}",
+                    mediaIds.Count,
+                    result.UpdatedCount,
+                    result.UpdatedMediaIds.Count,
+                    reclass?.AssignedCount ?? 0,
+                    reclass?.UnassignedCount ?? 0,
+                    postReloadSelected.Count,
+                    postReloadSelected.Count(item => item.Media.MemorykeeperPlaceId.HasValue));
+                PlaceCleanupDiagnostics.WriteAssignment(
+                    mediaIds.Count,
+                    result.UpdatedCount,
+                    result.UpdatedMediaIds.Count,
+                    reclass?.AssignedCount ?? 0,
+                    reclass?.UnassignedCount ?? 0,
+                    postReloadSelected.Count,
+                    postReloadSelected.Count(item => item.Media.MemorykeeperPlaceId.HasValue));
+            }
         }
         catch (ApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Conflict)
         {
@@ -1110,13 +1198,18 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
                 PlaceId = place.Id,
                 MediaIds = mediaIds
             });
-            await SupplementRawLocationsAsync(
-                mediaIds,
-                PlaceLocationPreview.FromPlaceDto(place, PlaceLocationSource.Existing));
+            try
+            {
+                await SupplementRawLocationsAsync(
+                    result.UpdatedMediaIds,
+                    PlaceLocationPreview.FromPlaceDto(place, PlaceLocationSource.Existing));
 
-            StatusMessage = "장소가 등록되었습니다.";
-            _ = result;
-            await LoadCoreAsync();
+                StatusMessage = "장소가 등록되었습니다.";
+            }
+            finally
+            {
+                await LoadCoreAsync();
+            }
         });
     }
 
@@ -1124,17 +1217,35 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
         IReadOnlyCollection<Guid> mediaIds,
         PlaceLocationPreview selectedLocation)
     {
+        List<Exception>? failures = null;
         foreach (var mediaId in mediaIds)
         {
-            var detail = await _galleryApiRepository.GetPhotoAsync(mediaId);
-            var latitude = GetMetadataDouble(detail.Metadata, "gps_lat");
-            var longitude = GetMetadataDouble(detail.Metadata, "gps_lon");
-            await _pendingMemoryService.SupplementRawLocationFromPlaceAsync(
-                mediaId,
-                detail.MetadataRevision,
-                latitude,
-                longitude,
-                selectedLocation);
+            try
+            {
+                var detail = await _galleryApiRepository.GetPhotoAsync(mediaId);
+                var latitude = GetMetadataDouble(detail.Metadata, "gps_lat");
+                var longitude = GetMetadataDouble(detail.Metadata, "gps_lon");
+                await _pendingMemoryService.SupplementRawLocationFromPlaceAsync(
+                    mediaId,
+                    detail.MetadataRevision,
+                    latitude,
+                    longitude,
+                    selectedLocation);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Cleanup raw geography supplement failed. MediaId={MediaId}", mediaId);
+                (failures ??= []).Add(ex);
+            }
+        }
+
+        if (failures is not null)
+        {
+            throw new AggregateException("일부 사진의 국가/도시 정보를 보완하지 못했습니다.", failures);
         }
     }
 
@@ -1191,8 +1302,14 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
     {
         CancelThumbnailLoading();
 
-        var overview = await _pendingMemoryService.GetPendingMemoriesAsync();
+        var overview = await _pendingMemoryService.GetPlaceCleanupMemoriesAsync(
+            page: 1,
+            pageSize: CleanupPageSize);
         var placeList = await _placeService.GetPlaceListAsync();
+
+        _registeredPlacesById = placeList
+            .GroupBy(place => place.Id)
+            .ToDictionary(group => group.Key, group => group.First());
 
         Places = new ObservableCollection<PlaceDto>(
             placeList
@@ -1201,28 +1318,83 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
                 .ThenByDescending(place => place.LastUsedAt ?? DateTime.MinValue)
                 .ThenBy(place => place.DisplayName));
 
+        ApplyOverview(overview, preserveSelection: false);
+    }
+
+    private void ApplyOverview(PendingMemoryOverviewDto overview, bool preserveSelection)
+    {
+        var wasGpsSectionSelected = preserveSelection && IsGpsSectionSelected;
+        var selectedGroupName = preserveSelection ? SelectedGroup?.GroupName : null;
+        var includedIds = preserveSelection
+            ? _loadedMediaItems
+                .Where(item => item.IsIncluded)
+                .Select(item => item.MediaId)
+                .ToHashSet()
+            : [];
+        _cleanupPage = overview.Page;
+        CleanupTotal = overview.Total;
+        CleanupLoadedCount = overview.Items.Count;
+        CanLoadMoreCleanup = overview.HasMore;
+        OnPropertyChanged(nameof(CleanupProgressText));
+
+        _loadedMediaItems = overview.Items
+            .Select(item =>
+            {
+                var registeredPlace = item.MemorykeeperPlaceId is Guid placeId
+                                      && _registeredPlacesById.TryGetValue(placeId, out var place)
+                    ? place
+                    : null;
+                return new PendingMemoryMediaItem(item, registeredPlace);
+            })
+            .ToList();
+        var loadedItemsById = _loadedMediaItems.ToDictionary(item => item.MediaId);
+
         var groupItems = overview.Groups
-            .Select(group => new PendingMemoryGroupItem(group))
+            .Select(group => new PendingMemoryGroupItem(group, loadedItemsById))
             .ToList();
 
         Groups = new ObservableCollection<PendingMemoryGroupItem>(groupItems);
         ReclassificationCandidates = new ObservableCollection<PendingMemoryMediaItem>(
-            overview.ReclassificationCandidates.Select(item => new PendingMemoryMediaItem(item)));
+            overview.ReclassificationCandidates
+                .Where(item => loadedItemsById.ContainsKey(item.MediaId))
+                .Select(item => loadedItemsById[item.MediaId]));
+        if (includedIds.Count > 0)
+        {
+            foreach (var item in _loadedMediaItems)
+            {
+                item.IsIncluded = includedIds.Contains(item.MediaId);
+            }
+        }
 
-        if (ReclassificationCandidates.Count > 0)
+        var groupToRestore = selectedGroupName is null
+            ? null
+            : groupItems.FirstOrDefault(group =>
+                string.Equals(group.GroupName, selectedGroupName, StringComparison.Ordinal));
+        if (wasGpsSectionSelected && ReclassificationCandidates.Count > 0)
         {
             IsGpsSectionSelected = true;
             SelectedGroup = null;
+            SelectedGroupMedia = [];
             ActiveMediaItems = ReclassificationCandidates;
             _ = LoadThumbnailsAsync(ReclassificationCandidates);
+        }
+        else if (groupToRestore is not null)
+        {
+            IsGpsSectionSelected = false;
+            SelectedGroup = groupToRestore;
         }
         else
         {
             IsGpsSectionSelected = false;
-            SelectedGroup = groupItems.FirstOrDefault();
-            if (SelectedGroup is null)
+            if (SelectedGroup is not null)
             {
-                ActiveMediaItems = [];
+                SelectedGroup = null;
+            }
+            else
+            {
+                SelectedGroupMedia = [];
+                ActiveMediaItems = new ObservableCollection<PendingMemoryMediaItem>(_loadedMediaItems);
+                _ = LoadThumbnailsAsync(ActiveMediaItems);
             }
         }
 
@@ -1239,8 +1411,7 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
 
         if (string.IsNullOrWhiteSpace(StatusMessage) || !StatusMessage.Contains("등록되었습니다"))
         {
-            StatusMessage =
-                $"GPS·장소미등록 {ReclassificationCandidates.Count}장 · 미완성 그룹 {groupItems.Count}개";
+            StatusMessage = $"장소 정리 대상 {CleanupLoadedCount:N0}/{CleanupTotal:N0}장";
         }
     }
 
@@ -1265,8 +1436,7 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
     private void ResubscribeMediaPropertyChanged()
     {
         UnsubscribeMediaPropertyChanged();
-        SubscribeMediaPropertyChanged(
-            SelectedGroupMedia.Concat(ReclassificationCandidates));
+        SubscribeMediaPropertyChanged(ActiveMediaItems.Distinct());
     }
 
     private void SubscribeMediaPropertyChanged(IEnumerable<PendingMemoryMediaItem> items)
@@ -1300,6 +1470,7 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
     {
         OnPropertyChanged(nameof(IncludedCount));
         OnPropertyChanged(nameof(HasSelectionForActions));
+        OnPropertyChanged(nameof(IsSelectionMode));
         OnPropertyChanged(nameof(EmphasizePlaceRegistration));
     }
 

@@ -203,12 +203,32 @@ public sealed class MemoryKeeperWriteApiRepository : IMemoryKeeperWriteApiReposi
         };
     }
 
+    public async Task<MemoryKeeperPendingListDto> GetPlaceCleanupAsync(
+        int page = 1,
+        int pageSize = 50,
+        CancellationToken cancellationToken = default)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 200);
+        var response = (await _apiClient.GetAsync<MemoryKeeperPendingListDto>(
+            $"{Root}/place-cleanup?page={page}&page_size={pageSize}",
+            cancellationToken).ConfigureAwait(false)).Data ?? new MemoryKeeperPendingListDto();
+
+        return new MemoryKeeperPendingListDto
+        {
+            Items = response.Items.Select(item => WithAbsoluteThumbnail(item, _apiClient.ApiBaseUrl)).ToList(),
+            Total = response.Total,
+            Page = response.Page,
+            PageSize = response.PageSize,
+        };
+    }
+
     public async Task<MemoryKeeperPendingAssignResponse> AssignPendingPlaceAsync(
         MemoryKeeperPendingAssignRequest request,
         CancellationToken cancellationToken = default) =>
         Require((await _apiClient.PostAsync<MemoryKeeperPendingAssignResponse>(
             $"{Root}/pending/assign-place", request, cancellationToken).ConfigureAwait(false)).Data,
-            "미완성 추억 장소 지정 응답이 비어 있습니다.");
+            "장소 정리 응답이 비어 있습니다.");
 
     private static Dictionary<string, object?> MetadataPayload(MemoryKeeperFileMetadataPatchRequest request)
     {

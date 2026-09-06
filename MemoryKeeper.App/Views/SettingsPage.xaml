@@ -89,7 +89,7 @@
                         </NavigationViewItem.Icon>
                         <NavigationViewItem.MenuItems>
                             <NavigationViewItem x:Name="PhotoRegistrationMenuItem" Content="사진 등록" Tag="photo-management" IsSelected="True" />
-                            <NavigationViewItem x:Name="PendingMemoriesMenuItem" Content="미완성 추억" Tag="pending-memories" />
+                            <NavigationViewItem x:Name="PendingMemoriesMenuItem" Content="장소 정리 필요" Tag="pending-memories" />
                             <NavigationViewItem x:Name="PlacesMenuItem" Content="장소 관리" Tag="places" />
                             <NavigationViewItem x:Name="TagsMenuItem" Content="태그 관리" Tag="tag-management" />
                             <NavigationViewItem x:Name="HomeLocationMenuItem" Content="집 위치" Tag="home-location" />
@@ -140,17 +140,17 @@
                             <ContentControl x:Name="PhotoManagementHost" HorizontalContentAlignment="Stretch" />
                         </Border>
 
-                        <!-- 미완성 추억 -->
+                        <!-- 장소 정리 필요 -->
                         <Border
                             x:Name="PendingMemoriesDetail"
                             Style="{StaticResource MkWideSettingsCardStyle}"
                             Margin="0"
                             MinHeight="720"
-                            AutomationProperties.Name="미완성 추억 상세"
+                            AutomationProperties.Name="장소 정리 필요 상세"
                             Visibility="{Binding IsPendingMemoriesDetailVisible, Converter={StaticResource BoolToVisibilityConverter}}">
                             <Grid RowDefinitions="Auto,*" RowSpacing="16">
                                 <StackPanel Spacing="6">
-                                    <TextBlock Text="미완성 추억" Style="{StaticResource MkSectionTitleStyle}" Margin="0" />
+                                    <TextBlock Text="장소 정리 필요" Style="{StaticResource MkSectionTitleStyle}" Margin="0" />
                                     <TextBlock Text="장소가 등록되지 않은 사진을 정리합니다." Style="{StaticResource MkCaptionTextStyle}" />
                                 </StackPanel>
                                 <ContentControl x:Name="PendingHost" Grid.Row="1" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />

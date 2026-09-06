@@ -48,7 +48,7 @@ public sealed class SettingsPageLayoutTests
 
         foreach (var child in new[]
                  {
-                     "사진 등록", "미완성 추억", "장소 관리", "태그 관리", "집 위치",
+                     "사진 등록", "장소 정리 필요", "장소 관리", "태그 관리", "집 위치",
                      "사진 내보내기", "미리보기 캐시", "처음부터 다시 구성",
                  })
         {
@@ -119,6 +119,8 @@ public sealed class SettingsPageLayoutTests
         Assert.Contains("SettingsSection.PendingMemories", settingsCode, StringComparison.Ordinal);
         Assert.Contains("SettingsSection.Places", settingsCode, StringComparison.Ordinal);
         Assert.Contains("SettingsSection.Tags", settingsCode, StringComparison.Ordinal);
+        Assert.Contains("else if (section == SettingsSection.PendingMemories)", settingsCode, StringComparison.Ordinal);
+        Assert.Equal(2, Count(settingsCode, "await _pendingView.ViewModel.LoadCommand.ExecuteAsync(null);"));
     }
 
     [Fact]

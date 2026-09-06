@@ -67,7 +67,7 @@ public sealed class HomePageRegressionTests
         Assert.Contains("Text=\"새 사진 추가\"", quickActions, StringComparison.Ordinal);
         Assert.Contains("Command=\"{Binding QuickImportCommand}\"", quickActions, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"QuickPendingCard\"", quickActions, StringComparison.Ordinal);
-        Assert.Contains("Text=\"미완성 추억\"", quickActions, StringComparison.Ordinal);
+        Assert.Contains("Text=\"장소 정리 필요\"", quickActions, StringComparison.Ordinal);
         Assert.Contains("PendingQuickActionText", quickActions, StringComparison.Ordinal);
         Assert.Contains("Command=\"{Binding QuickPendingCommand}\"", quickActions, StringComparison.Ordinal);
         Assert.DoesNotContain("사진 정리", quickActions, StringComparison.Ordinal);

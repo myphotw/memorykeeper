@@ -93,6 +93,10 @@ public sealed partial class SettingsPage : Page
             {
                 await _placeView.ActivateAsync();
             }
+            else if (section == SettingsSection.PendingMemories)
+            {
+                await _pendingView.ViewModel.LoadCommand.ExecuteAsync(null);
+            }
 
             return;
         }

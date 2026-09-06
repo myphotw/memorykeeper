@@ -25,7 +25,7 @@ public sealed class PendingMemoryPage : Page
         });
         header.Children.Add(new TextBlock
         {
-            Text = "미완성 추억",
+            Text = "장소 정리 필요",
             FontSize = 28,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
             VerticalAlignment = VerticalAlignment.Center,

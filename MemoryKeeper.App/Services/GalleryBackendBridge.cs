@@ -93,6 +93,7 @@ public static class GalleryBackendBridge
             RecentVisits = recentVisits,
             RecentImports = dashboardPhotos,
             Favorites = dashboardPhotos.Where(photo => photo.IsFavorite).ToList(),
+            PendingSummary = new PendingSummaryDto { Total = summary.PlaceCleanupCount },
             Statistics = new DashboardStatisticsDto
             {
                 PhotoCount = summary.TotalPhotos, FavoriteCount = summary.FavoriteCount, GpsCount = summary.GpsCount,

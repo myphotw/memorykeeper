@@ -812,7 +812,7 @@ public partial class SettingsViewModel : ObservableObject
         BreadcrumbTitle = SelectedSettingsSection switch
         {
             SettingsSection.PhotoManagement => "설정 › 사진 관리",
-            SettingsSection.PendingMemories => "설정 › 미완성 추억",
+            SettingsSection.PendingMemories => "설정 › 장소 정리 필요",
             SettingsSection.Places => "설정 › 장소 관리",
             SettingsSection.Tags => "설정 › 태그 관리",
             SettingsSection.HomeLocation => "설정 › 집 위치",

@@ -666,7 +666,7 @@
                                 MinHeight="64"
                                 HorizontalContentAlignment="Stretch"
                                 VerticalContentAlignment="Stretch"
-                                AutomationProperties.Name="미완성 추억, 정보 보완이 필요한 사진"
+                                AutomationProperties.Name="장소 정리 필요, 장소 정리가 필요한 사진"
                                 Command="{Binding QuickPendingCommand}">
                                 <Grid ColumnSpacing="12">
                                     <Grid.ColumnDefinitions>
@@ -677,7 +677,7 @@
                                         <FontIcon Glyph="&#xE8B7;" FontSize="16" Foreground="{StaticResource HomeIconOrange}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                     </Border>
                                     <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                                        <TextBlock Text="미완성 추억" FontSize="14" FontWeight="SemiBold" Foreground="#1C1C1E" />
+                                        <TextBlock Text="장소 정리 필요" FontSize="14" FontWeight="SemiBold" Foreground="#1C1C1E" />
                                         <TextBlock Text="{Binding PendingQuickActionText, Mode=OneWay}" FontSize="12" Foreground="{StaticResource HomeMutedTextBrush}" TextTrimming="CharacterEllipsis" />
                                     </StackPanel>
                                 </Grid>

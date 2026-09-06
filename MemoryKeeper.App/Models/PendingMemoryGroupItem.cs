@@ -6,13 +6,16 @@ namespace MemoryKeeper.App.Models;
 
 public partial class PendingMemoryMediaItem : ObservableObject
 {
-    public PendingMemoryMediaItem(PendingMemoryItemDto media)
+    public PendingMemoryMediaItem(PendingMemoryItemDto media, PlaceDto? registeredPlace = null)
     {
         Media = media;
-        IsIncluded = true;
+        EffectiveDisplayMedia = media.WithEffectiveGeography(registeredPlace);
+        IsIncluded = false;
     }
 
     public PendingMemoryItemDto Media { get; }
+
+    public PendingMemoryItemDto EffectiveDisplayMedia { get; }
 
     public Guid MediaId => Media.MediaId;
 
@@ -30,7 +33,7 @@ public partial class PendingMemoryMediaItem : ObservableObject
 
     public string StatusSummaryText => $"{GpsStatusText} · {PlaceStatusText}";
 
-    public string GeographyText => Media.GeographyText;
+    public string GeographyText => EffectiveDisplayMedia.GeographyText;
 
     public string SuggestedPlaceText => string.IsNullOrWhiteSpace(Media.SuggestedPlaceName)
         ? string.Empty
@@ -48,11 +51,16 @@ public partial class PendingMemoryMediaItem : ObservableObject
 
 public sealed class PendingMemoryGroupItem
 {
-    public PendingMemoryGroupItem(PendingMemoryGroupDto group)
+    public PendingMemoryGroupItem(
+        PendingMemoryGroupDto group,
+        IReadOnlyDictionary<Guid, PendingMemoryMediaItem>? loadedItemsById = null)
     {
         Group = group;
         MediaItems = group.MediaItems
-            .Select(item => new PendingMemoryMediaItem(item))
+            .Select(item => loadedItemsById is not null
+                            && loadedItemsById.TryGetValue(item.MediaId, out var loadedItem)
+                ? loadedItem
+                : new PendingMemoryMediaItem(item))
             .ToList();
     }
 
@@ -62,7 +70,7 @@ public sealed class PendingMemoryGroupItem
 
     public string GroupName => Group.HasUnknownDate ? "날짜 미상" : Group.GroupName;
 
-    public int MediaCount => Group.MediaCount;
+    public int MediaCount => MediaItems.Count;
 
     public bool HasUnknownDate => Group.HasUnknownDate;
 
@@ -81,10 +89,17 @@ public sealed class PendingMemoryGroupItem
         }
     }
 
-    public string EstimatedLocationText =>
-        string.IsNullOrWhiteSpace(Group.EstimatedLocationSummary)
-            ? "예상 위치 없음"
-            : Group.EstimatedLocationSummary;
+    public string EstimatedLocationText
+    {
+        get
+        {
+            var summary = PendingMemoryGroupDto.GetEffectiveLocationSummary(
+                MediaItems.Select(item => item.EffectiveDisplayMedia));
+            return string.IsNullOrWhiteSpace(summary)
+                ? "예상 위치 없음"
+                : summary;
+        }
+    }
 
     public string ProcessingStatus => Group.ProcessingStatus;
 

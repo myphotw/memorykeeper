@@ -31,4 +31,19 @@ public sealed class PendingMemoryGroupDto
     public string ProcessingStatus { get; init; } = "미처리";
 
     public IReadOnlyList<PendingMemoryItemDto> MediaItems { get; init; } = [];
+
+    public static string GetEffectiveLocationSummary(IEnumerable<PendingMemoryItemDto> items)
+    {
+        var locations = items
+            .Select(item => item.GeographyText.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return locations.Count switch
+        {
+            0 => string.Empty,
+            1 => locations[0],
+            _ => "여러 장소",
+        };
+    }
 }
