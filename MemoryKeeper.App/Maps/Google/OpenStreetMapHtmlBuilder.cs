@@ -43,12 +43,16 @@ internal static class OpenStreetMapHtmlBuilder
     let matchedIds = {};
     let editableMarker = null;
     let radiusCircle = null;
+    let currentPreviewCircle = null;
+    let proposedPreviewCircle = null;
     let mapClickEnabled = false;
 
     function colorFor(id) {
+      const data = markerDataById[id] || {};
+      if (data.state === 'selected') return '#d93025';
       if (id === selectedId) return '#d93025';
       if (id === hoverId) return '#f9ab00';
-      if (matchedIds[id]) return '#1a73e8';
+      if (matchedIds[id] || data.isMatched || data.state === 'matched') return '#1a73e8';
       return '#5f6368';
     }
 
@@ -128,6 +132,29 @@ internal static class OpenStreetMapHtmlBuilder
       map.setView(point, message.zoom || 17);
     }
 
+    function setRadiusPreview(message) {
+      if (currentPreviewCircle) map.removeLayer(currentPreviewCircle);
+      if (proposedPreviewCircle) map.removeLayer(proposedPreviewCircle);
+      const point = [Number(message.lat), Number(message.lng)];
+      currentPreviewCircle = L.circle(point, {
+        radius: Number(message.currentRadiusMeters) || 0,
+        color: '#1565C0',
+        weight: 2,
+        fillColor: '#1565C0',
+        fillOpacity: .06
+      }).addTo(map);
+      proposedPreviewCircle = L.circle(point, {
+        radius: Number(message.proposedRadiusMeters) || 0,
+        color: '#F57C00',
+        weight: 2,
+        fillColor: '#FFB74D',
+        fillOpacity: .08
+      }).addTo(map);
+      const bounds = proposedPreviewCircle.getBounds();
+      Object.values(markerById).forEach(marker => bounds.extend(marker.getLatLng()));
+      map.fitBounds(bounds, { padding: [36, 36] });
+    }
+
     function handle(message) {
       switch (message.type) {
         case 'setMarkers': setMarkers(message.markers, message.matchedIds); break;
@@ -147,6 +174,7 @@ internal static class OpenStreetMapHtmlBuilder
         case 'setEditablePin': setEditablePin(message); break;
         case 'updateEditableRadius': if (radiusCircle) radiusCircle.setRadius(Number(message.radiusMeters) || 0); break;
         case 'clearEditablePin': clearEditablePin(); break;
+        case 'setRadiusPreview': setRadiusPreview(message); break;
         case 'resize': map.invalidateSize(); post(diagnostics('layout')); break;
       }
     }

@@ -17,3 +17,9 @@ public sealed record MapMarker(
     double Scale = 1.0,
     bool IsFavorite = false,
     bool IsMatched = false);
+
+public sealed record MapRadiusPreview(
+    double CenterLatitude,
+    double CenterLongitude,
+    double CurrentRadiusMeters,
+    double ProposedRadiusMeters);

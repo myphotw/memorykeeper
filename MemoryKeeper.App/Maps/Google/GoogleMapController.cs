@@ -285,6 +285,19 @@ public sealed class GoogleMapController : IMapController, IAsyncDisposable
         await PostAsync(new { type = "clearEditablePin" }, ct);
     }
 
+    public async Task SetRadiusPreviewAsync(MapRadiusPreview preview, CancellationToken ct = default)
+    {
+        await EnsureReadyAsync(ct);
+        await PostAsync(new
+        {
+            type = "setRadiusPreview",
+            lat = preview.CenterLatitude,
+            lng = preview.CenterLongitude,
+            currentRadiusMeters = preview.CurrentRadiusMeters,
+            proposedRadiusMeters = preview.ProposedRadiusMeters
+        }, ct);
+    }
+
     public async Task NotifyLayoutAsync(CancellationToken cancellationToken = default)
     {
         if (!_ready || _webView.CoreWebView2 is null)

@@ -59,6 +59,8 @@ public static class GoogleMapHtmlBuilder
     let hoverId = null;
     let editableMarker = null;
     let radiusCircle = null;
+    let currentPreviewCircle = null;
+    let proposedPreviewCircle = null;
     let mapClickEnabled = false;
     let clustererLoading = false;
     let clustererReady = false;
@@ -343,6 +345,52 @@ public static class GoogleMapHtmlBuilder
       radiusCircle.setRadius(Number(message.radiusMeters) || 0);
     }
 
+    function clearRadiusPreview() {
+      if (currentPreviewCircle) currentPreviewCircle.setMap(null);
+      if (proposedPreviewCircle) proposedPreviewCircle.setMap(null);
+      currentPreviewCircle = null;
+      proposedPreviewCircle = null;
+    }
+
+    function setRadiusPreview(message) {
+      clearRadiusPreview();
+      const center = { lat: Number(message.lat), lng: Number(message.lng) };
+      const currentRadius = Number(message.currentRadiusMeters) || 0;
+      const proposedRadius = Number(message.proposedRadiusMeters) || 0;
+
+      proposedPreviewCircle = new google.maps.Circle({
+        map,
+        center,
+        radius: proposedRadius,
+        strokeColor: '#F57C00',
+        strokeOpacity: 0.9,
+        strokeWeight: 2,
+        fillColor: '#FFB74D',
+        fillOpacity: 0.08,
+        clickable: false,
+        zIndex: 10
+      });
+      currentPreviewCircle = new google.maps.Circle({
+        map,
+        center,
+        radius: currentRadius,
+        strokeColor: '#1565C0',
+        strokeOpacity: 0.95,
+        strokeWeight: 2,
+        fillColor: '#1565C0',
+        fillOpacity: 0.06,
+        clickable: false,
+        zIndex: 20
+      });
+
+      const bounds = proposedPreviewCircle.getBounds();
+      markers.forEach(marker => {
+        const position = marker.getPosition();
+        if (position) bounds.extend(position);
+      });
+      map.fitBounds(bounds, 36);
+    }
+
     function forceRelayout() {
       if (!map) return;
       const mapDiv = map.getDiv();
@@ -450,6 +498,10 @@ public static class GoogleMapHtmlBuilder
       }
       if (message.type === 'clearEditablePin') {
         clearEditablePin();
+        return;
+      }
+      if (message.type === 'setRadiusPreview') {
+        setRadiusPreview(message);
         return;
       }
       if (message.type === 'resize') {

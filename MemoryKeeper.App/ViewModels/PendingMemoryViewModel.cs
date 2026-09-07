@@ -131,6 +131,8 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
 
     public XamlRoot? HostXamlRoot { get; set; }
 
+    public Func<string, PlaceRadiusExpansionPlan, Task<bool>>? RadiusExpansionPreviewHandler { get; set; }
+
     public bool HasOriginalLocation => !OriginalLocation.IsEmpty;
 
     public bool HasSelectedLocation => !SelectedLocation.IsEmpty;
@@ -628,7 +630,7 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
         NotifyPlacePreviewChanged();
     }
 
-    private async Task<PlaceDto> CreatePlaceFromMapPickAsync(PlaceGeographyFallback geographyFallback)
+    private async Task<CreatePlaceRequest> BuildPlaceFromMapPickRequestAsync()
     {
         LocationResult? resolved = null;
         try
@@ -644,7 +646,7 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
             ? null
             : PlaceNormalizer.Normalize(resolved);
 
-        return await _placeService.CreatePlaceAsync(new CreatePlaceRequest
+        return new CreatePlaceRequest
         {
             DisplayName = normalized?.DisplayName
                 ?? $"지도 선택 {MapPickLatitude:F4},{MapPickLongitude:F4}",
@@ -661,7 +663,7 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
             Longitude = MapPickLongitude,
             Radius = MapPickRadiusMeters,
             IsActive = true
-        }, geographyFallback);
+        };
     }
 
     public async Task TogglePlaceFavoriteAsync(PlacePickerItemDto place)
@@ -692,13 +694,12 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
         FilteredExistingPlaces = [];
     }
 
-    private async Task<PlaceDto> CreateNasPlaceFromProviderAsync(
+    private async Task<ProviderPlaceResolution> ResolveProviderPlaceAsync(
         string providerPlaceId,
         string? fallbackName,
         string? fallbackType,
         double? seedLatitude,
-        double? seedLongitude,
-        PlaceGeographyFallback geographyFallback)
+        double? seedLongitude)
     {
         LocationResult? resolved = null;
         try
@@ -732,7 +733,7 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
                 lat, lon, providerPlaceId, normalized?.CanonicalName);
             if (matched is not null)
             {
-                return matched;
+                return new ProviderPlaceResolution { ExistingPlace = matched };
             }
         }
 
@@ -741,23 +742,26 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
             throw new InvalidOperationException("선택한 장소의 좌표를 확인할 수 없습니다.");
         }
 
-        return await _placeService.CreatePlaceAsync(new CreatePlaceRequest
+        return new ProviderPlaceResolution
         {
-            DisplayName = normalized?.DisplayName ?? fallbackName ?? "새 장소",
-            CanonicalName = normalized?.CanonicalName ?? fallbackName,
-            Address = resolved?.Address ?? string.Empty,
-            PostalCode = resolved?.PostalCode ?? string.Empty,
-            Country = PlaceNormalizer.NormalizeCountry(resolved?.Country),
-            Province = PlaceNormalizer.NormalizeRegion(resolved?.Province),
-            City = PlaceNormalizer.NormalizePlace(resolved?.City),
-            District = resolved?.District ?? string.Empty,
-            Latitude = latitude.Value,
-            Longitude = longitude.Value,
-            Radius = MapPickRadiusMeters,
-            GooglePlaceId = providerPlaceId,
-            Category = resolved?.PlaceType ?? fallbackType,
-            IsActive = true,
-        }, geographyFallback);
+            CreateRequest = new CreatePlaceRequest
+            {
+                DisplayName = normalized?.DisplayName ?? fallbackName ?? "새 장소",
+                CanonicalName = normalized?.CanonicalName ?? fallbackName,
+                Address = resolved?.Address ?? string.Empty,
+                PostalCode = resolved?.PostalCode ?? string.Empty,
+                Country = PlaceNormalizer.NormalizeCountry(resolved?.Country),
+                Province = PlaceNormalizer.NormalizeRegion(resolved?.Province),
+                City = PlaceNormalizer.NormalizePlace(resolved?.City),
+                District = resolved?.District ?? string.Empty,
+                Latitude = latitude.Value,
+                Longitude = longitude.Value,
+                Radius = MapPickRadiusMeters,
+                GooglePlaceId = providerPlaceId,
+                Category = resolved?.PlaceType ?? fallbackType,
+                IsActive = true,
+            },
+        };
     }
 
     private PlaceGeographyFallback BuildRawGeographyFallback(IReadOnlyCollection<Guid> mediaIds)
@@ -1010,27 +1014,6 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
             return false;
         }
 
-        var previewLat = SelectedLocation.Latitude ?? MapPickLatitude;
-        var previewLng = SelectedLocation.Longitude ?? MapPickLongitude;
-        var previewRadius = SelectedLocation.RadiusMeters > 0
-            ? SelectedLocation.RadiusMeters
-            : MapPickRadiusMeters;
-        var excludeId = SelectedExistingPlace?.Id ?? SelectedLocation.PlaceId;
-
-        var overlapOk = await PlaceOverlapPrompt.ConfirmIfNeededAsync(
-            HostXamlRoot,
-            _placeService,
-            SelectedLocation.DisplayName,
-            previewLat,
-            previewLng,
-            previewRadius,
-            excludeId);
-        if (!overlapOk)
-        {
-            PlaceDialogStatus = "장소 등록이 취소되었습니다.";
-            return false;
-        }
-
         string? googlePlaceId = null;
         string? fallbackName = null;
         string? fallbackType = null;
@@ -1063,13 +1046,16 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
         IsPlaceDialogBusy = true;
         PlaceDialogStatus = "장소를 등록하는 중...";
         var geographyFallback = BuildRawGeographyFallback(mediaIds);
+        var selections = BuildRadiusSelections(mediaIds);
+        PreparedPlace? completedPreparation = null;
 
         try
         {
-            PlaceDto place;
+            PreparedPlace? prepared;
             if (existingPlaceId is Guid placeId)
             {
-                place = await _placeService.GetPlaceAsync(placeId);
+                var existingPlace = await _placeService.GetPlaceAsync(placeId);
+                prepared = await PrepareExistingPlaceAsync(existingPlace, selections);
             }
             else if (!string.IsNullOrWhiteSpace(googlePlaceId))
             {
@@ -1081,17 +1067,25 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
                     seedLongitude = SelectedNearbyCandidate.Longitude;
                 }
 
-                place = await CreateNasPlaceFromProviderAsync(
+                var resolution = await ResolveProviderPlaceAsync(
                     googlePlaceId,
                     fallbackName,
                     fallbackType,
                     seedLatitude,
-                    seedLongitude,
-                    geographyFallback);
+                    seedLongitude);
+                prepared = resolution.ExistingPlace is not null
+                    ? await PrepareExistingPlaceAsync(resolution.ExistingPlace, selections)
+                    : await PrepareNewPlaceAsync(
+                        resolution.CreateRequest!,
+                        geographyFallback,
+                        selections);
             }
             else if (HasMapPickSelection)
             {
-                place = await CreatePlaceFromMapPickAsync(geographyFallback);
+                prepared = await PrepareNewPlaceAsync(
+                    await BuildPlaceFromMapPickRequestAsync(),
+                    geographyFallback,
+                    selections);
             }
             else
             {
@@ -1099,78 +1093,357 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
                 return false;
             }
 
+            if (prepared is null)
+            {
+                return false;
+            }
+
+            completedPreparation = prepared;
+            var place = prepared.Place;
             var result = await _pendingMemoryService.AssignPlaceAsync(new AssignMediaPlaceRequest
             {
                 PlaceId = place.Id,
                 MediaIds = mediaIds
             });
-            PlaceReclassificationResult? reclass = null;
-            try
+
+            var supplementFailureCount = 0;
+            var reclass = prepared.Reclassification;
+            if (result.UpdatedCount > 0 || result.UpdatedMediaIds.Count > 0)
             {
-                await SupplementRawLocationsAsync(
+                supplementFailureCount = await SupplementRawLocationsAsync(
                     result.UpdatedMediaIds,
                     BuildRawLocationSource(place, SelectedLocation));
 
-                reclass = await _placeService.ReclassifyMediaAsync(place.Id, reassignFromOtherPlaces: true);
+                if (!prepared.ReclassificationPerformed)
+                {
+                    reclass = await _placeService.ReclassifyMediaAsync(
+                        place.Id,
+                        reassignFromOtherPlaces: true);
+                }
+            }
 
-                StatusMessage = "장소가 등록되었습니다.";
-                PlaceDialogStatus = reclass.AssignedCount > 0
-                    ? $"장소 '{place.DisplayName}'에 선택 {result.UpdatedCount}장 · 반경 내 {reclass.AssignedCount}장 연결"
-                    : $"장소 '{place.DisplayName}'에 {result.UpdatedCount}장을 연결했습니다.";
-                return true;
-            }
-            finally
-            {
-                await LoadCoreAsync();
-                var selectedIds = mediaIds.ToHashSet();
-                var postReloadSelected = _loadedMediaItems
-                    .Where(item => selectedIds.Contains(item.MediaId))
-                    .ToList();
-                _logger.LogInformation(
-                    "PLACE_CLEANUP_ASSIGN_DIAG selected_count={SelectedCount} assigned_count={AssignedCount} updated_id_count={UpdatedIdCount} reclass_assigned_count={ReclassAssignedCount} reclass_unassigned_count={ReclassUnassignedCount} post_reload_cleanup_selected_count={PostReloadCleanupSelectedCount} post_reload_with_place_id_count={PostReloadWithPlaceIdCount}",
-                    mediaIds.Count,
-                    result.UpdatedCount,
-                    result.UpdatedMediaIds.Count,
-                    reclass?.AssignedCount ?? 0,
-                    reclass?.UnassignedCount ?? 0,
-                    postReloadSelected.Count,
-                    postReloadSelected.Count(item => item.Media.MemorykeeperPlaceId.HasValue));
-                PlaceCleanupDiagnostics.WriteAssignment(
-                    mediaIds.Count,
-                    result.UpdatedCount,
-                    result.UpdatedMediaIds.Count,
-                    reclass?.AssignedCount ?? 0,
-                    reclass?.UnassignedCount ?? 0,
-                    postReloadSelected.Count,
-                    postReloadSelected.Count(item => item.Media.MemorykeeperPlaceId.HasValue));
-            }
+            await LoadCoreAsync();
+            var finalState = await VerifyFinalPlaceStateAsync(mediaIds, place.Id);
+            var selectedIds = mediaIds.ToHashSet();
+            var postReloadSelected = _loadedMediaItems
+                .Where(item => selectedIds.Contains(item.MediaId))
+                .ToList();
+            var outcome = PendingPlaceAssignmentOutcomeEvaluator.Evaluate(
+                new PendingPlaceAssignmentVerification
+                {
+                    RequestedCount = mediaIds.Count,
+                    AssignedCount = result.UpdatedCount,
+                    UpdatedIdCount = result.UpdatedMediaIds.Count,
+                    ReclassUnassignedCount = prepared.ReclassificationPerformed
+                        ? 0
+                        : reclass?.UnassignedCount ?? 0,
+                    PostReloadWithPlaceIdCount = finalState.MatchedCount,
+                    PostReloadRemainingSelectedCount = postReloadSelected.Count,
+                    FinalStateVerificationFailureCount = finalState.FailureCount,
+                    PlaceDisplayName = place.DisplayName,
+                    RadiusExpanded = prepared.PreviousRadiusMeters.HasValue,
+                    CreatedNewPlace = prepared.CreatedNewPlace,
+                    PreviousRadiusMeters = prepared.PreviousRadiusMeters ?? place.Radius,
+                    CurrentRadiusMeters = place.Radius,
+                });
+            PlaceDialogStatus = supplementFailureCount > 0
+                ? $"{outcome.UserMessage} 일부 사진의 위치 세부정보는 보완하지 못했습니다."
+                : outcome.UserMessage;
+            StatusMessage = PlaceDialogStatus;
+
+            _logger.LogInformation(
+                "PLACE_CLEANUP_ASSIGN_DIAG selected_count={SelectedCount} assigned_count={AssignedCount} updated_id_count={UpdatedIdCount} reclass_assigned_count={ReclassAssignedCount} reclass_unassigned_count={ReclassUnassignedCount} post_reload_cleanup_selected_count={PostReloadCleanupSelectedCount} post_reload_with_place_id_count={PostReloadWithPlaceIdCount}",
+                mediaIds.Count,
+                result.UpdatedCount,
+                result.UpdatedMediaIds.Count,
+                reclass?.AssignedCount ?? 0,
+                reclass?.UnassignedCount ?? 0,
+                postReloadSelected.Count,
+                finalState.MatchedCount);
+            PlaceCleanupDiagnostics.WriteAssignment(
+                mediaIds.Count,
+                result.UpdatedCount,
+                result.UpdatedMediaIds.Count,
+                reclass?.AssignedCount ?? 0,
+                reclass?.UnassignedCount ?? 0,
+                postReloadSelected.Count,
+                finalState.MatchedCount);
+            return outcome.IsSuccess;
         }
         catch (ApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Conflict)
         {
             _logger.LogWarning(ex, "Pending place assignment revision conflict.");
-            await LoadCoreAsync();
-            PlaceDialogStatus = "다른 곳에서 사진 정보가 변경되었습니다. 최신 정보를 다시 불러왔습니다.";
+            await TryReloadAfterMutationAsync();
+            PlaceDialogStatus = WithRadiusChangeNotice(
+                completedPreparation,
+                "다른 변경이 먼저 반영되어 일부 사진을 처리하지 못했습니다. 최신 목록을 다시 불러왔습니다.");
             StatusMessage = PlaceDialogStatus;
             return false;
         }
         catch (ApiException ex)
         {
             _logger.LogWarning(ex, "Confirm pending place registration API request failed.");
-            PlaceDialogStatus = ApiErrorClassifier.ToUserMessage(ex, "사진 또는 장소를 찾을 수 없습니다.");
+            await TryReloadAfterMutationAsync();
+            PlaceDialogStatus = WithRadiusChangeNotice(
+                completedPreparation,
+                ApiErrorClassifier.ToUserMessage(ex, "사진 또는 장소를 찾을 수 없습니다."));
             StatusMessage = PlaceDialogStatus;
             return false;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Confirm place registration failed.");
-            PlaceDialogStatus = ex.Message;
-            StatusMessage = ex.Message;
+            await TryReloadAfterMutationAsync();
+            PlaceDialogStatus = WithRadiusChangeNotice(
+                completedPreparation,
+                "장소 등록을 완료하지 못했습니다. 최신 목록을 다시 불러왔습니다.");
+            StatusMessage = PlaceDialogStatus;
             return false;
         }
         finally
         {
             IsPlaceDialogBusy = false;
         }
+    }
+
+    private IReadOnlyList<PlaceRadiusPhotoSelection> BuildRadiusSelections(
+        IReadOnlyCollection<Guid> mediaIds)
+    {
+        var selectedIds = mediaIds.ToHashSet();
+        return ActiveMediaItems
+            .Where(item => selectedIds.Contains(item.MediaId))
+            .GroupBy(item => item.MediaId)
+            .Select(group => group.First().Media)
+            .Select(media => new PlaceRadiusPhotoSelection(
+                media.MediaId,
+                media.FileName,
+                media.Latitude,
+                media.Longitude))
+            .ToList();
+    }
+
+    private async Task<PreparedPlace?> PrepareExistingPlaceAsync(
+        PlaceDto place,
+        IReadOnlyList<PlaceRadiusPhotoSelection> selections)
+    {
+        var plan = PlaceRadiusExpansionPlanner.Create(
+            place.Latitude,
+            place.Longitude,
+            place.Radius,
+            selections);
+        if (!plan.NeedsExpansion)
+        {
+            return new PreparedPlace(place);
+        }
+
+        if (!await ConfirmRadiusExpansionAsync(place.DisplayName, plan))
+        {
+            return null;
+        }
+
+        var operation = await _placeService.UpdateWithRadiusImpactAsync(
+            place,
+            ToRadiusUpdateRequest(place, plan.ProposedRadiusMeters),
+            (impact, token) => PlaceOverlapPrompt.ConfirmImpactIfNeededAsync(
+                HostXamlRoot,
+                place.DisplayName,
+                impact,
+                token));
+        if (operation.Cancelled)
+        {
+            PlaceDialogStatus = "장소 등록이 취소되었습니다.";
+            return null;
+        }
+
+        var updated = operation.UpdatedPlace
+            ?? throw new InvalidOperationException("장소 범위 변경 결과를 확인할 수 없습니다.");
+        return new PreparedPlace(
+            updated,
+            place.Radius,
+            ReclassificationPerformed: true,
+            Reclassification: operation.Reclassification,
+            ExistingRadiusUpdated: true);
+    }
+
+    private async Task<PreparedPlace?> PrepareNewPlaceAsync(
+        CreatePlaceRequest request,
+        PlaceGeographyFallback geographyFallback,
+        IReadOnlyList<PlaceRadiusPhotoSelection> selections)
+    {
+        var initialRadius = request.Radius ?? 100d;
+        var plan = PlaceRadiusExpansionPlanner.Create(
+            request.Latitude,
+            request.Longitude,
+            initialRadius,
+            selections);
+        double? previousRadius = null;
+        if (plan.NeedsExpansion)
+        {
+            if (!await ConfirmRadiusExpansionAsync(request.DisplayName, plan))
+            {
+                return null;
+            }
+
+            previousRadius = initialRadius;
+            request = CopyWithRadius(request, plan.ProposedRadiusMeters);
+        }
+
+        var overlapOk = await PlaceOverlapPrompt.ConfirmIfNeededAsync(
+            HostXamlRoot,
+            _placeService,
+            request.DisplayName,
+            request.Latitude,
+            request.Longitude,
+            request.Radius ?? 100d);
+        if (!overlapOk)
+        {
+            PlaceDialogStatus = "장소 등록이 취소되었습니다.";
+            return null;
+        }
+
+        var created = await _placeService.CreatePlaceAsync(request, geographyFallback);
+        return new PreparedPlace(created, previousRadius, CreatedNewPlace: true);
+    }
+
+    private async Task<bool> ConfirmRadiusExpansionAsync(
+        string placeDisplayName,
+        PlaceRadiusExpansionPlan plan)
+    {
+        if (plan.ExceedsMaximum)
+        {
+            PlaceDialogStatus =
+                $"선택한 사진을 포함하려면 약 {plan.ProposedRadiusMeters:0}m 범위가 필요하지만 허용 범위 {PlaceRadiusExpansionPlanner.MaximumRadiusMeters:0}m를 초과합니다. 사진 위치를 확인해 주세요.";
+            return false;
+        }
+
+        if (RadiusExpansionPreviewHandler is null || HostXamlRoot is null)
+        {
+            PlaceDialogStatus = "장소 범위 지도 미리보기를 표시할 수 없어 등록을 진행하지 않았습니다.";
+            return false;
+        }
+
+        if (!await RadiusExpansionPreviewHandler(placeDisplayName, plan))
+        {
+            PlaceDialogStatus = "장소 등록이 취소되었습니다.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static UpdatePlaceRequest ToRadiusUpdateRequest(PlaceDto place, double radius) => new()
+    {
+        Id = place.Id,
+        Revision = place.Revision,
+        DisplayName = place.DisplayName,
+        CanonicalName = place.CanonicalName,
+        Country = place.Country,
+        Province = place.Province,
+        City = place.City,
+        District = place.District,
+        Address = place.Address,
+        PostalCode = place.PostalCode,
+        GooglePlaceId = place.GooglePlaceId,
+        Category = place.Category,
+        Latitude = place.Latitude,
+        Longitude = place.Longitude,
+        Radius = radius,
+        IsActive = place.IsActive,
+        IsFavorite = place.IsFavorite,
+        ReclassifyMedia = true,
+        ReassignFromOtherPlaces = true,
+    };
+
+    private static CreatePlaceRequest CopyWithRadius(CreatePlaceRequest request, double radius) => new()
+    {
+        DisplayName = request.DisplayName,
+        Country = request.Country,
+        Province = request.Province,
+        City = request.City,
+        District = request.District,
+        Address = request.Address,
+        PostalCode = request.PostalCode,
+        GooglePlaceId = request.GooglePlaceId,
+        CanonicalName = request.CanonicalName,
+        Category = request.Category,
+        Latitude = request.Latitude,
+        Longitude = request.Longitude,
+        Radius = radius,
+        IsActive = request.IsActive,
+        IsFavorite = request.IsFavorite,
+        ReclassifyMedia = request.ReclassifyMedia,
+        ReassignFromOtherPlaces = request.ReassignFromOtherPlaces,
+    };
+
+    private async Task<(int MatchedCount, int FailureCount)> VerifyFinalPlaceStateAsync(
+        IReadOnlyCollection<Guid> mediaIds,
+        Guid placeId)
+    {
+        var matched = 0;
+        var failures = 0;
+        foreach (var mediaId in mediaIds.Distinct())
+        {
+            try
+            {
+                var detail = await _galleryApiRepository.GetPhotoAsync(mediaId);
+                if (detail.MemorykeeperPlaceId == placeId)
+                {
+                    matched++;
+                }
+            }
+            catch (Exception ex)
+            {
+                failures++;
+                _logger.LogWarning(ex, "Final place state verification failed. MediaId={MediaId}", mediaId);
+            }
+        }
+
+        return (matched, failures);
+    }
+
+    private async Task TryReloadAfterMutationAsync()
+    {
+        try
+        {
+            await LoadCoreAsync();
+        }
+        catch (Exception reloadException)
+        {
+            _logger.LogWarning(reloadException, "Cleanup reload after place mutation failed.");
+        }
+    }
+
+    private static string WithRadiusChangeNotice(PreparedPlace? prepared, string message)
+    {
+        if (prepared is null)
+        {
+            return message;
+        }
+
+        if (prepared.ExistingRadiusUpdated
+            && prepared.PreviousRadiusMeters is double previousRadius)
+        {
+            return $"'{prepared.Place.DisplayName}'의 장소 범위는 {previousRadius:0}m에서 {prepared.Place.Radius:0}m로 변경되었습니다. {message}";
+        }
+
+        return prepared.CreatedNewPlace
+            ? $"새 장소 '{prepared.Place.DisplayName}'는 생성되었습니다. {message}"
+            : message;
+    }
+
+    private sealed record PreparedPlace(
+        PlaceDto Place,
+        double? PreviousRadiusMeters = null,
+        bool ReclassificationPerformed = false,
+        PlaceReclassificationResult? Reclassification = null,
+        bool ExistingRadiusUpdated = false,
+        bool CreatedNewPlace = false);
+
+    private sealed class ProviderPlaceResolution
+    {
+        public PlaceDto? ExistingPlace { get; init; }
+
+        public CreatePlaceRequest? CreateRequest { get; init; }
     }
 
     [RelayCommand]
@@ -1191,29 +1464,16 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
         }
 
         var place = SelectedPlace;
-        await RunBusyAsync(async () =>
-        {
-            var result = await _pendingMemoryService.AssignPlaceAsync(new AssignMediaPlaceRequest
-            {
-                PlaceId = place.Id,
-                MediaIds = mediaIds
-            });
-            try
-            {
-                await SupplementRawLocationsAsync(
-                    result.UpdatedMediaIds,
-                    PlaceLocationPreview.FromPlaceDto(place, PlaceLocationSource.Existing));
-
-                StatusMessage = "장소가 등록되었습니다.";
-            }
-            finally
-            {
-                await LoadCoreAsync();
-            }
-        });
+        SelectedExistingPlace = ToPickerItem(place);
+        SelectedNearbyCandidate = null;
+        SelectedPlaceSuggestion = null;
+        HasMapPickSelection = false;
+        SelectedLocation = PlaceLocationPreview.FromPlaceDto(place, PlaceLocationSource.Existing);
+        NotifyPlacePreviewChanged();
+        await ConfirmPlaceRegistrationAsync();
     }
 
-    private async Task SupplementRawLocationsAsync(
+    private async Task<int> SupplementRawLocationsAsync(
         IReadOnlyCollection<Guid> mediaIds,
         PlaceLocationPreview selectedLocation)
     {
@@ -1243,10 +1503,7 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
             }
         }
 
-        if (failures is not null)
-        {
-            throw new AggregateException("일부 사진의 국가/도시 정보를 보완하지 못했습니다.", failures);
-        }
+        return failures?.Count ?? 0;
     }
 
     private static PlaceLocationPreview BuildRawLocationSource(

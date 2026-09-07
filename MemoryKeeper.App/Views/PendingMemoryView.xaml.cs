@@ -33,14 +33,17 @@ public sealed partial class PendingMemoryView : UserControl
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
+        ViewModel.HostXamlRoot = XamlRoot;
         ViewModel.OpenPlaceRegistrationRequested += OnOpenPlaceRegistrationRequested;
         ViewModel.OpenMemoRequested += OnOpenMemoRequested;
+        ViewModel.RadiusExpansionPreviewHandler = ShowRadiusExpansionPreviewAsync;
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
         ViewModel.OpenPlaceRegistrationRequested -= OnOpenPlaceRegistrationRequested;
         ViewModel.OpenMemoRequested -= OnOpenMemoRequested;
+        ViewModel.RadiusExpansionPreviewHandler = null;
     }
 
     private void GpsSection_OnTapped(object sender, TappedRoutedEventArgs e) =>
@@ -94,7 +97,7 @@ public sealed partial class PendingMemoryView : UserControl
     private async Task ShowPlaceRegistrationDialogAsync()
     {
         ViewModel.HostXamlRoot = XamlRoot;
-        var saved = await PlaceRegistrationDialog.ShowAsync(
+        await PlaceRegistrationDialog.ShowAsync(
             XamlRoot,
             ViewModel,
             new PlaceRegistrationDialog.Options
@@ -105,14 +108,7 @@ public sealed partial class PendingMemoryView : UserControl
                 MapPickHandler = ShowMapPickInPlaceDialogAsync
             });
 
-        if (saved)
-        {
-            await UserFeedback.ShowInfoAsync(
-                XamlRoot,
-                "장소 등록",
-                "위치정보가 등록되었습니다. 사진에 좌표가 반영되었고 미분류에서 제외됩니다.");
-        }
-        else if (!string.IsNullOrWhiteSpace(ViewModel.PlaceDialogStatus))
+        if (!string.IsNullOrWhiteSpace(ViewModel.PlaceDialogStatus))
         {
             await UserFeedback.ShowInfoAsync(
                 XamlRoot,
@@ -120,6 +116,16 @@ public sealed partial class PendingMemoryView : UserControl
                 ViewModel.PlaceDialogStatus);
         }
     }
+
+    private Task<bool> ShowRadiusExpansionPreviewAsync(
+        string placeName,
+        MemoryKeeper.Application.PlaceRadiusExpansionPlan plan) =>
+        PlaceRadiusExpansionDialog.ShowAsync(
+            XamlRoot,
+            _loggerFactory,
+            _settingRepository,
+            placeName,
+            plan);
 
     private async Task ShowMapPickInPlaceDialogAsync(ContentDialog host)
     {

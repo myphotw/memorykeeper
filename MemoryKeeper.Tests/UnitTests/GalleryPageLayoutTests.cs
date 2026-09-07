@@ -84,12 +84,44 @@ public sealed class GalleryPageLayoutTests
         Assert.Contains("post_reload_cleanup_selected_count", pending, StringComparison.Ordinal);
         Assert.Contains("post_reload_with_place_id_count", pending, StringComparison.Ordinal);
         Assert.Contains("PlaceCleanupDiagnostics.WriteAssignment", pending, StringComparison.Ordinal);
+        Assert.Contains("PlaceRadiusExpansionPlanner.Create", pending, StringComparison.Ordinal);
+        Assert.Contains("UpdateWithRadiusImpactAsync", pending, StringComparison.Ordinal);
+        Assert.Contains("VerifyFinalPlaceStateAsync", pending, StringComparison.Ordinal);
+        Assert.Contains("PendingPlaceAssignmentOutcomeEvaluator.Evaluate", pending, StringComparison.Ordinal);
         Assert.Contains("place-cleanup-diag.log", cleanupDiagnostics, StringComparison.Ordinal);
         Assert.Contains("StartupDiagnostics.LogDirectory", cleanupDiagnostics, StringComparison.Ordinal);
         Assert.Contains("catch", cleanupDiagnostics, StringComparison.Ordinal);
         Assert.Contains("finally", pending, StringComparison.Ordinal);
         Assert.Contains("await LoadCoreAsync();", pending, StringComparison.Ordinal);
         Assert.Contains("_fastHierarchy = null;", gallery, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PlaceCleanup_RadiusExpansionUsesSharedMapPreviewAndFinalStateOutcome()
+    {
+        var pending = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "ViewModels", "PendingMemoryViewModel.cs"));
+        var view = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Views", "PendingMemoryView.xaml.cs"));
+        var dialog = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Dialogs", "PlaceRadiusExpansionDialog.cs"));
+        var googleMap = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Maps", "Google", "GoogleMapHtmlBuilder.cs"));
+        var osmMap = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Maps", "Google", "OpenStreetMapHtmlBuilder.cs"));
+
+        Assert.Contains("RadiusExpansionPreviewHandler", pending, StringComparison.Ordinal);
+        Assert.Contains("UpdateWithRadiusImpactAsync", pending, StringComparison.Ordinal);
+        Assert.Contains("ReclassificationPerformed", pending, StringComparison.Ordinal);
+        Assert.Contains("VerifyFinalPlaceStateAsync", pending, StringComparison.Ordinal);
+        Assert.Contains("await LoadCoreAsync();", pending, StringComparison.Ordinal);
+        Assert.Contains("PlaceDialogStatus", view, StringComparison.Ordinal);
+        Assert.DoesNotContain("위치정보가 등록되었습니다. 사진에 좌표가 반영되었고 미분류에서 제외됩니다.", view, StringComparison.Ordinal);
+
+        Assert.Contains("현재 범위", dialog, StringComparison.Ordinal);
+        Assert.Contains("변경 예정", dialog, StringComparison.Ordinal);
+        Assert.Contains("현재 범위 밖 사진", dialog, StringComparison.Ordinal);
+        Assert.Contains("MapMarkerVisualState.Selected", dialog, StringComparison.Ordinal);
+        Assert.Contains("범위 늘리고 등록", dialog, StringComparison.Ordinal);
+        Assert.Contains("setRadiusPreview", googleMap, StringComparison.Ordinal);
+        Assert.Contains("currentPreviewCircle", googleMap, StringComparison.Ordinal);
+        Assert.Contains("proposedPreviewCircle", googleMap, StringComparison.Ordinal);
+        Assert.Contains("setRadiusPreview", osmMap, StringComparison.Ordinal);
     }
 
     private static string FindSourceFile(params string[] parts)

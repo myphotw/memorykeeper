@@ -136,6 +136,8 @@ public interface IMapController
 
     Task ClearEditablePinAsync(CancellationToken ct = default);
 
+    Task SetRadiusPreviewAsync(MapRadiusPreview preview, CancellationToken ct = default);
+
 
 
     /// <summary>
