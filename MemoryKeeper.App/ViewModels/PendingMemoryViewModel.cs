@@ -584,7 +584,7 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
     {
         MapPickLatitude = latitude;
         MapPickLongitude = longitude;
-        MapPickRadiusMeters = Math.Clamp(radiusMeters, 20, 2000);
+        MapPickRadiusMeters = Math.Clamp(radiusMeters, 20, PlaceRadiusExpansionPlanner.MaximumRadiusMeters);
         HasMapPickSelection = true;
         SelectedExistingPlace = null;
         SelectedNearbyCandidate = null;
@@ -1100,11 +1100,10 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
 
             completedPreparation = prepared;
             var place = prepared.Place;
-            var result = await _pendingMemoryService.AssignPlaceAsync(new AssignMediaPlaceRequest
-            {
-                PlaceId = place.Id,
-                MediaIds = mediaIds
-            });
+            var result = await AssignManualPlaceAsync(
+                mediaIds,
+                place.Id,
+                prepared.ReclassificationPerformed);
 
             var supplementFailureCount = 0;
             var reclass = prepared.Reclassification;
@@ -1113,13 +1112,6 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
                 supplementFailureCount = await SupplementRawLocationsAsync(
                     result.UpdatedMediaIds,
                     BuildRawLocationSource(place, SelectedLocation));
-
-                if (!prepared.ReclassificationPerformed)
-                {
-                    reclass = await _placeService.ReclassifyMediaAsync(
-                        place.Id,
-                        reassignFromOtherPlaces: true);
-                }
             }
 
             await LoadCoreAsync();
@@ -1134,9 +1126,9 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
                     RequestedCount = mediaIds.Count,
                     AssignedCount = result.UpdatedCount,
                     UpdatedIdCount = result.UpdatedMediaIds.Count,
-                    ReclassUnassignedCount = prepared.ReclassificationPerformed
-                        ? 0
-                        : reclass?.UnassignedCount ?? 0,
+                    ConflictCount = result.ConflictCount,
+                    RevisionRefreshFailureCount = result.RevisionRefreshFailureCount,
+                    ReclassUnassignedCount = reclass?.UnassignedCount ?? 0,
                     PostReloadWithPlaceIdCount = finalState.MatchedCount,
                     PostReloadRemainingSelectedCount = postReloadSelected.Count,
                     FinalStateVerificationFailureCount = finalState.FailureCount,
@@ -1152,12 +1144,14 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
             StatusMessage = PlaceDialogStatus;
 
             _logger.LogInformation(
-                "PLACE_CLEANUP_ASSIGN_DIAG selected_count={SelectedCount} assigned_count={AssignedCount} updated_id_count={UpdatedIdCount} reclass_assigned_count={ReclassAssignedCount} reclass_unassigned_count={ReclassUnassignedCount} post_reload_cleanup_selected_count={PostReloadCleanupSelectedCount} post_reload_with_place_id_count={PostReloadWithPlaceIdCount}",
+                "PLACE_CLEANUP_ASSIGN_DIAG selected_count={SelectedCount} assigned_count={AssignedCount} updated_id_count={UpdatedIdCount} reclass_assigned_count={ReclassAssignedCount} reclass_unassigned_count={ReclassUnassignedCount} pre_assign_revision_refresh_failure_count={RevisionRefreshFailureCount} conflict_count={ConflictCount} post_reload_cleanup_selected_count={PostReloadCleanupSelectedCount} post_reload_with_place_id_count={PostReloadWithPlaceIdCount}",
                 mediaIds.Count,
                 result.UpdatedCount,
                 result.UpdatedMediaIds.Count,
                 reclass?.AssignedCount ?? 0,
                 reclass?.UnassignedCount ?? 0,
+                result.RevisionRefreshFailureCount,
+                result.ConflictCount,
                 postReloadSelected.Count,
                 finalState.MatchedCount);
             PlaceCleanupDiagnostics.WriteAssignment(
@@ -1166,6 +1160,8 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
                 result.UpdatedMediaIds.Count,
                 reclass?.AssignedCount ?? 0,
                 reclass?.UnassignedCount ?? 0,
+                result.RevisionRefreshFailureCount,
+                result.ConflictCount,
                 postReloadSelected.Count,
                 finalState.MatchedCount);
             return outcome.IsSuccess;
@@ -1176,7 +1172,7 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
             await TryReloadAfterMutationAsync();
             PlaceDialogStatus = WithRadiusChangeNotice(
                 completedPreparation,
-                "다른 변경이 먼저 반영되어 일부 사진을 처리하지 못했습니다. 최신 목록을 다시 불러왔습니다.");
+                "다른 변경이 먼저 반영되어 장소 등록을 완료하지 못했습니다. 최신 목록을 다시 불러왔습니다.");
             StatusMessage = PlaceDialogStatus;
             return false;
         }
@@ -1302,7 +1298,15 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
         }
 
         var created = await _placeService.CreatePlaceAsync(request, geographyFallback);
-        return new PreparedPlace(created, previousRadius, CreatedNewPlace: true);
+        var reclassification = await _placeService.ReclassifyMediaAsync(
+            created.Id,
+            reassignFromOtherPlaces: true);
+        return new PreparedPlace(
+            created,
+            previousRadius,
+            ReclassificationPerformed: true,
+            Reclassification: reclassification,
+            CreatedNewPlace: true);
     }
 
     private async Task<bool> ConfirmRadiusExpansionAsync(
@@ -1375,6 +1379,148 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
         ReassignFromOtherPlaces = request.ReassignFromOtherPlaces,
     };
 
+    private async Task<AssignMediaPlaceResult> AssignManualPlaceAsync(
+        IReadOnlyList<Guid> mediaIds,
+        Guid placeId,
+        bool refreshAfterReclassification)
+    {
+        var distinctIds = mediaIds.Distinct().ToList();
+        IReadOnlyDictionary<Guid, int>? latestRevisions = null;
+        var revisionRefreshFailureCount = 0;
+        if (refreshAfterReclassification)
+        {
+            var refresh = await LoadLatestPlaceRevisionsAsync(distinctIds);
+            latestRevisions = refresh.Revisions;
+            revisionRefreshFailureCount = refresh.FailureCount;
+            distinctIds = distinctIds
+                .Where(id => latestRevisions.ContainsKey(id))
+                .ToList();
+        }
+
+        if (distinctIds.Count == 0)
+        {
+            return new AssignMediaPlaceResult
+            {
+                PlaceId = placeId,
+                RevisionRefreshFailureCount = revisionRefreshFailureCount,
+            };
+        }
+
+        try
+        {
+            var result = await _pendingMemoryService.AssignPlaceAsync(new AssignMediaPlaceRequest
+            {
+                PlaceId = placeId,
+                MediaIds = distinctIds,
+                ExpectedPlaceRevisions = latestRevisions,
+            });
+            return new AssignMediaPlaceResult
+            {
+                PlaceId = result.PlaceId,
+                UpdatedCount = result.UpdatedCount,
+                UpdatedMediaIds = result.UpdatedMediaIds,
+                ConflictCount = result.ConflictCount,
+                RevisionRefreshFailureCount = revisionRefreshFailureCount,
+            };
+        }
+        catch (ApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Conflict)
+        {
+            _logger.LogWarning(
+                ex,
+                "Batch manual place assignment conflicted; retrying selected photos individually with authoritative revisions.");
+            return await AssignIndividuallyAfterConflictAsync(
+                distinctIds,
+                placeId,
+                revisionRefreshFailureCount);
+        }
+    }
+
+    private async Task<PlaceRevisionRefresh> LoadLatestPlaceRevisionsAsync(
+        IReadOnlyCollection<Guid> mediaIds)
+    {
+        var revisions = new Dictionary<Guid, int>();
+        var failures = 0;
+        foreach (var mediaId in mediaIds.Distinct())
+        {
+            try
+            {
+                var detail = await _galleryApiRepository.GetPhotoAsync(mediaId);
+                if (detail.PlaceRevision is int revision)
+                {
+                    revisions[mediaId] = revision;
+                }
+                else
+                {
+                    failures++;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                failures++;
+                _logger.LogWarning(ex, "Failed to refresh a selected photo place revision.");
+            }
+        }
+
+        return new PlaceRevisionRefresh(revisions, failures);
+    }
+
+    private async Task<AssignMediaPlaceResult> AssignIndividuallyAfterConflictAsync(
+        IReadOnlyCollection<Guid> mediaIds,
+        Guid placeId,
+        int priorRevisionRefreshFailureCount)
+    {
+        var updatedIds = new List<Guid>();
+        var conflictCount = 0;
+        var refreshFailureCount = priorRevisionRefreshFailureCount;
+        foreach (var mediaId in mediaIds.Distinct())
+        {
+            try
+            {
+                var detail = await _galleryApiRepository.GetPhotoAsync(mediaId);
+                if (detail.PlaceRevision is not int revision)
+                {
+                    refreshFailureCount++;
+                    continue;
+                }
+
+                await _placeService.AssignFilePlaceAsync(mediaId, placeId, revision);
+                updatedIds.Add(mediaId);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (MemoryKeeperPlaceRevisionConflictException ex)
+            {
+                conflictCount++;
+                _logger.LogWarning(ex, "A selected photo changed during manual place assignment.");
+            }
+            catch (ApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Conflict)
+            {
+                conflictCount++;
+                _logger.LogWarning(ex, "A selected photo changed during manual place assignment.");
+            }
+            catch (Exception ex)
+            {
+                refreshFailureCount++;
+                _logger.LogWarning(ex, "Individual manual place assignment failed.");
+            }
+        }
+
+        return new AssignMediaPlaceResult
+        {
+            PlaceId = placeId,
+            UpdatedCount = updatedIds.Count,
+            UpdatedMediaIds = updatedIds,
+            ConflictCount = conflictCount,
+            RevisionRefreshFailureCount = refreshFailureCount,
+        };
+    }
+
     private async Task<(int MatchedCount, int FailureCount)> VerifyFinalPlaceStateAsync(
         IReadOnlyCollection<Guid> mediaIds,
         Guid placeId)
@@ -1438,6 +1584,10 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
         PlaceReclassificationResult? Reclassification = null,
         bool ExistingRadiusUpdated = false,
         bool CreatedNewPlace = false);
+
+    private sealed record PlaceRevisionRefresh(
+        IReadOnlyDictionary<Guid, int> Revisions,
+        int FailureCount);
 
     private sealed class ProviderPlaceResolution
     {

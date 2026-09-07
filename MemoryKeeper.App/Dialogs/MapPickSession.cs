@@ -57,7 +57,7 @@ public static class MapPickSession
             Header = "반경 (m)",
             Value = initialRadiusMeters,
             Minimum = 20,
-            Maximum = 2000,
+            Maximum = PlaceRadiusExpansionPlanner.MaximumRadiusMeters,
             SmallChange = 10,
             SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline
         };

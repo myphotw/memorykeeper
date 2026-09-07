@@ -7,7 +7,11 @@ namespace MemoryKeeper.Application;
 /// </summary>
 public static class PlaceRadiusExpansionPlanner
 {
-    public const double MaximumRadiusMeters = 2000d;
+    // Keep the client-side safety ceiling aligned with PlaceManagementViewModel.
+    // The current PC/API contract validates positivity but exposes no smaller maximum.
+    public const double MaximumRadiusMeters = 50000d;
+    public const double LargeRadiusWarningThresholdMeters = 2000d;
+    public const double StrongRadiusWarningThresholdMeters = 10000d;
     public const double RadiusStepMeters = 10d;
     public const double SafetyMarginMeters = 10d;
 
@@ -97,6 +101,12 @@ public sealed class PlaceRadiusExpansionPlan
     public bool NeedsExpansion { get; init; }
 
     public bool ExceedsMaximum { get; init; }
+
+    public bool RequiresLargeRadiusWarning =>
+        ProposedRadiusMeters > PlaceRadiusExpansionPlanner.LargeRadiusWarningThresholdMeters;
+
+    public bool RequiresStrongRadiusWarning =>
+        ProposedRadiusMeters > PlaceRadiusExpansionPlanner.StrongRadiusWarningThresholdMeters;
 
     public IReadOnlyList<PlaceRadiusPhotoPoint> PhotoPoints { get; init; } = [];
 }

@@ -128,8 +128,12 @@
                     </NavigationViewItem>
                 </NavigationView.MenuItems>
 
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <Grid x:Name="DetailHost" HorizontalAlignment="Stretch" Padding="{StaticResource MkSettingsDetailPaddingThickness}">
+                <Grid>
+                    <ScrollViewer
+                        VerticalScrollBarVisibility="Auto"
+                        HorizontalScrollBarVisibility="Disabled"
+                        Visibility="{Binding IsPendingMemoriesDetailVisible, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}">
+                        <Grid x:Name="DetailHost" HorizontalAlignment="Stretch" Padding="{StaticResource MkSettingsDetailPaddingThickness}">
 
                         <!-- 사진 관리: 원본 폴더 + 등록 workflow -->
                         <Border
@@ -138,23 +142,6 @@
                             AutomationProperties.Name="사진 관리 상세"
                             Visibility="{Binding IsPhotoManagementDetailVisible, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
                             <ContentControl x:Name="PhotoManagementHost" HorizontalContentAlignment="Stretch" />
-                        </Border>
-
-                        <!-- 장소 정리 필요 -->
-                        <Border
-                            x:Name="PendingMemoriesDetail"
-                            Style="{StaticResource MkWideSettingsCardStyle}"
-                            Margin="0"
-                            MinHeight="720"
-                            AutomationProperties.Name="장소 정리 필요 상세"
-                            Visibility="{Binding IsPendingMemoriesDetailVisible, Converter={StaticResource BoolToVisibilityConverter}}">
-                            <Grid RowDefinitions="Auto,*" RowSpacing="16">
-                                <StackPanel Spacing="6">
-                                    <TextBlock Text="장소 정리 필요" Style="{StaticResource MkSectionTitleStyle}" Margin="0" />
-                                    <TextBlock Text="장소가 등록되지 않은 사진을 정리합니다." Style="{StaticResource MkCaptionTextStyle}" />
-                                </StackPanel>
-                                <ContentControl x:Name="PendingHost" Grid.Row="1" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
-                            </Grid>
                         </Border>
 
                         <!-- 장소 관리 -->
@@ -408,8 +395,26 @@
                                 </Grid>
                             </StackPanel>
                         </Border>
+                        </Grid>
+                    </ScrollViewer>
+
+                    <!-- 장소 정리 필요: 작업 화면은 자체 레이아웃/스크롤을 그대로 사용한다. -->
+                    <Grid
+                        x:Name="PendingMemoriesDetail"
+                        Margin="0"
+                        Padding="0"
+                        HorizontalAlignment="Stretch"
+                        VerticalAlignment="Stretch"
+                        AutomationProperties.Name="장소 정리 필요 상세"
+                        Visibility="{Binding IsPendingMemoriesDetailVisible, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <ContentControl
+                            x:Name="PendingHost"
+                            HorizontalAlignment="Stretch"
+                            VerticalAlignment="Stretch"
+                            HorizontalContentAlignment="Stretch"
+                            VerticalContentAlignment="Stretch" />
                     </Grid>
-                </ScrollViewer>
+                </Grid>
             </NavigationView>
         </Grid>
 

@@ -858,7 +858,7 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
     {
         MapPickLatitude = latitude;
         MapPickLongitude = longitude;
-        MapPickRadiusMeters = Math.Clamp(radiusMeters, 20, 2000);
+        MapPickRadiusMeters = Math.Clamp(radiusMeters, 20, PlaceRadiusExpansionPlanner.MaximumRadiusMeters);
         HasMapPickSelection = true;
         SelectedNearbyCandidate = null;
         SelectedPlaceSuggestion = null;
@@ -1900,7 +1900,7 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
         if (setting is not null
             && double.TryParse(setting.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var radius))
         {
-            return Math.Clamp(radius, 20, 2000);
+            return Math.Clamp(radius, 20, PlaceRadiusExpansionPlanner.MaximumRadiusMeters);
         }
 
         return DefaultMapPickRadius;

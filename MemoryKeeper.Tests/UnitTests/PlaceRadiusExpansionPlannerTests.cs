@@ -76,11 +76,40 @@ public sealed class PlaceRadiusExpansionPlannerTests
             CenterLatitude,
             CenterLongitude,
             100,
-            [Photo("far-away.jpg", CenterLatitude + 0.08, CenterLongitude)]);
+            [Photo("far-away.jpg", CenterLatitude + 0.5, CenterLongitude)]);
 
         Assert.True(plan.NeedsExpansion);
         Assert.True(plan.ExceedsMaximum);
         Assert.True(plan.ProposedRadiusMeters > PlaceRadiusExpansionPlanner.MaximumRadiusMeters);
+    }
+
+    [Fact]
+    public void LargeRadius_IsAllowedButMarkedForWarning()
+    {
+        var plan = PlaceRadiusExpansionPlanner.Create(
+            CenterLatitude,
+            CenterLongitude,
+            100,
+            [Photo("large-place.jpg", CenterLatitude + 0.032, CenterLongitude)]);
+
+        Assert.True(plan.ProposedRadiusMeters > 2000);
+        Assert.False(plan.ExceedsMaximum);
+        Assert.True(plan.RequiresLargeRadiusWarning);
+        Assert.False(plan.RequiresStrongRadiusWarning);
+    }
+
+    [Fact]
+    public void VeryLargeRadius_IsAllowedBelowSafetyCeilingButRequiresStrongWarning()
+    {
+        var plan = PlaceRadiusExpansionPlanner.Create(
+            CenterLatitude,
+            CenterLongitude,
+            100,
+            [Photo("very-large-place.jpg", CenterLatitude + 0.12, CenterLongitude)]);
+
+        Assert.True(plan.ProposedRadiusMeters > 10000);
+        Assert.False(plan.ExceedsMaximum);
+        Assert.True(plan.RequiresStrongRadiusWarning);
     }
 
     private static PlaceRadiusPhotoSelection Photo(string name, double latitude, double longitude) =>

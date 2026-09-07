@@ -72,6 +72,18 @@ public static class PlaceRadiusExpansionDialog
                 status,
             },
         };
+        if (plan.RequiresLargeRadiusWarning)
+        {
+            content.Children.Insert(1, new TextBlock
+            {
+                Text = plan.RequiresStrongRadiusWarning
+                    ? $"변경 예정 범위가 {plan.ProposedRadiusMeters:0}m로 매우 큽니다. GPS 위치를 확인한 뒤 승인해 주세요."
+                    : $"변경 예정 범위가 {plan.ProposedRadiusMeters:0}m입니다. 범위를 크게 넓히면 주변의 다른 사진도 이 장소로 자동 분류될 수 있습니다.",
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Opacity = 0.9,
+            });
+        }
         var dialog = new ContentDialog
         {
             XamlRoot = xamlRoot,

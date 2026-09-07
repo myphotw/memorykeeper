@@ -20,6 +20,8 @@ public static class PlaceCleanupDiagnostics
         int updatedIdCount,
         int reclassAssignedCount,
         int reclassUnassignedCount,
+        int revisionRefreshFailureCount,
+        int conflictCount,
         int postReloadCleanupSelectedCount,
         int postReloadWithPlaceIdCount)
     {
@@ -32,6 +34,8 @@ public static class PlaceCleanupDiagnostics
                 $"updated_id_count={updatedIdCount} " +
                 $"reclass_assigned_count={reclassAssignedCount} " +
                 $"reclass_unassigned_count={reclassUnassignedCount} " +
+                $"pre_assign_revision_refresh_failure_count={revisionRefreshFailureCount} " +
+                $"conflict_count={conflictCount} " +
                 $"post_reload_cleanup_selected_count={postReloadCleanupSelectedCount} " +
                 $"post_reload_with_place_id_count={postReloadWithPlaceIdCount}";
 

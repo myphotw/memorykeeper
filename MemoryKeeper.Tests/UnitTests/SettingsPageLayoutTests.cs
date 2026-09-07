@@ -13,7 +13,7 @@ public sealed class SettingsPageLayoutTests
         Assert.Contains("Style=\"{StaticResource MkWidePageContainerStyle}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"DetailHost\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("x:Name=\"DetailHost\" MaxWidth=\"900\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("ScrollViewer VerticalScrollBarVisibility=\"Auto\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("VerticalScrollBarVisibility=\"Auto\"", xaml, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -30,7 +30,7 @@ public sealed class SettingsPageLayoutTests
         }
 
         var photoManagement = LoadSource("MemoryKeeper.App", "Views", "PhotoManagementView.xaml");
-        Assert.Equal(5, Count(xaml, "Style=\"{StaticResource MkWideSettingsCardStyle}\"")
+        Assert.Equal(4, Count(xaml, "Style=\"{StaticResource MkWideSettingsCardStyle}\"")
                         + Count(photoManagement, "Style=\"{StaticResource MkWideSettingsCardStyle}\""));
         Assert.Equal(4, Count(xaml, "Style=\"{StaticResource MkSimpleSettingsCardStyle}\""));
         Assert.Equal(1, Count(xaml, "Style=\"{StaticResource MkSimpleSettingsOutlinedCardStyle}\""));
@@ -121,6 +121,48 @@ public sealed class SettingsPageLayoutTests
         Assert.Contains("SettingsSection.Tags", settingsCode, StringComparison.Ordinal);
         Assert.Contains("else if (section == SettingsSection.PendingMemories)", settingsCode, StringComparison.Ordinal);
         Assert.Equal(2, Count(settingsCode, "await _pendingView.ViewModel.LoadCommand.ExecuteAsync(null);"));
+    }
+
+    [Fact]
+    public void Pending_Detail_Uses_Shared_Workspace_Directly_Without_Settings_Card_Or_Duplicate_Header()
+    {
+        var xaml = LoadSource("MemoryKeeper.App", "Views", "SettingsPage.xaml");
+        var pendingStart = xaml.IndexOf("x:Name=\"PendingMemoriesDetail\"", StringComparison.Ordinal);
+        var pendingEnd = xaml.IndexOf("</Grid>", pendingStart, StringComparison.Ordinal);
+
+        Assert.True(pendingStart >= 0);
+        Assert.True(pendingEnd > pendingStart);
+        var pendingHost = xaml[pendingStart..pendingEnd];
+
+        Assert.DoesNotContain("MkWideSettingsCardStyle", pendingHost, StringComparison.Ordinal);
+        Assert.DoesNotContain("MinHeight=\"720\"", pendingHost, StringComparison.Ordinal);
+        Assert.DoesNotContain("Text=\"장소 정리 필요\"", pendingHost, StringComparison.Ordinal);
+        Assert.DoesNotContain("장소가 등록되지 않은 사진을 정리합니다.", pendingHost, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"PendingHost\"", pendingHost, StringComparison.Ordinal);
+        Assert.Contains("HorizontalContentAlignment=\"Stretch\"", pendingHost, StringComparison.Ordinal);
+        Assert.Contains("VerticalContentAlignment=\"Stretch\"", pendingHost, StringComparison.Ordinal);
+        Assert.Contains("IsPendingMemoriesDetailVisible", pendingHost, StringComparison.Ordinal);
+
+        Assert.Contains(
+            "Visibility=\"{Binding IsPendingMemoriesDetailVisible, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}\"",
+            xaml,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Gallery_Pending_Page_Remains_The_Canonical_Shared_View_Host()
+    {
+        var page = LoadSource("MemoryKeeper.App", "Views", "PendingMemoryPage.cs");
+        var settingsCode = LoadSource("MemoryKeeper.App", "Views", "SettingsPage.xaml.cs");
+
+        Assert.Contains("PendingMemoryPage(PendingMemoryView view)", page, StringComparison.Ordinal);
+        Assert.Contains("ViewModel = view.ViewModel", page, StringComparison.Ordinal);
+        Assert.Contains("Text = \"장소 정리 필요\"", page, StringComparison.Ordinal);
+        Assert.Contains("Grid.SetRow(view, 1)", page, StringComparison.Ordinal);
+        Assert.Contains("root.Children.Add(view)", page, StringComparison.Ordinal);
+
+        Assert.Contains("PendingMemoryView pendingView", settingsCode, StringComparison.Ordinal);
+        Assert.Contains("PendingHost.Content = _pendingView", settingsCode, StringComparison.Ordinal);
     }
 
     [Fact]

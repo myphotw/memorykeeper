@@ -83,9 +83,15 @@ public sealed class GalleryPageLayoutTests
         Assert.Contains("PLACE_CLEANUP_ASSIGN_DIAG", pending, StringComparison.Ordinal);
         Assert.Contains("post_reload_cleanup_selected_count", pending, StringComparison.Ordinal);
         Assert.Contains("post_reload_with_place_id_count", pending, StringComparison.Ordinal);
+        Assert.Contains("pre_assign_revision_refresh_failure_count", pending, StringComparison.Ordinal);
+        Assert.Contains("conflict_count", pending, StringComparison.Ordinal);
         Assert.Contains("PlaceCleanupDiagnostics.WriteAssignment", pending, StringComparison.Ordinal);
         Assert.Contains("PlaceRadiusExpansionPlanner.Create", pending, StringComparison.Ordinal);
         Assert.Contains("UpdateWithRadiusImpactAsync", pending, StringComparison.Ordinal);
+        Assert.Contains("LoadLatestPlaceRevisionsAsync", pending, StringComparison.Ordinal);
+        Assert.Contains("ExpectedPlaceRevisions = latestRevisions", pending, StringComparison.Ordinal);
+        Assert.Contains("AssignIndividuallyAfterConflictAsync", pending, StringComparison.Ordinal);
+        Assert.DoesNotContain("if (!prepared.ReclassificationPerformed)", pending, StringComparison.Ordinal);
         Assert.Contains("VerifyFinalPlaceStateAsync", pending, StringComparison.Ordinal);
         Assert.Contains("PendingPlaceAssignmentOutcomeEvaluator.Evaluate", pending, StringComparison.Ordinal);
         Assert.Contains("place-cleanup-diag.log", cleanupDiagnostics, StringComparison.Ordinal);
@@ -122,6 +128,50 @@ public sealed class GalleryPageLayoutTests
         Assert.Contains("currentPreviewCircle", googleMap, StringComparison.Ordinal);
         Assert.Contains("proposedPreviewCircle", googleMap, StringComparison.Ordinal);
         Assert.Contains("setRadiusPreview", osmMap, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PlaceCleanup_ManualAssignmentIsTheLastPlaceMutationAfterAutomaticReclassification()
+    {
+        var pending = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "ViewModels", "PendingMemoryViewModel.cs"));
+
+        var confirmStart = pending.IndexOf("public async Task<bool> ConfirmPlaceRegistrationAsync()", StringComparison.Ordinal);
+        var confirmEnd = pending.IndexOf("private IReadOnlyList<PlaceRadiusPhotoSelection> BuildRadiusSelections", confirmStart, StringComparison.Ordinal);
+        Assert.True(confirmStart >= 0);
+        Assert.True(confirmEnd > confirmStart);
+        var confirmFlow = pending[confirmStart..confirmEnd];
+
+        Assert.True(
+            confirmFlow.IndexOf("completedPreparation = prepared", StringComparison.Ordinal)
+            < confirmFlow.IndexOf("AssignManualPlaceAsync", StringComparison.Ordinal));
+        Assert.True(
+            confirmFlow.IndexOf("AssignManualPlaceAsync", StringComparison.Ordinal)
+            < confirmFlow.IndexOf("SupplementRawLocationsAsync", StringComparison.Ordinal));
+        Assert.DoesNotContain("ReclassifyMediaAsync", confirmFlow, StringComparison.Ordinal);
+
+        var createStart = pending.IndexOf("private async Task<PreparedPlace?> PrepareNewPlaceAsync", StringComparison.Ordinal);
+        var createEnd = pending.IndexOf("private async Task<bool> ConfirmRadiusExpansionAsync", createStart, StringComparison.Ordinal);
+        Assert.True(createStart >= 0);
+        Assert.True(createEnd > createStart);
+        var createFlow = pending[createStart..createEnd];
+
+        Assert.True(
+            createFlow.IndexOf("CreatePlaceAsync", StringComparison.Ordinal)
+            < createFlow.IndexOf("ReclassifyMediaAsync", StringComparison.Ordinal));
+        Assert.Contains("ReclassificationPerformed: true", createFlow, StringComparison.Ordinal);
+
+        var manualStart = pending.IndexOf("private async Task<AssignMediaPlaceResult> AssignManualPlaceAsync", StringComparison.Ordinal);
+        var manualEnd = pending.IndexOf("private async Task<PlaceRevisionRefresh> LoadLatestPlaceRevisionsAsync", manualStart, StringComparison.Ordinal);
+        Assert.True(manualStart >= 0);
+        Assert.True(manualEnd > manualStart);
+        var manualFlow = pending[manualStart..manualEnd];
+
+        Assert.Contains("LoadLatestPlaceRevisionsAsync", manualFlow, StringComparison.Ordinal);
+        Assert.Contains("_pendingMemoryService.AssignPlaceAsync", manualFlow, StringComparison.Ordinal);
+        Assert.True(
+            manualFlow.IndexOf("LoadLatestPlaceRevisionsAsync", StringComparison.Ordinal)
+            < manualFlow.IndexOf("_pendingMemoryService.AssignPlaceAsync", StringComparison.Ordinal));
+        Assert.Contains("ExpectedPlaceRevisions = latestRevisions", manualFlow, StringComparison.Ordinal);
     }
 
     private static string FindSourceFile(params string[] parts)

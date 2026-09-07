@@ -180,6 +180,83 @@ public sealed class MemoryKeeperWriteServiceTests
     }
 
     [Fact]
+    public async Task BatchAssign_AfterReclassificationUsesExplicitLatestRevisionsInsteadOfLoadedSnapshot()
+    {
+        var secondMediaId = BackendFileIdCodec.ToGuid(SecondFileId);
+        var repository = new FakeRepository
+        {
+            PlaceCleanupPages =
+            {
+                [1] = new MemoryKeeperPendingListDto
+                {
+                    Items =
+                    [
+                        new MemoryKeeperPendingItemDto { FileId = FileId, PlaceRevision = 7 },
+                        new MemoryKeeperPendingItemDto { FileId = SecondFileId, PlaceRevision = 8 },
+                    ],
+                    Total = 2,
+                    Page = 1,
+                    PageSize = 50,
+                },
+            },
+        };
+        var service = new MemoryKeeperWriteService(repository, new CatalogInvalidation());
+        await service.GetPlaceCleanupMemoriesAsync();
+
+        await service.AssignPlaceAsync(new AssignMediaPlaceRequest
+        {
+            MediaIds = [MediaId, secondMediaId],
+            PlaceId = PlaceId,
+            ExpectedPlaceRevisions = new Dictionary<Guid, int>
+            {
+                [MediaId] = 17,
+                [secondMediaId] = 18,
+            },
+        });
+
+        Assert.Equal(17, repository.LastPendingAssign!.ExpectedRevisions[FileId]);
+        Assert.Equal(18, repository.LastPendingAssign.ExpectedRevisions[SecondFileId]);
+        Assert.DoesNotContain(7, repository.LastPendingAssign.ExpectedRevisions.Values);
+        Assert.DoesNotContain(8, repository.LastPendingAssign.ExpectedRevisions.Values);
+    }
+
+    [Fact]
+    public async Task BatchAssign_DoesNotFallBackToStaleSnapshotWhenLatestRevisionIsMissing()
+    {
+        var secondMediaId = BackendFileIdCodec.ToGuid(SecondFileId);
+        var repository = new FakeRepository
+        {
+            PlaceCleanupPages =
+            {
+                [1] = new MemoryKeeperPendingListDto
+                {
+                    Items =
+                    [
+                        new MemoryKeeperPendingItemDto { FileId = FileId, PlaceRevision = 7 },
+                        new MemoryKeeperPendingItemDto { FileId = SecondFileId, PlaceRevision = 8 },
+                    ],
+                    Total = 2,
+                    Page = 1,
+                    PageSize = 50,
+                },
+            },
+        };
+        var service = new MemoryKeeperWriteService(repository, new CatalogInvalidation());
+        await service.GetPlaceCleanupMemoriesAsync();
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.AssignPlaceAsync(new AssignMediaPlaceRequest
+            {
+                MediaIds = [MediaId, secondMediaId],
+                PlaceId = PlaceId,
+                ExpectedPlaceRevisions = new Dictionary<Guid, int> { [MediaId] = 17 },
+            }));
+
+        Assert.Contains("최신 revision", error.Message, StringComparison.Ordinal);
+        Assert.Null(repository.LastPendingAssign);
+    }
+
+    [Fact]
     public async Task PlaceCleanup_AccumulatesPagesAndAllowsRemappingAnExistingPlaceItem()
     {
         var existingPlaceId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");

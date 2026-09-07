@@ -418,9 +418,23 @@ public sealed class MemoryKeeperWriteService
         }
 
         var fileIds = selected.Select(id => _pendingRevisions[id].FileId).ToList();
+        if (request.ExpectedPlaceRevisions is not null)
+        {
+            var missingRevisions = selected
+                .Where(id => !request.ExpectedPlaceRevisions.ContainsKey(id))
+                .ToList();
+            if (missingRevisions.Count > 0)
+            {
+                throw new InvalidOperationException(
+                    "자동 장소 분류 후 일부 사진의 최신 revision을 확인하지 못했습니다.");
+            }
+        }
+
         var revisions = selected.ToDictionary(
             id => _pendingRevisions[id].FileId,
-            id => _pendingRevisions[id].PlaceRevision,
+            id => request.ExpectedPlaceRevisions is null
+                ? _pendingRevisions[id].PlaceRevision
+                : request.ExpectedPlaceRevisions[id],
             StringComparer.OrdinalIgnoreCase);
         var result = await _repository.AssignPendingPlaceAsync(new MemoryKeeperPendingAssignRequest
         {

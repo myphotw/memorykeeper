@@ -544,7 +544,7 @@ public sealed partial class PhotoDetailView : UserControl
             Header = "반경 (m)",
             Value = ViewModel.MapPickRadiusMeters,
             Minimum = 20,
-            Maximum = 2000,
+            Maximum = MemoryKeeper.Application.PlaceRadiusExpansionPlanner.MaximumRadiusMeters,
             SmallChange = 10,
             SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline
         };
