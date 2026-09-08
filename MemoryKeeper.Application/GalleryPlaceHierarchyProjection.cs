@@ -4,6 +4,7 @@ namespace MemoryKeeper.Application;
 
 public sealed record GalleryPlaceProjectionItem(
     Guid PlaceId,
+    string? LocationKey,
     string DisplayName,
     int PhotoCount);
 
@@ -54,6 +55,7 @@ public static class GalleryPlaceHierarchyProjection
                     .OrderBy(place => place.DisplayName, StringComparer.CurrentCultureIgnoreCase)
                     .Select(place => new GalleryPlaceProjectionItem(
                         place.PlaceId,
+                        place.LocationKey,
                         place.DisplayName,
                         place.PhotoCount))
                     .ToList()))
@@ -92,8 +94,13 @@ public static class GalleryPlaceHierarchyProjection
                 : node.DisplayName.Trim();
             if (!country.Places.TryGetValue(id, out var place))
             {
-                place = new PlaceAccumulator(id, title);
+                place = new PlaceAccumulator(id, node.LocationKey, title);
                 country.Places.Add(id, place);
+            }
+            else if (string.IsNullOrWhiteSpace(place.LocationKey)
+                     && !string.IsNullOrWhiteSpace(node.LocationKey))
+            {
+                place.LocationKey = node.LocationKey;
             }
 
             place.PhotoCount += Math.Max(0, node.Count);
@@ -116,9 +123,11 @@ public static class GalleryPlaceHierarchyProjection
         public Dictionary<Guid, PlaceAccumulator> Places { get; } = [];
     }
 
-    private sealed class PlaceAccumulator(Guid placeId, string displayName)
+    private sealed class PlaceAccumulator(Guid placeId, string? locationKey, string displayName)
     {
         public Guid PlaceId { get; } = placeId;
+
+        public string? LocationKey { get; set; } = locationKey;
 
         public string DisplayName { get; } = displayName;
 

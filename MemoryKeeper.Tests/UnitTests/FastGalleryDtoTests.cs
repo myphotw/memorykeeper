@@ -51,11 +51,25 @@ public sealed class FastGalleryDtoTests
     [Fact]
     public void Hierarchy_AcceptsNamedNestedLevels()
     {
-        const string json = """{"years":[{"year":2025,"count":1,"countries":[{"country":"Japan","count":1,"regions":[{"region":"Tokyo","count":1,"places":[{"memorykeeper_place_id":"00000000-0000-0000-0000-000000000001","display_name":"Shibuya","count":1}]}]}]}]}""";
+        const string json = """{"years":[{"year":2025,"count":1,"countries":[{"country":"Japan","count":1,"regions":[{"region":"Tokyo","count":1,"places":[{"memorykeeper_place_id":"00000000-0000-0000-0000-000000000001","location_key":"registered:v1:00000000-0000-0000-0000-000000000001","display_name":"Shibuya","count":1}]}]}]}]}""";
         var hierarchy = JsonSerializer.Deserialize<FastGalleryHierarchyDto>(json)!;
         Assert.Single(hierarchy.Roots);
         Assert.Single(hierarchy.Roots[0].ChildNodes);
-        Assert.Single(hierarchy.Roots[0].ChildNodes[0].ChildNodes[0].ChildNodes);
+        var place = Assert.Single(hierarchy.Roots[0].ChildNodes[0].ChildNodes[0].ChildNodes);
+        Assert.Equal(
+            "registered:v1:00000000-0000-0000-0000-000000000001",
+            place.LocationKey);
+    }
+
+    [Fact]
+    public void Hierarchy_OlderPayloadWithoutLocationKeyRemainsCompatible()
+    {
+        const string json = """{"years":[{"year":2025,"countries":[{"country":"Japan","regions":[{"region":"Tokyo","places":[{"memorykeeper_place_id":"00000000-0000-0000-0000-000000000001","display_name":"Shibuya","count":1}]}]}]}]}""";
+
+        var hierarchy = JsonSerializer.Deserialize<FastGalleryHierarchyDto>(json)!;
+
+        var place = Assert.Single(hierarchy.Roots[0].ChildNodes[0].ChildNodes[0].ChildNodes);
+        Assert.Null(place.LocationKey);
     }
 
     [Fact]

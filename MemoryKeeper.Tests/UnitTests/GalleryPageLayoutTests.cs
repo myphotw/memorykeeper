@@ -174,6 +174,66 @@ public sealed class GalleryPageLayoutTests
         Assert.Contains("ExpectedPlaceRevisions = latestRevisions", manualFlow, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void GalleryLocationKey_IsPreservedAsOpaqueLeafIdentityAndPlaceIdFallbackRemains()
+    {
+        var dto = File.ReadAllText(FindSourceFile("MemoryKeeper.Application", "DTOs", "FastGalleryDtos.cs"));
+        var treeNode = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Models", "GalleryTreeNode.cs"));
+        var gallery = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "ViewModels", "GalleryViewModel.cs"));
+        var repository = File.ReadAllText(FindSourceFile("MemoryKeeper.Infrastructure", "Repositories", "Api", "FastGalleryApiRepository.cs"));
+
+        Assert.Contains("[JsonPropertyName(\"location_key\")] public string? LocationKey", dto, StringComparison.Ordinal);
+        Assert.Contains("public string? LocationKey { get; init; }", treeNode, StringComparison.Ordinal);
+        Assert.Contains("return $\"location:{LocationKey}\";", treeNode, StringComparison.Ordinal);
+        Assert.Contains("EscapeKeyPart(Title)", treeNode, StringComparison.Ordinal);
+        Assert.True(CountOccurrences(gallery, "LocationKey = place.LocationKey") >= 2);
+        Assert.Contains("LocationKey = locationKey", gallery, StringComparison.Ordinal);
+        Assert.Contains("PlaceId = isPlaceLeaf && locationKey is null ? node.PlaceId : null", gallery, StringComparison.Ordinal);
+        Assert.Contains("[\"location_key\"] = query.LocationKey", repository, StringComparison.Ordinal);
+        Assert.Contains("string.IsNullOrWhiteSpace(query.LocationKey)", repository, StringComparison.Ordinal);
+        Assert.DoesNotContain("registered:v1:", gallery, StringComparison.Ordinal);
+        Assert.DoesNotContain("raw:v1:", gallery, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GalleryLocationKey_PersistsAcrossPaginationAndLeafCountRemainsAuthoritative()
+    {
+        var gallery = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "ViewModels", "GalleryViewModel.cs"));
+
+        Assert.Contains("_fastGallery.GetPhotosAsync(ToFastQuery(_pagingNode, cursor))", gallery, StringComparison.Ordinal);
+        Assert.Contains("StatusMessage = BuildFastStatusMessage(node, galleryItems.Count)", gallery, StringComparison.Ordinal);
+        Assert.Contains("StatusMessage = BuildFastStatusMessage(_pagingNode, Items.Count)", gallery, StringComparison.Ordinal);
+        Assert.Contains("var displayCount = IsHierarchyPlaceLeaf(node) ? node.Count : loadedCount", gallery, StringComparison.Ordinal);
+        Assert.Contains("$\"{node.Title} · {galleryItems.Count}/{_totalCount}장\"", gallery, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GalleryPlaceChange_RefreshesTheCachedHierarchyThroughTheExistingDetailEvent()
+    {
+        var page = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Views", "GalleryPage.xaml.cs"));
+        var gallery = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "ViewModels", "GalleryViewModel.cs"));
+
+        Assert.Contains("PlaceRegistered += OnDetailPlaceRegistered", page, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.CaptureFocusState", page, StringComparison.Ordinal);
+        Assert.Contains("_catalogInvalidation.Consume(CatalogSurface.Gallery)", page, StringComparison.Ordinal);
+        Assert.Contains("await ViewModel.LoadCommand.ExecuteAsync(null)", page, StringComparison.Ordinal);
+        Assert.Contains("_catalogInvalidation.Invalidate(CatalogSurface.Gallery)", page, StringComparison.Ordinal);
+        Assert.Contains("_fastHierarchy = null;", gallery, StringComparison.Ordinal);
+    }
+
+    private static int CountOccurrences(string source, string value)
+    {
+        var count = 0;
+        var offset = 0;
+        while ((offset = source.IndexOf(value, offset, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            offset += value.Length;
+        }
+
+        return count;
+    }
+
     private static string FindSourceFile(params string[] parts)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

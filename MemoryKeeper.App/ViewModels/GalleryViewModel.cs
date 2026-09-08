@@ -470,6 +470,7 @@ public partial class GalleryViewModel : ObservableObject
                         Kind = GalleryTreeNodeKind.PlaceBrowse,
                         Country = country.CountryFilter,
                         PlaceId = place.PlaceId,
+                        LocationKey = place.LocationKey,
                         Title = place.DisplayName,
                         Count = place.PhotoCount,
                         Depth = 1,
@@ -633,6 +634,7 @@ public partial class GalleryViewModel : ObservableObject
                             Country = node.Country,
                             City = node.City,
                             PlaceId = place.MemorykeeperPlaceId ?? place.PlaceId,
+                            LocationKey = place.LocationKey,
                             Title = place.DisplayName ?? LibraryConstants.UnclassifiedTitle,
                             Count = place.Count,
                             Depth = node.Depth + 1,
@@ -857,7 +859,7 @@ public partial class GalleryViewModel : ObservableObject
             _totalCount = Items.Count;
             OnPropertyChanged(nameof(CanLoadMore));
             OnPropertyChanged(nameof(TotalCount));
-            StatusMessage = galleryItems.Count == 0 ? "표시할 사진이 없습니다." : $"{node.Title} · {galleryItems.Count}장";
+            StatusMessage = BuildFastStatusMessage(node, galleryItems.Count);
             _photoNavigationState.SetPlaylist(galleryItems.Select(item => item.MediaId).ToList());
             _ = LoadThumbnailsAsync(galleryItems);
         }
@@ -968,7 +970,7 @@ public partial class GalleryViewModel : ObservableObject
             _totalCount = Items.Count;
             OnPropertyChanged(nameof(CanLoadMore));
             OnPropertyChanged(nameof(TotalCount));
-            StatusMessage = $"{_pagingNode.Title} · {Items.Count}장";
+            StatusMessage = BuildFastStatusMessage(_pagingNode, Items.Count);
             _photoNavigationState.SetPlaylist(Items.Select(item => item.MediaId).ToList());
             _logger.LogInformation(
                 "MK_GALLERY_THUMB_BATCH event=load_more_appended appended={AppendedCount} total={TotalCount} starts_thumbnail_batch=true",
@@ -978,16 +980,38 @@ public partial class GalleryViewModel : ObservableObject
         }, "LoadMoreAsync");
     }
 
-    private FastGalleryPhotoQuery ToFastQuery(GalleryTreeNode node, string? cursor = null) => new()
+    private FastGalleryPhotoQuery ToFastQuery(GalleryTreeNode node, string? cursor = null)
     {
-        Limit = DefaultPageSize,
-        Cursor = cursor,
-        Year = node.Year,
-        Country = node.Kind is GalleryTreeNodeKind.Country or GalleryTreeNodeKind.City or GalleryTreeNodeKind.Place ? node.Country : null,
-        Region = node.Kind is GalleryTreeNodeKind.City or GalleryTreeNodeKind.Place ? node.City : null,
-        PlaceId = node.Kind is GalleryTreeNodeKind.Place or GalleryTreeNodeKind.PlaceBrowse or GalleryTreeNodeKind.PlaceYear ? node.PlaceId : null,
-        Favorite = node.Kind == GalleryTreeNodeKind.Favorites ? true : null,
-    };
+        var isPlaceLeaf = IsHierarchyPlaceLeaf(node);
+        var locationKey = isPlaceLeaf && !string.IsNullOrWhiteSpace(node.LocationKey)
+            ? node.LocationKey
+            : null;
+        return new FastGalleryPhotoQuery
+        {
+            Limit = DefaultPageSize,
+            Cursor = cursor,
+            Year = node.Year,
+            Country = node.Kind is GalleryTreeNodeKind.Country or GalleryTreeNodeKind.City or GalleryTreeNodeKind.Place ? node.Country : null,
+            Region = node.Kind is GalleryTreeNodeKind.City or GalleryTreeNodeKind.Place ? node.City : null,
+            LocationKey = locationKey,
+            PlaceId = isPlaceLeaf && locationKey is null ? node.PlaceId : null,
+            Favorite = node.Kind == GalleryTreeNodeKind.Favorites ? true : null,
+        };
+    }
+
+    private static string BuildFastStatusMessage(GalleryTreeNode node, int loadedCount)
+    {
+        if (loadedCount == 0)
+        {
+            return "표시할 사진이 없습니다.";
+        }
+
+        var displayCount = IsHierarchyPlaceLeaf(node) ? node.Count : loadedCount;
+        return $"{node.Title} · {displayCount}장";
+    }
+
+    private static bool IsHierarchyPlaceLeaf(GalleryTreeNode node) =>
+        node.Kind is GalleryTreeNodeKind.Place or GalleryTreeNodeKind.PlaceBrowse or GalleryTreeNodeKind.PlaceYear;
 
     private GalleryItem ToGalleryItem(FastGalleryPhotoDto photo)
     {

@@ -1,6 +1,7 @@
 using MemoryKeeper.App.Diagnostics;
 using MemoryKeeper.App.Models;
 using MemoryKeeper.App.ViewModels;
+using MemoryKeeper.Application.Interfaces;
 using MemoryKeeper.Application.Navigation;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -19,6 +20,7 @@ public sealed partial class GalleryPage : Page
     private ObservableCollection<GalleryItem>? _subscribedItems;
     private readonly PhotoDetailView _photoDetailView;
     private readonly INavigationService _navigation;
+    private readonly ICatalogInvalidation _catalogInvalidation;
     private bool _detailViewHosted;
     private ScrollViewer? _photoScrollViewer;
 
@@ -33,12 +35,14 @@ public sealed partial class GalleryPage : Page
     public GalleryPage(
         GalleryViewModel viewModel,
         PhotoDetailView photoDetailView,
-        INavigationService navigation)
+        INavigationService navigation,
+        ICatalogInvalidation catalogInvalidation)
     {
         GalleryDiagnostics.WriteStep("GalleryPage constructor start");
         ViewModel = viewModel;
         _photoDetailView = photoDetailView;
         _navigation = navigation;
+        _catalogInvalidation = catalogInvalidation;
         _photoDetailView.ConfigurePanelMode();
         DataContext = viewModel;
         try
@@ -58,6 +62,7 @@ public sealed partial class GalleryPage : Page
         ViewModel.PropertyChanged += ViewModel_OnPropertyChanged;
         _photoDetailView.ViewModel.Closed += OnDetailClosed;
         _photoDetailView.ViewModel.PhotoDeleted += OnPhotoDeleted;
+        _photoDetailView.ViewModel.PlaceRegistered += OnDetailPlaceRegistered;
         _photoDetailView.ViewModel.OpenMapRequested += OnDetailOpenMapRequested;
         Loaded += GalleryPage_OnLoaded;
         SizeChanged += GalleryPage_OnSizeChanged;
@@ -369,6 +374,25 @@ public sealed partial class GalleryPage : Page
 
         UpdateEmptyState();
         _ = ViewModel.LoadCommand.ExecuteAsync(null);
+    }
+
+    private void OnDetailPlaceRegistered(object? sender, EventArgs e) =>
+        _ = ReloadAfterPlaceChangeAsync();
+
+    private async Task ReloadAfterPlaceChangeAsync()
+    {
+        ViewModel.CaptureFocusState(GetGridScrollOffset(), ViewModel.SelectedItem?.MediaId);
+        _catalogInvalidation.Consume(CatalogSurface.Gallery);
+        try
+        {
+            await ViewModel.LoadCommand.ExecuteAsync(null);
+        }
+        catch (Exception ex)
+        {
+            _catalogInvalidation.Invalidate(CatalogSurface.Gallery);
+            GalleryDiagnostics.WriteException("GalleryPage.ReloadAfterPlaceChange", ex);
+            ViewModel.StatusMessage = "장소 변경 내용을 새로 고치는 중 오류가 발생했습니다.";
+        }
     }
 
     private void OnScrollToMediaRequested(object? sender, Guid mediaId)

@@ -27,7 +27,9 @@ public sealed class GalleryPlaceHierarchyProjectionTests
         var japan = Assert.Single(result, item => item.DisplayName == "일본");
         Assert.False(japan.IsDomestic);
         Assert.Equal(2, japan.PhotoCount);
-        Assert.Equal(osakaId, Assert.Single(japan.Places).PlaceId);
+        var osaka = Assert.Single(japan.Places);
+        Assert.Equal(osakaId, osaka.PlaceId);
+        Assert.Equal($"registered:v1:{osakaId:D}", osaka.LocationKey);
     }
 
     [Fact]
@@ -71,6 +73,7 @@ public sealed class GalleryPlaceHierarchyProjectionTests
         new()
         {
             MemorykeeperPlaceId = id,
+            LocationKey = $"registered:v1:{id:D}",
             DisplayName = name,
             Count = count,
         };

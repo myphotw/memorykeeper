@@ -119,6 +119,58 @@ public sealed class GalleryApiRepositoryUnitTests
     }
 
     [Fact]
+    public async Task FastGallery_LocationKeyIsOpaqueEncodedAndSuppressesPlaceId()
+    {
+        var handler = new StubHandler();
+        handler.Map["GET /api/memorykeeper/gallery/photos?limit=50&location_key=raw%3Av1%3Aabc%2B%2F%3D%3F"] = "{}";
+        using var provider = BuildProvider(handler);
+        var repo = provider.GetRequiredService<IFastGalleryApiRepository>();
+
+        await repo.GetPhotosAsync(new MemoryKeeper.Application.DTOs.FastGalleryPhotoQuery
+        {
+            LocationKey = "raw:v1:abc+/=?",
+            PlaceId = Guid.Parse("11111111-1111-1111-1111-111111111111"),
+        });
+
+        Assert.Single(handler.RequestPaths);
+        Assert.DoesNotContain("place_id", handler.RequestPaths[0], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FastGallery_MissingLocationKeyUsesLegacyPlaceId()
+    {
+        var handler = new StubHandler();
+        handler.Map["GET /api/memorykeeper/gallery/photos?limit=50&place_id=11111111-1111-1111-1111-111111111111"] = "{}";
+        using var provider = BuildProvider(handler);
+        var repo = provider.GetRequiredService<IFastGalleryApiRepository>();
+
+        await repo.GetPhotosAsync(new MemoryKeeper.Application.DTOs.FastGalleryPhotoQuery
+        {
+            PlaceId = Guid.Parse("11111111-1111-1111-1111-111111111111"),
+        });
+
+        Assert.Single(handler.RequestPaths);
+        Assert.DoesNotContain("location_key", handler.RequestPaths[0], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FastGallery_CursorPageKeepsTheSameLocationKey()
+    {
+        var handler = new StubHandler();
+        handler.Map["GET /api/memorykeeper/gallery/photos?limit=50&cursor=next%2B%2F%3D&location_key=raw%3Av1%3Aopaque"] = "{}";
+        using var provider = BuildProvider(handler);
+        var repo = provider.GetRequiredService<IFastGalleryApiRepository>();
+
+        await repo.GetPhotosAsync(new MemoryKeeper.Application.DTOs.FastGalleryPhotoQuery
+        {
+            Cursor = "next+/=",
+            LocationKey = "raw:v1:opaque",
+        });
+
+        Assert.Single(handler.RequestPaths);
+    }
+
+    [Fact]
     public async Task Catalog_Recovers_Gps_And_Region_From_Detail_When_Map_Row_Is_Missing()
     {
         var handler = new StubHandler();
@@ -176,6 +228,7 @@ public sealed class GalleryApiRepositoryUnitTests
         services.AddHttpClient(BaseApiClient.HttpClientName)
             .ConfigurePrimaryHttpMessageHandler(() => handler);
         services.AddSingleton<IGalleryApiRepository, GalleryApiRepository>();
+        services.AddSingleton<IFastGalleryApiRepository, FastGalleryApiRepository>();
         services.AddSingleton<IMemoryKeeperPlaceApiRepository, MemoryKeeperPlaceApiRepository>();
         services.AddSingleton<IGalleryPhotoCatalog, GalleryPhotoCatalog>();
         return services.BuildServiceProvider();
@@ -189,11 +242,14 @@ public sealed class GalleryApiRepositoryUnitTests
 
         public List<System.Net.Http.Headers.AuthenticationHeaderValue?> AuthorizationHeaders { get; } = [];
 
+        public List<string> RequestPaths { get; } = [];
+
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
             var path = request.RequestUri!.PathAndQuery;
+            RequestPaths.Add(path);
             AuthorizationHeaders.Add(request.Headers.Authorization);
             var key = $"{request.Method.Method} {path}";
             if (!Map.TryGetValue(key, out var body))

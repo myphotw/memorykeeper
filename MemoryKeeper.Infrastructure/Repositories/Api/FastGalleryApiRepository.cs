@@ -24,7 +24,10 @@ public sealed class FastGalleryApiRepository : IFastGalleryApiRepository
             ["year"] = query.Year?.ToString(CultureInfo.InvariantCulture),
             ["country"] = query.Country,
             ["region"] = query.Region,
-            ["place_id"] = query.PlaceId?.ToString("D"),
+            ["location_key"] = query.LocationKey,
+            ["place_id"] = string.IsNullOrWhiteSpace(query.LocationKey)
+                ? query.PlaceId?.ToString("D")
+                : null,
             ["favorite"] = query.Favorite?.ToString().ToLowerInvariant(),
             ["has_gps"] = query.HasGps?.ToString().ToLowerInvariant(),
             ["date_from"] = query.DateFrom?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),

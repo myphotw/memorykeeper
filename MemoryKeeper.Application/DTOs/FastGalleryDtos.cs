@@ -59,6 +59,7 @@ public sealed class FastGalleryHierarchyNodeDto
     [JsonPropertyName("region")] public string? Region { get; init; }
     [JsonPropertyName("place_id")] public Guid? PlaceId { get; init; }
     [JsonPropertyName("memorykeeper_place_id")] public Guid? MemorykeeperPlaceId { get; init; }
+    [JsonPropertyName("location_key")] public string? LocationKey { get; init; }
     [JsonPropertyName("display_name")] public string? DisplayName { get; init; }
     [JsonPropertyName("count")] public int Count { get; init; }
     [JsonPropertyName("children")] public IReadOnlyList<FastGalleryHierarchyNodeDto> Children { get; init; } = [];
@@ -84,6 +85,7 @@ public sealed class FastGalleryPhotoQuery
     public int? Year { get; init; }
     public string? Country { get; init; }
     public string? Region { get; init; }
+    public string? LocationKey { get; init; }
     public Guid? PlaceId { get; init; }
     public bool? Favorite { get; init; }
     public bool? HasGps { get; init; }

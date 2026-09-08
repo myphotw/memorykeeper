@@ -36,6 +36,9 @@ public partial class GalleryTreeNode : ObservableObject
 
     public Guid? PlaceId { get; init; }
 
+    /// <summary>Opaque Backend identity for a registered or raw Fast Gallery location leaf.</summary>
+    public string? LocationKey { get; init; }
+
     public string? PlaceType { get; init; }
 
     public string Title { get; init; } = string.Empty;
@@ -93,14 +96,33 @@ public partial class GalleryTreeNode : ObservableObject
         GalleryTreeNodeKind.Unclassified => $"year:{Year}:unclassified",
         GalleryTreeNodeKind.Country => $"year:{Year}:country:{Country}",
         GalleryTreeNodeKind.City => $"year:{Year}:country:{Country}:city:{City}",
-        GalleryTreeNodeKind.Place => $"year:{Year}:country:{Country}:city:{City}:place:{PlaceId}",
-        GalleryTreeNodeKind.PlaceBrowse => $"place-browse:{PlaceId}",
-        GalleryTreeNodeKind.PlaceYear => $"place-browse:{PlaceId}:year:{Year}",
+        GalleryTreeNodeKind.Place => $"year:{Year}:country:{Country}:city:{City}:place:{BuildPlaceIdentityKey()}",
+        GalleryTreeNodeKind.PlaceBrowse => $"place-browse:{BuildPlaceIdentityKey()}",
+        GalleryTreeNodeKind.PlaceYear => $"place-browse:{BuildPlaceIdentityKey()}:year:{Year}",
         GalleryTreeNodeKind.Favorites => "favorites",
         GalleryTreeNodeKind.Recent => "recent",
         GalleryTreeNodeKind.Pending => "pending",
         _ => Title
     };
+
+    private string BuildPlaceIdentityKey()
+    {
+        if (!string.IsNullOrWhiteSpace(LocationKey))
+        {
+            return $"location:{LocationKey}";
+        }
+
+        if (PlaceId is Guid placeId)
+        {
+            // Preserve the pre-location_key restore identity for older Backend responses.
+            return placeId.ToString();
+        }
+
+        return $"legacy:{Year}:{EscapeKeyPart(Country)}:{EscapeKeyPart(City)}:{EscapeKeyPart(Title)}";
+    }
+
+    private static string EscapeKeyPart(string? value) =>
+        Uri.EscapeDataString(value ?? string.Empty);
 
     /// <summary>Shared Gallery/Visit Map filter contract for this hierarchy node.</summary>
     public GalleryHierarchyQuery BuildQuery(string? searchText = null) => new()
