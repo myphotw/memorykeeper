@@ -72,12 +72,14 @@
                     Grid.Row="1"
                     Style="{StaticResource MkSearchBoxStyle}"
                     PlaceholderText="장소 · 국가 · 지역 · 파일명"
+                    IsEnabled="{Binding CanInteract}"
                     Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
 
                 <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="6">
                     <Button
                         Content="연도"
                         Command="{Binding SelectYearBrowseCommand}"
+                        IsEnabled="{Binding CanInteract}"
                         Style="{StaticResource MkPrimaryButtonStyle}"
                         Padding="12,6"
                         MinHeight="32"
@@ -86,11 +88,13 @@
                     <Button
                         Content="연도"
                         Command="{Binding SelectYearBrowseCommand}"
+                        IsEnabled="{Binding CanInteract}"
                         Style="{StaticResource GalleryFilterButtonStyle}"
                         Visibility="{Binding IsYearBrowseMode, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}" />
                     <Button
                         Content="장소"
                         Command="{Binding SelectPlaceBrowseCommand}"
+                        IsEnabled="{Binding CanInteract}"
                         Style="{StaticResource MkPrimaryButtonStyle}"
                         Padding="12,6"
                         MinHeight="32"
@@ -99,6 +103,7 @@
                     <Button
                         Content="장소"
                         Command="{Binding SelectPlaceBrowseCommand}"
+                        IsEnabled="{Binding CanInteract}"
                         Style="{StaticResource GalleryFilterButtonStyle}"
                         Visibility="{Binding IsPlaceBrowseMode, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}" />
                 </StackPanel>
@@ -165,6 +170,7 @@
             MinWidth="240">
 
             <!-- Section header -->
+            <Grid>
             <StackPanel Spacing="8">
                 <Button
                     x:Name="BackNavigationButton"
@@ -198,7 +204,49 @@
                     Text="{Binding StatusMessage, Mode=OneWay}"
                     Style="{StaticResource MkCaptionTextStyle}"
                     Opacity="0.75" />
+                <InfoBar
+                    IsOpen="{Binding IsMutationInfoOpen, Mode=TwoWay}"
+                    Severity="{Binding MutationInfoSeverity}"
+                    Message="{Binding MutationInfoMessage}"
+                    IsClosable="True" />
             </StackPanel>
+
+                <Button
+                    Content="편집"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Top"
+                    Style="{StaticResource MkSecondaryButtonStyle}"
+                    IsEnabled="{Binding CanInteract}"
+                    Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}"
+                    Click="EnterEditMode_OnClick" />
+
+                <StackPanel
+                    Orientation="Horizontal"
+                    Spacing="8"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Top"
+                    Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <Button
+                        Content="편집 종료"
+                        Style="{StaticResource MkSecondaryButtonStyle}"
+                        IsEnabled="{Binding CanInteract}"
+                        Click="ExitEditMode_OnClick" />
+                    <Button
+                        Content="전체 선택"
+                        Style="{StaticResource MkSecondaryButtonStyle}"
+                        IsEnabled="{Binding CanInteract}"
+                        Click="SelectAll_OnClick" />
+                    <Button
+                        Content="장소 변경"
+                        Style="{StaticResource MkPrimaryButtonStyle}"
+                        IsEnabled="{Binding CanChangePlace}"
+                        Click="ChangePlace_OnClick" />
+                    <TextBlock
+                        Text="{Binding SelectedCountText}"
+                        VerticalAlignment="Center"
+                        Style="{StaticResource MkBodyTextStyle}" />
+                </StackPanel>
+            </Grid>
 
             <!-- Photo grid -->
             <Grid Grid.Row="1">
@@ -207,6 +255,7 @@
                     ItemsSource="{Binding Items, Mode=OneWay}"
                     IsItemClickEnabled="True"
                     ItemClick="Gallery_OnItemClick"
+                    SelectionChanged="PhotoGrid_OnSelectionChanged"
                     SelectionMode="None"
                     Visibility="Visible">
                     <GridView.ItemContainerStyle>
@@ -323,5 +372,39 @@
                 HorizontalContentAlignment="Stretch"
                 VerticalContentAlignment="Stretch" />
         </Border>
+
+        <Grid
+            Grid.ColumnSpan="3"
+            Canvas.ZIndex="100"
+            Visibility="{Binding IsMutating, Converter={StaticResource BoolToVisibilityConverter}}">
+            <Border
+                Background="{ThemeResource MkBrushBackground}"
+                Opacity="0.88" />
+            <Border
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                MinWidth="400"
+                MaxWidth="560"
+                Padding="40,32"
+                CornerRadius="16"
+                Background="{ThemeResource MkBrushSurface}"
+                BorderBrush="{ThemeResource MkBrushBorder}"
+                BorderThickness="1">
+                <StackPanel Spacing="16" HorizontalAlignment="Center">
+                    <ProgressRing Width="64" Height="64" IsActive="True" />
+                    <TextBlock
+                        Text="{Binding MutationStatus}"
+                        FontSize="24"
+                        FontWeight="SemiBold"
+                        TextAlignment="Center"
+                        TextWrapping="Wrap" />
+                    <TextBlock
+                        Text="{Binding MutationHint}"
+                        FontSize="15"
+                        Opacity="0.72"
+                        TextAlignment="Center" />
+                </StackPanel>
+            </Border>
+        </Grid>
     </Grid>
 </Page>

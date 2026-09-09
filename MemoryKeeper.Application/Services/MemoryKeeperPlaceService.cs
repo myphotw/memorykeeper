@@ -110,6 +110,7 @@ public sealed class MemoryKeeperPlaceService
         PlaceDto original,
         UpdatePlaceRequest request,
         Func<MemoryKeeperRadiusImpactApiResult, CancellationToken, Task<bool>> confirmOverlapAsync,
+        bool reassignFromOtherPlaces = true,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(original);
@@ -159,7 +160,7 @@ public sealed class MemoryKeeperPlaceService
             {
                 reclassified = await _repository.ReclassifyAsync(
                     updated.Id,
-                    reassignFromOtherPlaces: true,
+                    reassignFromOtherPlaces,
                     cancellationToken);
             }
         }

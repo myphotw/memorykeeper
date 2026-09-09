@@ -230,6 +230,20 @@ public sealed class MemoryKeeperWriteApiRepository : IMemoryKeeperWriteApiReposi
             $"{Root}/pending/assign-place", request, cancellationToken).ConfigureAwait(false)).Data,
             "장소 정리 응답이 비어 있습니다.");
 
+    public async Task<MemoryKeeperFilePlaceStateQueryResponse> QueryFilePlaceStatesAsync(
+        MemoryKeeperFilePlaceStateQueryRequest request,
+        CancellationToken cancellationToken = default) =>
+        Require((await _apiClient.PostAsync<MemoryKeeperFilePlaceStateQueryResponse>(
+            $"{Root}/files/place-state/query", request, cancellationToken).ConfigureAwait(false)).Data,
+            "사진 장소 상태 응답이 비어 있습니다.");
+
+    public async Task<MemoryKeeperFilesAssignPlaceResponse> AssignFilePlacesAsync(
+        MemoryKeeperFilesAssignPlaceRequest request,
+        CancellationToken cancellationToken = default) =>
+        Require((await _apiClient.PostAsync<MemoryKeeperFilesAssignPlaceResponse>(
+            $"{Root}/files/assign-place", request, cancellationToken).ConfigureAwait(false)).Data,
+            "사진 장소 변경 응답이 비어 있습니다.");
+
     private static Dictionary<string, object?> MetadataPayload(MemoryKeeperFileMetadataPatchRequest request)
     {
         var payload = new Dictionary<string, object?>(StringComparer.Ordinal)

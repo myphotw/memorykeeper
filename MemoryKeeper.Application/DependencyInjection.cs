@@ -27,6 +27,7 @@ public static class DependencyInjection
         services.AddTransient<PlaceService>();
         services.AddTransient<MemoryKeeperPlaceService>();
         services.AddTransient<MemoryKeeperWriteService>();
+        services.AddTransient<GalleryPlaceAssignmentWorkflow>();
         services.AddTransient<MemoryKeeperOperationsService>();
         services.AddTransient<PlacePickerService>();
         services.AddTransient<VisitRecordService>();

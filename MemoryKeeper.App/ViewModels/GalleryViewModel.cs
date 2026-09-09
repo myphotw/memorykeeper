@@ -11,6 +11,7 @@ using MemoryKeeper.Application.Services;
 using MemoryKeeper.Infrastructure.Services.Api;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI.Dispatching;
+using Microsoft.UI.Xaml.Controls;
 using GalleryPhotoDto = MemoryKeeper.Application.DTOs.Gallery.PhotoDto;
 
 namespace MemoryKeeper.App.ViewModels;
@@ -41,6 +42,7 @@ public partial class GalleryViewModel : ObservableObject
     private int _fastMediaDiagnosticsRemaining;
     private FastGalleryHierarchyDto? _fastHierarchy;
     private GalleryPlaceScope _placeScope;
+    private bool _suppressSearchRefresh;
 
     [ObservableProperty]
     private ObservableCollection<GalleryTreeNode> treeRoots = [];
@@ -72,6 +74,15 @@ public partial class GalleryViewModel : ObservableObject
     [ObservableProperty]
     private bool isDetailPanelOpen;
 
+    [ObservableProperty] private bool isEditing;
+    [ObservableProperty] private bool isMutating;
+    [ObservableProperty] private int selectedCount;
+    [ObservableProperty] private string mutationStatus = string.Empty;
+    [ObservableProperty] private string mutationHint = "잠시 기다려 주세요";
+    [ObservableProperty] private bool isMutationInfoOpen;
+    [ObservableProperty] private string mutationInfoMessage = string.Empty;
+    [ObservableProperty] private InfoBarSeverity mutationInfoSeverity = InfoBarSeverity.Informational;
+
     /// <summary>0 = 연도 보기, 1 = 장소 보기.</summary>
     [ObservableProperty]
     private int browseModeIndex;
@@ -79,6 +90,12 @@ public partial class GalleryViewModel : ObservableObject
     public bool IsYearBrowseMode => BrowseModeIndex == 0;
 
     public bool IsPlaceBrowseMode => BrowseModeIndex == 1;
+
+    public bool CanInteract => !IsMutating;
+
+    public bool CanChangePlace => IsEditing && !IsMutating && SelectedCount > 0;
+
+    public string SelectedCountText => $"{SelectedCount}장 선택";
 
     /// <summary>Infinite-scroll prep: more pages available from Backend.</summary>
     public bool CanLoadMore => _hasMore;
@@ -210,10 +227,67 @@ public partial class GalleryViewModel : ObservableObject
         OnPropertyChanged(nameof(IsPlaceBrowseMode));
     }
 
+    partial void OnIsEditingChanged(bool value) => OnPropertyChanged(nameof(CanChangePlace));
+
+    partial void OnIsMutatingChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanInteract));
+        OnPropertyChanged(nameof(CanChangePlace));
+    }
+
+    partial void OnSelectedCountChanged(int value)
+    {
+        OnPropertyChanged(nameof(CanChangePlace));
+        OnPropertyChanged(nameof(SelectedCountText));
+    }
+
+    public void EnterEditMode()
+    {
+        if (IsMutating) return;
+        SelectedCount = 0;
+        IsMutationInfoOpen = false;
+        IsEditing = true;
+    }
+
+    public void ExitEditMode()
+    {
+        if (IsMutating) return;
+        SelectedCount = 0;
+        IsEditing = false;
+    }
+
+    public void BeginMutation(string status, string hint)
+    {
+        MutationStatus = status;
+        MutationHint = hint;
+        IsMutationInfoOpen = false;
+        IsMutating = true;
+    }
+
+    public void UpdateMutationStatus(string status, string hint)
+    {
+        MutationStatus = status;
+        MutationHint = hint;
+    }
+
+    public void CompleteMutation(bool success, string message)
+    {
+        IsMutating = false;
+        MutationInfoSeverity = success ? InfoBarSeverity.Success : InfoBarSeverity.Error;
+        MutationInfoMessage = message;
+        IsMutationInfoOpen = true;
+    }
+
+    public void ClearDisplaySelection()
+    {
+        foreach (var item in Items) item.IsSelected = false;
+        SelectedItem = null;
+    }
+
     [RelayCommand]
     private async Task SelectYearBrowseAsync()
     {
-        if (BrowseModeIndex == 0)
+        if (IsMutating || BrowseModeIndex == 0)
         {
             return;
         }
@@ -226,7 +300,7 @@ public partial class GalleryViewModel : ObservableObject
     [RelayCommand]
     private async Task SelectPlaceBrowseAsync()
     {
-        if (BrowseModeIndex == 1)
+        if (IsMutating || BrowseModeIndex == 1)
         {
             return;
         }
@@ -252,7 +326,7 @@ public partial class GalleryViewModel : ObservableObject
     [RelayCommand]
     private async Task ToggleNodeAsync(GalleryTreeNode? node)
     {
-        if (node is null || !node.CanExpand)
+        if (IsMutating || node is null || !node.CanExpand)
         {
             return;
         }
@@ -272,7 +346,7 @@ public partial class GalleryViewModel : ObservableObject
     [RelayCommand]
     private async Task SelectTreeNodeAsync(GalleryTreeNode? node)
     {
-        if (node is null || node.Kind == GalleryTreeNodeKind.Separator)
+        if (IsMutating || node is null || node.Kind == GalleryTreeNodeKind.Separator)
         {
             return;
         }
@@ -289,7 +363,7 @@ public partial class GalleryViewModel : ObservableObject
     [RelayCommand]
     private void OpenPhotoViewer(GalleryItem? item)
     {
-        if (item is null)
+        if (IsEditing || IsMutating || item is null)
         {
             return;
         }
@@ -304,7 +378,45 @@ public partial class GalleryViewModel : ObservableObject
         _photoNavigationState.FocusMediaId = item.MediaId;
     }
 
-    partial void OnSearchTextChanged(string value) => _ = DebouncedSearchAsync();
+    partial void OnSearchTextChanged(string value)
+    {
+        if (!_suppressSearchRefresh && !IsMutating)
+        {
+            _ = DebouncedSearchAsync();
+        }
+    }
+
+    public async Task<bool> ReloadAndSelectRegisteredPlaceAsync(Guid placeId)
+    {
+        _fastHierarchy = null;
+        _placeScope = GalleryPlaceScope.All;
+        BrowseModeIndex = 1;
+        _suppressSearchRefresh = true;
+        try
+        {
+            SearchText = string.Empty;
+        }
+        finally
+        {
+            _suppressSearchRefresh = false;
+        }
+
+        await RebuildPlaceTreeRootsAsync();
+        var target = TreeRoots.SelectMany(root => root.Children)
+            .FirstOrDefault(node => node.PlaceId == placeId);
+        if (target is null)
+        {
+            var fallback = TreeRoots.FirstOrDefault();
+            if (fallback is not null) await SelectNodeAsync(fallback);
+            return false;
+        }
+
+        var parent = TreeRoots.First(root => root.Children.Contains(target));
+        parent.IsExpanded = true;
+        RebuildVisibleTree();
+        await SelectNodeAsync(target);
+        return true;
+    }
 
     private async Task DebouncedSearchAsync()
     {
@@ -947,7 +1059,7 @@ public partial class GalleryViewModel : ObservableObject
     [RelayCommand]
     private async Task LoadMoreAsync()
     {
-        if (!CanLoadMore || _pagingNode is null || IsBusy || string.IsNullOrWhiteSpace(_nextCursor))
+        if (IsMutating || !CanLoadMore || _pagingNode is null || IsBusy || string.IsNullOrWhiteSpace(_nextCursor))
         {
             return;
         }

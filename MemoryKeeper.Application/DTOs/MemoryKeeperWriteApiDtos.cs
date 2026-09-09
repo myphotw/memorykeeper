@@ -177,3 +177,37 @@ public sealed class MemoryKeeperPendingAssignResponse
     public IReadOnlyList<MemoryKeeperFilePlaceUpdateApiResult> Items { get; init; } = [];
     public int AssignedCount { get; init; }
 }
+
+public sealed class MemoryKeeperFilePlaceStateQueryRequest
+{
+    public IReadOnlyList<string> FileIds { get; init; } = [];
+}
+
+public sealed class MemoryKeeperFilePlaceStateDto
+{
+    public string FileId { get; init; } = string.Empty;
+    public long CommonFileId { get; init; }
+    public double? GpsLat { get; init; }
+    public double? GpsLon { get; init; }
+    public Guid? MemorykeeperPlaceId { get; init; }
+    public int PlaceMatchRevision { get; init; }
+}
+
+public sealed class MemoryKeeperFilePlaceStateQueryResponse
+{
+    public IReadOnlyList<MemoryKeeperFilePlaceStateDto> Items { get; init; } = [];
+}
+
+public sealed class MemoryKeeperFilesAssignPlaceRequest
+{
+    public IReadOnlyList<string> FileIds { get; init; } = [];
+    public Guid MemorykeeperPlaceId { get; init; }
+    public IReadOnlyDictionary<string, int> ExpectedPlaceRevisions { get; init; } =
+        new Dictionary<string, int>(StringComparer.Ordinal);
+}
+
+public sealed class MemoryKeeperFilesAssignPlaceResponse
+{
+    public IReadOnlyList<MemoryKeeperFilePlaceUpdateApiResult> Items { get; init; } = [];
+    public int AssignedCount { get; init; }
+}

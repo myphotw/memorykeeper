@@ -22,4 +22,6 @@ public interface IMemoryKeeperWriteApiRepository
     Task<MemoryKeeperPendingListDto> GetPendingAsync(bool includeSuggestions = true, CancellationToken cancellationToken = default);
     Task<MemoryKeeperPendingListDto> GetPlaceCleanupAsync(int page = 1, int pageSize = 50, CancellationToken cancellationToken = default);
     Task<MemoryKeeperPendingAssignResponse> AssignPendingPlaceAsync(MemoryKeeperPendingAssignRequest request, CancellationToken cancellationToken = default);
+    Task<MemoryKeeperFilePlaceStateQueryResponse> QueryFilePlaceStatesAsync(MemoryKeeperFilePlaceStateQueryRequest request, CancellationToken cancellationToken = default);
+    Task<MemoryKeeperFilesAssignPlaceResponse> AssignFilePlacesAsync(MemoryKeeperFilesAssignPlaceRequest request, CancellationToken cancellationToken = default);
 }

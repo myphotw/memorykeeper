@@ -675,6 +675,12 @@ public sealed class MemoryKeeperWriteServiceTests
                 ?? new MemoryKeeperPendingAssignResponse { AssignedCount = request.FileIds.Count });
         }
 
+        public Task<MemoryKeeperFilePlaceStateQueryResponse> QueryFilePlaceStatesAsync(MemoryKeeperFilePlaceStateQueryRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new MemoryKeeperFilePlaceStateQueryResponse());
+
+        public Task<MemoryKeeperFilesAssignPlaceResponse> AssignFilePlacesAsync(MemoryKeeperFilesAssignPlaceRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new MemoryKeeperFilesAssignPlaceResponse());
+
         public Task<MemoryKeeperFileTagMutationResponse> AssignFileTagAsync(string fileId, int tagId, int expectedRevision, CancellationToken cancellationToken = default)
         {
             FileTagMutations.Add((tagId, expectedRevision));

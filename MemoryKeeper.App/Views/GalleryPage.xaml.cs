@@ -1,8 +1,14 @@
 using MemoryKeeper.App.Diagnostics;
+using MemoryKeeper.App.Dialogs;
 using MemoryKeeper.App.Models;
+using MemoryKeeper.App.Services;
 using MemoryKeeper.App.ViewModels;
+using MemoryKeeper.Application;
 using MemoryKeeper.Application.Interfaces;
 using MemoryKeeper.Application.Navigation;
+using MemoryKeeper.Application.Services;
+using MemoryKeeper.Infrastructure.Services.Api;
+using Microsoft.Extensions.Logging;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
@@ -21,6 +27,11 @@ public sealed partial class GalleryPage : Page
     private readonly PhotoDetailView _photoDetailView;
     private readonly INavigationService _navigation;
     private readonly ICatalogInvalidation _catalogInvalidation;
+    private readonly MemoryKeeperPlaceService _placeService;
+    private readonly GalleryPlaceAssignmentWorkflow _placeAssignmentWorkflow;
+    private readonly ILocationResolver _locationResolver;
+    private readonly ILoggerFactory _loggerFactory;
+    private readonly ISettingRepository _settingRepository;
     private bool _detailViewHosted;
     private ScrollViewer? _photoScrollViewer;
 
@@ -36,13 +47,23 @@ public sealed partial class GalleryPage : Page
         GalleryViewModel viewModel,
         PhotoDetailView photoDetailView,
         INavigationService navigation,
-        ICatalogInvalidation catalogInvalidation)
+        ICatalogInvalidation catalogInvalidation,
+        MemoryKeeperPlaceService placeService,
+        GalleryPlaceAssignmentWorkflow placeAssignmentWorkflow,
+        ILocationResolver locationResolver,
+        ILoggerFactory loggerFactory,
+        ISettingRepository settingRepository)
     {
         GalleryDiagnostics.WriteStep("GalleryPage constructor start");
         ViewModel = viewModel;
         _photoDetailView = photoDetailView;
         _navigation = navigation;
         _catalogInvalidation = catalogInvalidation;
+        _placeService = placeService;
+        _placeAssignmentWorkflow = placeAssignmentWorkflow;
+        _locationResolver = locationResolver;
+        _loggerFactory = loggerFactory;
+        _settingRepository = settingRepository;
         _photoDetailView.ConfigurePanelMode();
         DataContext = viewModel;
         try
@@ -100,7 +121,7 @@ public sealed partial class GalleryPage : Page
 
     private void PhotoScrollViewer_OnViewChanged(object sender, ScrollViewerViewChangedEventArgs e)
     {
-        if (_photoScrollViewer is null || e.IsIntermediate || !ViewModel.CanLoadMore || ViewModel.IsBusy)
+        if (_photoScrollViewer is null || e.IsIntermediate || !ViewModel.CanLoadMore || ViewModel.IsBusy || ViewModel.IsMutating)
         {
             return;
         }
@@ -118,6 +139,7 @@ public sealed partial class GalleryPage : Page
             if (e.PropertyName is nameof(GalleryViewModel.Items))
             {
                 ResubscribeItems();
+                ClearNativeSelection();
             }
 
             UpdateEmptyState();
@@ -155,6 +177,10 @@ public sealed partial class GalleryPage : Page
 
     private void Gallery_OnItemClick(object sender, ItemClickEventArgs e)
     {
+        if (ViewModel.IsEditing || ViewModel.IsMutating)
+        {
+            return;
+        }
         if (e.ClickedItem is not GalleryItem item)
         {
             return;
@@ -252,6 +278,10 @@ public sealed partial class GalleryPage : Page
 
     private void PhotoDetail_OnClick(object sender, RoutedEventArgs e)
     {
+        if (ViewModel.IsEditing || ViewModel.IsMutating)
+        {
+            return;
+        }
         if (sender is FrameworkElement { Tag: GalleryItem item })
         {
             _ = ShowDetailPanelAsync(item, toggle: true);
@@ -260,6 +290,11 @@ public sealed partial class GalleryPage : Page
 
     private void PhotoCard_OnDoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
     {
+        if (ViewModel.IsEditing || ViewModel.IsMutating)
+        {
+            e.Handled = true;
+            return;
+        }
         if (sender is Border { Tag: GalleryItem item })
         {
             SelectItemForDisplay(item);
@@ -472,6 +507,7 @@ public sealed partial class GalleryPage : Page
 
     private void Expand_OnClick(object sender, RoutedEventArgs e)
     {
+        if (ViewModel.IsMutating) return;
         if (sender is FrameworkElement { Tag: GalleryTreeNode node })
         {
             ViewModel.ToggleNodeCommand.Execute(node);
@@ -480,6 +516,7 @@ public sealed partial class GalleryPage : Page
 
     private void Node_OnClick(object sender, RoutedEventArgs e)
     {
+        if (ViewModel.IsMutating) return;
         if (sender is FrameworkElement { Tag: GalleryTreeNode node } && !node.IsSeparator)
         {
             if (node.Kind == GalleryTreeNodeKind.Pending)
@@ -490,5 +527,157 @@ public sealed partial class GalleryPage : Page
 
             ViewModel.SelectTreeNodeCommand.Execute(node);
         }
+    }
+
+    private async void EnterEditMode_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.IsMutating) return;
+        await CloseDetailPanelAsync();
+        ViewModel.ClearDisplaySelection();
+        _pageSelectedItem = null;
+        ClearNativeSelection();
+        PhotoGrid.SelectionMode = ListViewSelectionMode.Multiple;
+        ViewModel.EnterEditMode();
+        ApplySelectionVisuals();
+    }
+
+    private void ExitEditMode_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.IsMutating) return;
+        ClearNativeSelection();
+        PhotoGrid.SelectionMode = ListViewSelectionMode.None;
+        ViewModel.ExitEditMode();
+    }
+
+    private void SelectAll_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (!ViewModel.IsEditing || ViewModel.IsMutating) return;
+        foreach (var item in ViewModel.Items)
+        {
+            if (!PhotoGrid.SelectedItems.Contains(item)) PhotoGrid.SelectedItems.Add(item);
+        }
+        ViewModel.SelectedCount = PhotoGrid.SelectedItems.Count;
+    }
+
+    private void PhotoGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (ViewModel.IsEditing && !ViewModel.IsMutating)
+        {
+            ViewModel.SelectedCount = PhotoGrid.SelectedItems.Count;
+        }
+    }
+
+    private async void ChangePlace_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (!ViewModel.CanChangePlace) return;
+        var selected = PhotoGrid.SelectedItems.OfType<GalleryItem>().ToList();
+        if (selected.Count > GalleryPlaceAssignmentWorkflow.MaximumBatchSize)
+        {
+            ViewModel.CompleteMutation(false, $"한 번에 최대 {GalleryPlaceAssignmentWorkflow.MaximumBatchSize}장까지 변경할 수 있습니다.");
+            return;
+        }
+
+        var selectedIds = selected.Select(item => item.BackendFileId).ToHashSet(StringComparer.Ordinal);
+        ViewModel.CaptureFocusState(GetGridScrollOffset(), ViewModel.SelectedItem?.MediaId);
+        var session = new GalleryPlaceEditSessionViewModel(
+            _placeService,
+            _placeAssignmentWorkflow,
+            _locationResolver,
+            _loggerFactory.CreateLogger<GalleryPlaceEditSessionViewModel>(),
+            selected)
+        {
+            HostXamlRoot = XamlRoot,
+            RadiusExpansionPreviewHandler = ShowRadiusExpansionPreviewAsync,
+            MutationStarted = ViewModel.BeginMutation,
+            MutationProgress = ViewModel.UpdateMutationStatus,
+        };
+
+        try
+        {
+            await PlaceRegistrationDialog.ShowAsync(
+                XamlRoot,
+                session,
+                new PlaceRegistrationDialog.Options
+                {
+                    Title = $"사진 {selected.Count}장 장소 변경",
+                    PrimaryButtonText = "장소 변경",
+                    SupportsMapPick = true,
+                    MapPickHandler = host => ShowMapPickInPlaceDialogAsync(host, session),
+                });
+
+            if (!session.MutationAttempted)
+            {
+                return;
+            }
+
+            if (session.Succeeded && session.TargetPlaceId is Guid targetId)
+            {
+                ViewModel.UpdateMutationStatus("사진첩을 갱신하고 있습니다", "잠시 기다려 주세요");
+                _catalogInvalidation.Consume(CatalogSurface.Gallery);
+                await ViewModel.ReloadAndSelectRegisteredPlaceAsync(targetId);
+                ClearNativeSelection();
+                PhotoGrid.SelectionMode = ListViewSelectionMode.None;
+                ViewModel.CompleteMutation(true, $"{selected.Count}장의 장소 변경이 완료되었습니다.");
+                ViewModel.ExitEditMode();
+                return;
+            }
+
+            _catalogInvalidation.Consume(CatalogSurface.Gallery);
+            await ViewModel.LoadCommand.ExecuteAsync(null);
+            foreach (var item in ViewModel.Items.Where(item => selectedIds.Contains(item.BackendFileId)))
+            {
+                PhotoGrid.SelectedItems.Add(item);
+            }
+            ViewModel.CompleteMutation(false, session.PlaceDialogStatus);
+            ViewModel.SelectedCount = PhotoGrid.SelectedItems.Count;
+        }
+        catch (Exception ex)
+        {
+            GalleryDiagnostics.WriteException("GalleryPage.ChangePlace", ex);
+            if (ViewModel.IsMutating)
+            {
+                ViewModel.CompleteMutation(false, "사진의 장소를 저장하지 못했습니다. 다시 시도해 주세요.");
+            }
+            else
+            {
+                ViewModel.MutationInfoSeverity = InfoBarSeverity.Error;
+                ViewModel.MutationInfoMessage = "장소 정보를 불러오지 못했습니다. 다시 시도해 주세요.";
+                ViewModel.IsMutationInfoOpen = true;
+            }
+        }
+    }
+
+    private Task<bool> ShowRadiusExpansionPreviewAsync(string placeName, PlaceRadiusExpansionPlan plan) =>
+        PlaceRadiusExpansionDialog.ShowAsync(XamlRoot, _loggerFactory, _settingRepository, placeName, plan);
+
+    private Task ShowMapPickInPlaceDialogAsync(ContentDialog host, GalleryPlaceEditSessionViewModel session) =>
+        MapPickSession.RunInDialogAsync(
+            host,
+            _loggerFactory,
+            _settingRepository,
+            session.MapPickLatitude,
+            session.MapPickLongitude,
+            session.MapPickRadiusMeters,
+            async (latitude, longitude, radius) =>
+            {
+                await session.ApplyMapPickAsync(latitude, longitude, radius);
+                return session.PlaceDialogStatus;
+            },
+            session.DiscardMapPickSelection,
+            new MapPickSession.SearchHooks
+            {
+                SearchAsync = async query =>
+                {
+                    session.PlaceSearchText = query;
+                    await session.SearchPlaceSuggestionsAsync();
+                    return session.PlaceSearchResults;
+                },
+                ResolveCoordinatesAsync = session.ResolveSuggestionCoordinatesAsync,
+            });
+
+    private void ClearNativeSelection()
+    {
+        PhotoGrid.SelectedItems.Clear();
+        ViewModel.SelectedCount = 0;
     }
 }

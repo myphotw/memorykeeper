@@ -230,6 +230,96 @@ public sealed class MemoryKeeperWriteApiRepositoryTests
     }
 
     [Fact]
+    public async Task GalleryBatchPlaceApis_PreserveShaNumericIdentityNullsAndRevisionMap()
+    {
+        var secondFileId = new string('b', 64);
+        var targetPlaceId = Guid.Parse("11111111-2222-3333-4444-555555555555");
+        const string stateKey = "POST /api/memorykeeper/files/place-state/query";
+        const string assignKey = "POST /api/memorykeeper/files/assign-place";
+        var handler = new RecordingHandler
+        {
+            Responses =
+            {
+                [stateKey] = $"{{\"items\":[{{\"file_id\":\"{FileId}\",\"common_file_id\":9223372036,\"gps_lat\":null,\"gps_lon\":null,\"memorykeeper_place_id\":null,\"place_match_revision\":7}},{{\"file_id\":\"{secondFileId}\",\"common_file_id\":42,\"gps_lat\":26.2,\"gps_lon\":127.7,\"memorykeeper_place_id\":\"{targetPlaceId:D}\",\"place_match_revision\":9}}]}}",
+                [assignKey] = $"{{\"items\":[{{\"file_id\":\"{FileId}\",\"memorykeeper_place_id\":\"{targetPlaceId:D}\",\"place_revision\":8}}],\"assigned_count\":2}}",
+            },
+        };
+        using var provider = BuildProvider(handler);
+        var repository = provider.GetRequiredService<IMemoryKeeperWriteApiRepository>();
+
+        var state = await repository.QueryFilePlaceStatesAsync(new MemoryKeeperFilePlaceStateQueryRequest
+        {
+            FileIds = [FileId, secondFileId],
+        });
+        await repository.AssignFilePlacesAsync(new MemoryKeeperFilesAssignPlaceRequest
+        {
+            FileIds = [FileId, secondFileId],
+            MemorykeeperPlaceId = targetPlaceId,
+            ExpectedPlaceRevisions = new Dictionary<string, int>
+            {
+                [FileId] = 7,
+                [secondFileId] = 9,
+            },
+        });
+
+        Assert.Equal(FileId, state.Items[0].FileId);
+        Assert.Equal(9223372036L, state.Items[0].CommonFileId);
+        Assert.Null(state.Items[0].GpsLat);
+        Assert.Null(state.Items[0].MemorykeeperPlaceId);
+        Assert.Equal(targetPlaceId, state.Items[1].MemorykeeperPlaceId);
+        using var statePayload = JsonDocument.Parse(handler.Bodies[stateKey]);
+        Assert.Equal(FileId, statePayload.RootElement.GetProperty("file_ids")[0].GetString());
+        using var assignPayload = JsonDocument.Parse(handler.Bodies[assignKey]);
+        Assert.Equal(targetPlaceId, assignPayload.RootElement.GetProperty("memorykeeper_place_id").GetGuid());
+        Assert.Equal(7, assignPayload.RootElement.GetProperty("expected_place_revisions").GetProperty(FileId).GetInt32());
+        Assert.Equal(9, assignPayload.RootElement.GetProperty("expected_place_revisions").GetProperty(secondFileId).GetInt32());
+    }
+
+    [Fact]
+    public async Task GalleryBatchWorkflow_RefreshesRevisionAssignsAtomicallyAndVerifiesInOneBatch()
+    {
+        var targetPlaceId = Guid.Parse("11111111-2222-3333-4444-555555555555");
+        const string stateKey = "POST /api/memorykeeper/files/place-state/query";
+        const string assignKey = "POST /api/memorykeeper/files/assign-place";
+        var handler = new RecordingHandler
+        {
+            Responses =
+            {
+                [stateKey] = $"{{\"items\":[{{\"file_id\":\"{FileId}\",\"common_file_id\":42,\"gps_lat\":null,\"gps_lon\":null,\"memorykeeper_place_id\":\"{targetPlaceId:D}\",\"place_match_revision\":7}}]}}",
+                [assignKey] = $"{{\"items\":[{{\"file_id\":\"{FileId}\",\"memorykeeper_place_id\":\"{targetPlaceId:D}\",\"place_revision\":7}}],\"assigned_count\":1}}",
+            },
+        };
+        using var provider = BuildProvider(handler);
+        var repository = provider.GetRequiredService<IMemoryKeeperWriteApiRepository>();
+        var workflow = new MemoryKeeper.Application.Services.GalleryPlaceAssignmentWorkflow(
+            repository,
+            new CatalogInvalidation());
+
+        var result = await workflow.AssignAsync([FileId], targetPlaceId);
+
+        Assert.True(result.IsVerified);
+        Assert.Equal(2, handler.Requests.Count(request => request == stateKey));
+        Assert.Single(handler.Requests.Where(request => request == assignKey));
+        using var payload = JsonDocument.Parse(handler.Bodies[assignKey]);
+        Assert.Equal(7, payload.RootElement.GetProperty("expected_place_revisions").GetProperty(FileId).GetInt32());
+    }
+
+    [Fact]
+    public async Task GalleryBatchWorkflow_RejectsMoreThanBackendMaximumBeforeSending()
+    {
+        var handler = new RecordingHandler();
+        using var provider = BuildProvider(handler);
+        var workflow = new MemoryKeeper.Application.Services.GalleryPlaceAssignmentWorkflow(
+            provider.GetRequiredService<IMemoryKeeperWriteApiRepository>(),
+            new CatalogInvalidation());
+        var fileIds = Enumerable.Range(0, 501).Select(index => index.ToString("x64")).ToList();
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => workflow.QueryStatesAsync(fileIds));
+
+        Assert.Empty(handler.Requests);
+    }
+
+    [Fact]
     public async Task PlaceCleanup_UsesPagedEndpointAndPreservesExistingPlaceIdentity()
     {
         const string cleanupKey = "GET /api/memorykeeper/place-cleanup?page=2&page_size=50";

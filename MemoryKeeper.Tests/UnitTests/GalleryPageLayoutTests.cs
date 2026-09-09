@@ -221,6 +221,62 @@ public sealed class GalleryPageLayoutTests
         Assert.Contains("_fastHierarchy = null;", gallery, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void GalleryBatchEdit_UsesNativeSelectionProminentOverlayAndNoDeleteAction()
+    {
+        var xaml = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Views", "GalleryPage.xaml"));
+        var page = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Views", "GalleryPage.xaml.cs"));
+        var viewModel = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "ViewModels", "GalleryViewModel.cs"));
+
+        Assert.Contains("Content=\"편집\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Content=\"편집 종료\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Content=\"전체 선택\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Content=\"장소 변경\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("SelectionChanged=\"PhotoGrid_OnSelectionChanged\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("PhotoGrid.SelectionMode = ListViewSelectionMode.Multiple", page, StringComparison.Ordinal);
+        Assert.Contains("PhotoGrid.SelectedItems", page, StringComparison.Ordinal);
+        Assert.Contains("Width=\"64\" Height=\"64\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Grid.ColumnSpan=\"3\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("IsMutating", xaml, StringComparison.Ordinal);
+        Assert.Contains("MutationStatus", xaml, StringComparison.Ordinal);
+        Assert.Contains("IsEditing", viewModel, StringComparison.Ordinal);
+        Assert.Contains("SelectedCount", viewModel, StringComparison.Ordinal);
+        Assert.DoesNotContain("Content=\"삭제\"", xaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GalleryBatchEdit_PreservesLoadedSelectionAndTargetsAuthoritativeRegisteredNode()
+    {
+        var page = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Views", "GalleryPage.xaml.cs"));
+        var viewModel = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "ViewModels", "GalleryViewModel.cs"));
+
+        Assert.Contains("foreach (var item in ViewModel.Items)", page, StringComparison.Ordinal);
+        Assert.Contains("Items_OnCollectionChanged", page, StringComparison.Ordinal);
+        Assert.Contains("ReloadAndSelectRegisteredPlaceAsync", page, StringComparison.Ordinal);
+        Assert.Contains("node.PlaceId == placeId", viewModel, StringComparison.Ordinal);
+        Assert.Contains("await SelectNodeAsync(target)", viewModel, StringComparison.Ordinal);
+        Assert.Contains("_fastHierarchy = null", viewModel, StringComparison.Ordinal);
+        Assert.Contains("_fastGallery.GetPhotosAsync(ToFastQuery(_pagingNode, cursor))", viewModel, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GalleryBatchWorkflow_UsesGenericAtomicApiWithoutRawMetadataOrPendingFallback()
+    {
+        var workflow = File.ReadAllText(FindSourceFile("MemoryKeeper.Application", "Services", "GalleryPlaceAssignmentWorkflow.cs"));
+        var session = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "ViewModels", "GalleryPlaceEditSessionViewModel.cs"));
+
+        Assert.Contains("QueryFilePlaceStatesAsync", workflow, StringComparison.Ordinal);
+        Assert.Contains("AssignFilePlacesAsync", workflow, StringComparison.Ordinal);
+        Assert.Contains("ExpectedPlaceRevisions", workflow, StringComparison.Ordinal);
+        Assert.Contains("GalleryPlaceAssignmentStage.Verifying", workflow, StringComparison.Ordinal);
+        Assert.Contains("PlanRadius", session, StringComparison.Ordinal);
+        Assert.Contains("reassignFromOtherPlaces: false", workflow, StringComparison.Ordinal);
+        Assert.Contains("ReclassifyMedia = false", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("AssignPendingPlaceAsync", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("PatchMetadataAsync", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("SetRawLocationAsync", session, StringComparison.Ordinal);
+    }
+
     private static int CountOccurrences(string source, string value)
     {
         var count = 0;

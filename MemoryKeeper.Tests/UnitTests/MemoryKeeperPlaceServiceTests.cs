@@ -73,6 +73,24 @@ public sealed class MemoryKeeperPlaceServiceTests
     }
 
     [Fact]
+    public async Task GalleryGeometryChange_CanReclassifyWithoutMovingOtherPlacePhotos()
+    {
+        var fake = new FakeRepository();
+        var service = new MemoryKeeperPlaceService(fake, new CatalogInvalidation());
+        var original = Place(radius: 100);
+        fake.UpdatedPlace = ApiPlace(original, radius: 250, revision: 4);
+
+        await service.UpdateWithRadiusImpactAsync(
+            original,
+            Update(original, radius: 250),
+            (_, _) => Task.FromResult(true),
+            reassignFromOtherPlaces: false);
+
+        Assert.Equal(["impact", "patch", "reclass:false"], fake.Calls);
+        Assert.False(fake.LastReassignFromOtherPlaces);
+    }
+
+    [Fact]
     public async Task DisplayNameOnly_PatchesWithoutImpactOrReclassification_AndKeepsUuid()
     {
         var fake = new FakeRepository();
