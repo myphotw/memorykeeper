@@ -17,6 +17,15 @@ public class PlaceNormalizerTests
         Assert.Equal(expected, PlaceNormalizer.BuildCanonicalName(input));
     }
 
+    [Theory]
+    [InlineData("Kyoto", "교토")]
+    [InlineData("Tajiri", "다지리")]
+    [InlineData("田尻町", "다지리")]
+    public void NormalizePlace_MapsTrustedJapaneseRegionAliases(string input, string expected)
+    {
+        Assert.Equal(expected, PlaceNormalizer.NormalizeRegion(input));
+    }
+
     [Fact]
     public void Normalize_LocationResult_ProducesKoreanCanonical()
     {

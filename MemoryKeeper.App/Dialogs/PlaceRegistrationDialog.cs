@@ -306,10 +306,13 @@ public static class PlaceRegistrationDialog
         headerGrid.Children.Add(previewBorder);
         headerGrid.Children.Add(photoHeaderPanel);
 
-        // Preview + comparison scroll with the rest so the picker area stays usable.
+        var fixedHeaderPanel = new StackPanel { Spacing = 10 };
+        fixedHeaderPanel.Children.Add(headerGrid);
+        fixedHeaderPanel.Children.Add(previewCardHost);
+
+        // Only picker/search content scrolls; the photo and current selection stay visible.
         var scrollChildren = new List<UIElement>
         {
-            previewCardHost,
             comparisonHost,
             CreateSectionLabel("최근 사용 장소"),
             recentPanel,
@@ -357,10 +360,10 @@ public static class PlaceRegistrationDialog
         rootPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         rootPanel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         rootPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        Grid.SetRow(headerGrid, 0);
+        Grid.SetRow(fixedHeaderPanel, 0);
         Grid.SetRow(scrollViewer, 1);
         Grid.SetRow(footer, 2);
-        rootPanel.Children.Add(headerGrid);
+        rootPanel.Children.Add(fixedHeaderPanel);
         rootPanel.Children.Add(scrollViewer);
         rootPanel.Children.Add(footer);
 
@@ -408,7 +411,7 @@ public static class PlaceRegistrationDialog
         var stack = new StackPanel { Spacing = 4 };
         stack.Children.Add(new TextBlock
         {
-            Text = "📍 선택된 장소",
+            Text = "📍 선택한 장소",
             FontWeight = FontWeights.SemiBold,
             FontSize = 13
         });
@@ -417,7 +420,7 @@ public static class PlaceRegistrationDialog
         {
             stack.Children.Add(new TextBlock
             {
-                Text = "위치정보 없음 — 최근 장소 · 검색 · 지도에서 선택하세요.",
+                Text = "선택한 장소가 없습니다. 최근 장소 · 검색 · 지도에서 선택하세요.",
                 Opacity = 0.7,
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap

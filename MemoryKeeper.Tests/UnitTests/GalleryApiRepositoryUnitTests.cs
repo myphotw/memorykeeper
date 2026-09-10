@@ -134,6 +134,7 @@ public sealed class GalleryApiRepositoryUnitTests
 
         Assert.Single(handler.RequestPaths);
         Assert.DoesNotContain("place_id", handler.RequestPaths[0], StringComparison.Ordinal);
+        Assert.DoesNotContain("unclassified", handler.RequestPaths[0], StringComparison.Ordinal);
     }
 
     [Fact]
@@ -151,6 +152,7 @@ public sealed class GalleryApiRepositoryUnitTests
 
         Assert.Single(handler.RequestPaths);
         Assert.DoesNotContain("location_key", handler.RequestPaths[0], StringComparison.Ordinal);
+        Assert.DoesNotContain("unclassified", handler.RequestPaths[0], StringComparison.Ordinal);
     }
 
     [Fact]
@@ -165,6 +167,62 @@ public sealed class GalleryApiRepositoryUnitTests
         {
             Cursor = "next+/=",
             LocationKey = "raw:v1:opaque",
+        });
+
+        Assert.Single(handler.RequestPaths);
+        Assert.DoesNotContain("unclassified", handler.RequestPaths[0], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FastGallery_UnclassifiedYearQuerySendsAuthoritativeFilter()
+    {
+        var handler = new StubHandler();
+        handler.Map["GET /api/memorykeeper/gallery/photos?limit=50&year=2025&unclassified=true"] = "{}";
+        using var provider = BuildProvider(handler);
+        var repo = provider.GetRequiredService<IFastGalleryApiRepository>();
+
+        await repo.GetPhotosAsync(new MemoryKeeper.Application.DTOs.FastGalleryPhotoQuery
+        {
+            Year = 2025,
+            Unclassified = true,
+        });
+
+        Assert.Single(handler.RequestPaths);
+        Assert.DoesNotContain("place_id", handler.RequestPaths[0], StringComparison.Ordinal);
+        Assert.DoesNotContain("location_key", handler.RequestPaths[0], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FastGallery_ExplicitFalseUnclassifiedOmitsFilter()
+    {
+        var handler = new StubHandler();
+        handler.Map["GET /api/memorykeeper/gallery/photos?limit=50&year=2025"] = "{}";
+        using var provider = BuildProvider(handler);
+        var repo = provider.GetRequiredService<IFastGalleryApiRepository>();
+
+        await repo.GetPhotosAsync(new MemoryKeeper.Application.DTOs.FastGalleryPhotoQuery
+        {
+            Year = 2025,
+            Unclassified = false,
+        });
+
+        Assert.Single(handler.RequestPaths);
+        Assert.DoesNotContain("unclassified", handler.RequestPaths[0], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FastGallery_UnclassifiedCursorPageKeepsAuthoritativeFilter()
+    {
+        var handler = new StubHandler();
+        handler.Map["GET /api/memorykeeper/gallery/photos?limit=50&cursor=next%2B%2F%3D&year=2025&unclassified=true"] = "{}";
+        using var provider = BuildProvider(handler);
+        var repo = provider.GetRequiredService<IFastGalleryApiRepository>();
+
+        await repo.GetPhotosAsync(new MemoryKeeper.Application.DTOs.FastGalleryPhotoQuery
+        {
+            Cursor = "next+/=",
+            Year = 2025,
+            Unclassified = true,
         });
 
         Assert.Single(handler.RequestPaths);

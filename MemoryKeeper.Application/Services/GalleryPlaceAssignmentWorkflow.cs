@@ -1,14 +1,29 @@
 using MemoryKeeper.Application.DTOs;
 using MemoryKeeper.Application.Interfaces;
 using MemoryKeeper.Application;
+using Microsoft.Extensions.Logging;
 
 namespace MemoryKeeper.Application.Services;
 
 public enum GalleryPlaceAssignmentStage
 {
-    Assigning,
-    Verifying,
+    InitialStateQuery,
+    RadiusUpdate,
+    RevisionRefresh,
+    Assign,
+    Invalidate,
+    VerifyQuery,
+    VerifyMatch,
+    Completed,
 }
+
+public sealed record GalleryPlaceAssignmentDiagnosticSnapshot(
+    GalleryPlaceAssignmentStage Stage,
+    int SelectedCount,
+    int? ReturnedCount = null,
+    int? RevisionMapCount = null,
+    int? VerifiedCount = null,
+    int? MismatchCount = null);
 
 public sealed class GalleryPlaceAssignmentResult
 {
@@ -31,13 +46,16 @@ public sealed class GalleryPlaceAssignmentWorkflow
 
     private readonly IMemoryKeeperWriteApiRepository _repository;
     private readonly ICatalogInvalidation _invalidation;
+    private readonly ILogger<GalleryPlaceAssignmentWorkflow>? _logger;
 
     public GalleryPlaceAssignmentWorkflow(
         IMemoryKeeperWriteApiRepository repository,
-        ICatalogInvalidation invalidation)
+        ICatalogInvalidation invalidation,
+        ILogger<GalleryPlaceAssignmentWorkflow>? logger = null)
     {
         _repository = repository;
         _invalidation = invalidation;
+        _logger = logger;
     }
 
     public Task<MemoryKeeperFilePlaceStateQueryResponse> QueryStatesAsync(
@@ -87,7 +105,8 @@ public sealed class GalleryPlaceAssignmentWorkflow
         IReadOnlyCollection<string> fileIds,
         Guid targetPlaceId,
         Action<GalleryPlaceAssignmentStage>? reportStage = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Action<GalleryPlaceAssignmentDiagnosticSnapshot>? reportDiagnostic = null)
     {
         if (targetPlaceId == Guid.Empty)
         {
@@ -95,36 +114,150 @@ public sealed class GalleryPlaceAssignmentWorkflow
         }
 
         var ids = ValidateFileIds(fileIds);
-        var latest = await QueryStatesAsync(ids, cancellationToken).ConfigureAwait(false);
-        EnsureCompleteSnapshot(ids, latest.Items);
-
-        reportStage?.Invoke(GalleryPlaceAssignmentStage.Assigning);
-        await _repository.AssignFilePlacesAsync(new MemoryKeeperFilesAssignPlaceRequest
+        var stage = GalleryPlaceAssignmentStage.RevisionRefresh;
+        try
         {
-            FileIds = ids,
-            MemorykeeperPlaceId = targetPlaceId,
-            ExpectedPlaceRevisions = latest.Items.ToDictionary(
+            reportStage?.Invoke(stage);
+            reportDiagnostic?.Invoke(new GalleryPlaceAssignmentDiagnosticSnapshot(stage, ids.Count));
+            var latest = await QueryStatesAsync(ids, cancellationToken).ConfigureAwait(false);
+            reportDiagnostic?.Invoke(new GalleryPlaceAssignmentDiagnosticSnapshot(
+                stage,
+                ids.Count,
+                ReturnedCount: latest.Items.Count));
+            EnsureCompleteSnapshot(ids, latest.Items);
+            var revisions = latest.Items.ToDictionary(
                 item => item.FileId,
                 item => item.PlaceMatchRevision,
-                StringComparer.Ordinal),
-        }, cancellationToken).ConfigureAwait(false);
-        _invalidation.Invalidate(CatalogSurface.AllRelated);
+                StringComparer.Ordinal);
+            var diagnostic = new GalleryPlaceAssignmentDiagnosticSnapshot(
+                stage,
+                ids.Count,
+                ReturnedCount: latest.Items.Count,
+                RevisionMapCount: revisions.Count);
+            reportDiagnostic?.Invoke(diagnostic);
+            LogStageCompleted(stage, ids.Count, latest.Items.Count, targetPlaceId, revisions.Count);
 
-        reportStage?.Invoke(GalleryPlaceAssignmentStage.Verifying);
-        var final = await QueryStatesAsync(ids, cancellationToken).ConfigureAwait(false);
-        EnsureCompleteSnapshot(ids, final.Items);
-        var result = new GalleryPlaceAssignmentResult
-        {
-            TargetPlaceId = targetPlaceId,
-            RequestedCount = ids.Count,
-            FinalStates = final.Items,
-        };
-        if (!result.IsVerified)
-        {
-            throw new InvalidOperationException("일부 사진의 최종 장소 상태를 확인하지 못했습니다.");
+            stage = GalleryPlaceAssignmentStage.Assign;
+            reportStage?.Invoke(stage);
+            diagnostic = diagnostic with { Stage = stage };
+            reportDiagnostic?.Invoke(diagnostic);
+            await _repository.AssignFilePlacesAsync(new MemoryKeeperFilesAssignPlaceRequest
+            {
+                FileIds = ids,
+                MemorykeeperPlaceId = targetPlaceId,
+                ExpectedPlaceRevisions = revisions,
+            }, cancellationToken).ConfigureAwait(false);
+            LogStageCompleted(stage, ids.Count, returnedCount: null, targetPlaceId, revisions.Count);
+
+            stage = GalleryPlaceAssignmentStage.Invalidate;
+            reportStage?.Invoke(stage);
+            diagnostic = diagnostic with { Stage = stage };
+            reportDiagnostic?.Invoke(diagnostic);
+            _invalidation.Invalidate(CatalogSurface.AllRelated);
+            LogStageCompleted(stage, ids.Count, returnedCount: null, targetPlaceId, revisions.Count);
+
+            stage = GalleryPlaceAssignmentStage.VerifyQuery;
+            reportStage?.Invoke(stage);
+            diagnostic = diagnostic with
+            {
+                Stage = stage,
+                ReturnedCount = null,
+                VerifiedCount = null,
+                MismatchCount = null,
+            };
+            reportDiagnostic?.Invoke(diagnostic);
+            var final = await QueryStatesAsync(ids, cancellationToken).ConfigureAwait(false);
+            diagnostic = diagnostic with { ReturnedCount = final.Items.Count };
+            reportDiagnostic?.Invoke(diagnostic);
+            LogStageCompleted(stage, ids.Count, final.Items.Count, targetPlaceId, revisions.Count);
+
+            stage = GalleryPlaceAssignmentStage.VerifyMatch;
+            reportStage?.Invoke(stage);
+            diagnostic = diagnostic with { Stage = stage };
+            reportDiagnostic?.Invoke(diagnostic);
+            EnsureCompleteSnapshot(ids, final.Items);
+            var verifiedCount = final.Items.Count(item => item.MemorykeeperPlaceId == targetPlaceId);
+            var mismatchCount = final.Items.Count(item => item.MemorykeeperPlaceId != targetPlaceId)
+                + Math.Abs(ids.Count - final.Items.Count);
+            diagnostic = diagnostic with
+            {
+                VerifiedCount = verifiedCount,
+                MismatchCount = mismatchCount,
+            };
+            reportDiagnostic?.Invoke(diagnostic);
+            var result = new GalleryPlaceAssignmentResult
+            {
+                TargetPlaceId = targetPlaceId,
+                RequestedCount = ids.Count,
+                FinalStates = final.Items,
+            };
+            if (!result.IsVerified)
+            {
+                _logger?.LogWarning(
+                    "Gallery place edit verification mismatch. Stage={Stage} SelectedCount={SelectedCount} ReturnedCount={ReturnedCount} VerifiedCount={VerifiedCount} MismatchCount={MismatchCount} TargetPlaceId={TargetPlaceId}",
+                    GetDiagnosticStageName(stage),
+                    ids.Count,
+                    final.Items.Count,
+                    verifiedCount,
+                    mismatchCount,
+                    targetPlaceId);
+                throw new InvalidOperationException("일부 사진의 최종 장소 상태를 확인하지 못했습니다.");
+            }
+
+            _logger?.LogInformation(
+                "Gallery place edit stage completed. Stage={Stage} SelectedCount={SelectedCount} ReturnedCount={ReturnedCount} VerifiedCount={VerifiedCount} MismatchCount={MismatchCount} TargetPlaceId={TargetPlaceId}",
+                GetDiagnosticStageName(stage),
+                ids.Count,
+                final.Items.Count,
+                verifiedCount,
+                mismatchCount,
+                targetPlaceId);
+
+            stage = GalleryPlaceAssignmentStage.Completed;
+            reportStage?.Invoke(stage);
+            diagnostic = diagnostic with { Stage = stage };
+            reportDiagnostic?.Invoke(diagnostic);
+            LogStageCompleted(stage, ids.Count, final.Items.Count, targetPlaceId, revisions.Count);
+            return result;
         }
-        return result;
+        catch (Exception ex)
+        {
+            _logger?.LogError(
+                "Gallery place edit stage failed. Stage={Stage} SelectedCount={SelectedCount} TargetPlaceId={TargetPlaceId} ExceptionType={ExceptionType}",
+                GetDiagnosticStageName(stage),
+                ids.Count,
+                targetPlaceId,
+                ex.GetType().Name);
+            throw;
+        }
     }
+
+    public static string GetDiagnosticStageName(GalleryPlaceAssignmentStage stage) => stage switch
+    {
+        GalleryPlaceAssignmentStage.InitialStateQuery => "initial-state-query",
+        GalleryPlaceAssignmentStage.RadiusUpdate => "radius-update",
+        GalleryPlaceAssignmentStage.RevisionRefresh => "revision-refresh",
+        GalleryPlaceAssignmentStage.Assign => "assign",
+        GalleryPlaceAssignmentStage.Invalidate => "invalidate",
+        GalleryPlaceAssignmentStage.VerifyQuery => "verify-query",
+        GalleryPlaceAssignmentStage.VerifyMatch => "verify-match",
+        GalleryPlaceAssignmentStage.Completed => "completed",
+        _ => "unknown",
+    };
+
+    private void LogStageCompleted(
+        GalleryPlaceAssignmentStage stage,
+        int selectedCount,
+        int? returnedCount,
+        Guid targetPlaceId,
+        int revisionMapCount) =>
+        _logger?.LogInformation(
+            "Gallery place edit stage completed. Stage={Stage} SelectedCount={SelectedCount} ReturnedCount={ReturnedCount} RevisionMapCount={RevisionMapCount} TargetPlaceId={TargetPlaceId}",
+            GetDiagnosticStageName(stage),
+            selectedCount,
+            returnedCount,
+            revisionMapCount,
+            targetPlaceId);
 
     private static IReadOnlyList<string> ValidateFileIds(IReadOnlyCollection<string> fileIds)
     {

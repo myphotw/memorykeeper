@@ -87,6 +87,7 @@ public sealed class FastGalleryPhotoQuery
     public string? Region { get; init; }
     public string? LocationKey { get; init; }
     public Guid? PlaceId { get; init; }
+    public bool? Unclassified { get; init; }
     public bool? Favorite { get; init; }
     public bool? HasGps { get; init; }
     public DateOnly? DateFrom { get; init; }

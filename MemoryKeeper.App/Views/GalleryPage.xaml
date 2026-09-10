@@ -232,6 +232,7 @@
                         IsEnabled="{Binding CanInteract}"
                         Click="ExitEditMode_OnClick" />
                     <Button
+                        x:Name="SelectAllButton"
                         Content="전체 선택"
                         Style="{StaticResource MkSecondaryButtonStyle}"
                         IsEnabled="{Binding CanInteract}"
@@ -264,6 +265,82 @@
                             <Setter Property="Padding" Value="0" />
                             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                             <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                            <Setter Property="UseSystemFocusVisuals" Value="True" />
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="GridViewItem">
+                                        <Grid Background="Transparent">
+                                            <VisualStateManager.VisualStateGroups>
+                                                <VisualStateGroup x:Name="CommonStates">
+                                                    <VisualState x:Name="Normal" />
+                                                    <VisualState x:Name="PointerOver" />
+                                                    <VisualState x:Name="Pressed" />
+                                                    <VisualState x:Name="Selected">
+                                                        <VisualState.Setters>
+                                                            <Setter Target="EditSelectionVisual.Visibility" Value="Visible" />
+                                                        </VisualState.Setters>
+                                                    </VisualState>
+                                                    <VisualState x:Name="PointerOverSelected">
+                                                        <VisualState.Setters>
+                                                            <Setter Target="EditSelectionVisual.Visibility" Value="Visible" />
+                                                        </VisualState.Setters>
+                                                    </VisualState>
+                                                    <VisualState x:Name="PressedSelected">
+                                                        <VisualState.Setters>
+                                                            <Setter Target="EditSelectionVisual.Visibility" Value="Visible" />
+                                                        </VisualState.Setters>
+                                                    </VisualState>
+                                                    <VisualState x:Name="Disabled">
+                                                        <VisualState.Setters>
+                                                            <Setter Target="ContentPresenter.Opacity" Value="0.45" />
+                                                        </VisualState.Setters>
+                                                    </VisualState>
+                                                </VisualStateGroup>
+                                            </VisualStateManager.VisualStateGroups>
+
+                                            <ContentPresenter
+                                                x:Name="ContentPresenter"
+                                                Content="{TemplateBinding Content}"
+                                                ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                ContentTemplateSelector="{TemplateBinding ContentTemplateSelector}"
+                                                ContentTransitions="{TemplateBinding ContentTransitions}"
+                                                HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                                Padding="{TemplateBinding Padding}" />
+
+                                            <Grid
+                                                x:Name="EditSelectionVisual"
+                                                Margin="10"
+                                                Visibility="Collapsed"
+                                                IsHitTestVisible="False">
+                                                <Border
+                                                    Background="{ThemeResource MkBrushPrimary}"
+                                                    CornerRadius="{StaticResource MkImageCornerRadius}"
+                                                    Opacity="0.12" />
+                                                <Border
+                                                    BorderBrush="{ThemeResource MkBrushPrimary}"
+                                                    BorderThickness="3"
+                                                    CornerRadius="{StaticResource MkImageCornerRadius}" />
+                                                <Border
+                                                    Width="28"
+                                                    Height="28"
+                                                    Margin="0,8,8,0"
+                                                    HorizontalAlignment="Right"
+                                                    VerticalAlignment="Top"
+                                                    Background="{ThemeResource MkBrushPrimary}"
+                                                    CornerRadius="14">
+                                                    <FontIcon
+                                                        Glyph="&#xE73E;"
+                                                        FontSize="14"
+                                                        HorizontalAlignment="Center"
+                                                        VerticalAlignment="Center"
+                                                        Foreground="{ThemeResource MkBrushTextOnPrimary}" />
+                                                </Border>
+                                            </Grid>
+                                        </Grid>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
                         </Style>
                     </GridView.ItemContainerStyle>
                     <GridView.ItemTemplate>

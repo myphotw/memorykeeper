@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using MemoryKeeper.App.Diagnostics;
 using MemoryKeeper.App.Models;
 using MemoryKeeper.App.Services;
 using MemoryKeeper.Application;
@@ -25,6 +26,8 @@ public partial class GalleryPlaceEditSessionViewModel : ObservableObject, IPlace
     private readonly IReadOnlyList<GalleryItem> _selectedItems;
     private IReadOnlyList<MemoryKeeperFilePlaceStateDto> _placeStates = [];
     private IReadOnlyList<PlaceDto> _places = [];
+    private string _diagnosticStage = "initial-state-query";
+    private GalleryPlaceAssignmentDiagnosticSnapshot? _workflowDiagnostic;
 
     public GalleryPlaceEditSessionViewModel(
         MemoryKeeperPlaceService placeService,
@@ -90,10 +93,27 @@ public partial class GalleryPlaceEditSessionViewModel : ObservableObject, IPlace
     public async Task PreparePlaceRegistrationAsync()
     {
         ResetPickerState();
+        _workflowDiagnostic = null;
         IsPlaceDialogBusy = true;
         try
         {
-            var response = await _workflow.QueryStatesAsync(GetFileIds());
+            SetDiagnosticStage(GalleryPlaceAssignmentStage.InitialStateQuery);
+            MemoryKeeperFilePlaceStateQueryResponse response;
+            try
+            {
+                response = await _workflow.QueryStatesAsync(GetFileIds());
+                _logger.LogInformation(
+                    "Gallery place edit stage completed. Stage={Stage} SelectedCount={SelectedCount} ReturnedCount={ReturnedCount}",
+                    _diagnosticStage,
+                    _selectedItems.Count,
+                    response.Items.Count);
+            }
+            catch (Exception ex)
+            {
+                LogDiagnosticFailure(ex);
+                WriteOperationFailureDiagnostic(ex);
+                throw;
+            }
             _placeStates = response.Items;
             var firstGps = _placeStates.FirstOrDefault(item => item.GpsLat.HasValue && item.GpsLon.HasValue);
             if (firstGps is not null)
@@ -296,6 +316,8 @@ public partial class GalleryPlaceEditSessionViewModel : ObservableObject, IPlace
         IsPlaceDialogBusy = true;
         try
         {
+            _workflowDiagnostic = null;
+            _diagnosticStage = "target-place";
             var target = await ResolveTargetPlaceAsync();
             if (target is null)
             {
@@ -303,6 +325,7 @@ public partial class GalleryPlaceEditSessionViewModel : ObservableObject, IPlace
             }
 
             TargetPlaceId = target.Id;
+            SetDiagnosticStage(GalleryPlaceAssignmentStage.RadiusUpdate);
             var plan = _workflow.PlanRadius(
                 target.Latitude,
                 target.Longitude,
@@ -340,21 +363,28 @@ public partial class GalleryPlaceEditSessionViewModel : ObservableObject, IPlace
                 }
                 target = updated;
                 RadiusWasChanged = true;
+                LogRadiusStageCompleted(target.Id, radiusChanged: true);
             }
             else
             {
+                LogRadiusStageCompleted(target.Id, radiusChanged: false);
                 MutationStarted?.Invoke($"{_selectedItems.Count}장의 장소를 변경하고 있습니다", "잠시 기다려 주세요");
                 MutationAttempted = true;
             }
 
             MutationProgress?.Invoke($"{_selectedItems.Count}장의 장소를 변경하고 있습니다", "잠시 기다려 주세요");
-            await _workflow.AssignAsync(GetFileIds(), target.Id, stage =>
-            {
-                if (stage == GalleryPlaceAssignmentStage.Verifying)
+            await _workflow.AssignAsync(
+                GetFileIds(),
+                target.Id,
+                reportStage: stage =>
                 {
-                    MutationProgress?.Invoke("사진첩을 갱신하고 있습니다", "잠시 기다려 주세요");
-                }
-            });
+                    SetDiagnosticStage(stage);
+                    if (stage == GalleryPlaceAssignmentStage.VerifyQuery)
+                    {
+                        MutationProgress?.Invoke("사진첩을 갱신하고 있습니다", "잠시 기다려 주세요");
+                    }
+                },
+                reportDiagnostic: diagnostic => _workflowDiagnostic = diagnostic);
             TargetPlaceId = target.Id;
             Succeeded = true;
             PlaceDialogStatus = $"{_selectedItems.Count}장의 장소 변경이 완료되었습니다.";
@@ -364,7 +394,15 @@ public partial class GalleryPlaceEditSessionViewModel : ObservableObject, IPlace
         {
             ConflictFailure = true;
             PlaceDialogStatus = "사진 상태가 변경되어 장소를 저장하지 못했습니다. 다시 시도해 주세요.";
-            _logger.LogWarning(ex, "Gallery batch place assignment revision conflict.");
+            _logger.LogWarning(
+                "Gallery place edit stage failed. Stage={Stage} SelectedCount={SelectedCount} TargetPlaceId={TargetPlaceId} ExceptionType={ExceptionType} StatusCode={StatusCode} DetailCode={DetailCode}",
+                _diagnosticStage,
+                _selectedItems.Count,
+                TargetPlaceId,
+                ex.GetType().Name,
+                (int)ex.StatusCode,
+                ex.DetailCode);
+            WriteOperationFailureDiagnostic(ex);
             return false;
         }
         catch (Exception ex)
@@ -372,7 +410,8 @@ public partial class GalleryPlaceEditSessionViewModel : ObservableObject, IPlace
             PlaceDialogStatus = RadiusWasChanged
                 ? "장소 범위는 변경되었지만 사진의 장소를 저장하지 못했습니다. 최신 상태를 확인한 뒤 다시 시도해 주세요."
                 : "사진의 장소를 저장하지 못했습니다. 다시 시도해 주세요.";
-            _logger.LogError(ex, "Gallery batch place assignment failed.");
+            LogDiagnosticFailure(ex);
+            WriteOperationFailureDiagnostic(ex);
             return false;
         }
         finally
@@ -546,6 +585,67 @@ public partial class GalleryPlaceEditSessionViewModel : ObservableObject, IPlace
     }
 
     private IReadOnlyList<string> GetFileIds() => _selectedItems.Select(item => item.BackendFileId).ToList();
+
+    private void SetDiagnosticStage(GalleryPlaceAssignmentStage stage) =>
+        _diagnosticStage = GalleryPlaceAssignmentWorkflow.GetDiagnosticStageName(stage);
+
+    private void LogRadiusStageCompleted(Guid targetPlaceId, bool radiusChanged) =>
+        _logger.LogInformation(
+            "Gallery place edit stage completed. Stage={Stage} SelectedCount={SelectedCount} TargetPlaceId={TargetPlaceId} RadiusChanged={RadiusChanged}",
+            _diagnosticStage,
+            _selectedItems.Count,
+            targetPlaceId,
+            radiusChanged);
+
+    private void LogDiagnosticFailure(Exception exception)
+    {
+        if (exception is ApiException apiException)
+        {
+            _logger.LogError(
+                "Gallery place edit stage failed. Stage={Stage} SelectedCount={SelectedCount} TargetPlaceId={TargetPlaceId} ExceptionType={ExceptionType} StatusCode={StatusCode} DetailCode={DetailCode}",
+                _diagnosticStage,
+                _selectedItems.Count,
+                TargetPlaceId,
+                exception.GetType().Name,
+                (int)apiException.StatusCode,
+                apiException.DetailCode);
+            return;
+        }
+
+        _logger.LogError(
+            "Gallery place edit stage failed. Stage={Stage} SelectedCount={SelectedCount} TargetPlaceId={TargetPlaceId} ExceptionType={ExceptionType}",
+            _diagnosticStage,
+            _selectedItems.Count,
+            TargetPlaceId,
+            exception.GetType().Name);
+    }
+
+    private void WriteOperationFailureDiagnostic(Exception exception)
+    {
+        var apiException = exception as ApiException;
+        GalleryDiagnostics.WriteOperationFailure(
+            operation: "GalleryPlaceAssignment",
+            stage: _diagnosticStage,
+            selectedCount: _selectedItems.Count,
+            targetPlaceId: TargetPlaceId,
+            exceptionType: exception.GetType().FullName ?? exception.GetType().Name,
+            safeMessage: GetSafeDiagnosticMessage(exception),
+            httpStatus: apiException is null ? null : (int)apiException.StatusCode,
+            detailCode: apiException?.DetailCode,
+            returnedCount: _workflowDiagnostic?.ReturnedCount,
+            revisionMapCount: _workflowDiagnostic?.RevisionMapCount,
+            verifiedCount: _workflowDiagnostic?.VerifiedCount,
+            mismatchCount: _workflowDiagnostic?.MismatchCount,
+            safeStackTrace: new System.Diagnostics.StackTrace(exception, fNeedFileInfo: false).ToString());
+    }
+
+    private static string GetSafeDiagnosticMessage(Exception exception) => exception switch
+    {
+        ApiException => exception.Message,
+        InvalidOperationException => exception.Message,
+        ArgumentException => exception.Message,
+        _ => "Gallery place assignment failed.",
+    };
 
     private void NotifyPreviewChanged()
     {

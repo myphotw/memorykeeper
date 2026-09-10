@@ -28,6 +28,7 @@ public sealed class FastGalleryApiRepository : IFastGalleryApiRepository
             ["place_id"] = string.IsNullOrWhiteSpace(query.LocationKey)
                 ? query.PlaceId?.ToString("D")
                 : null,
+            ["unclassified"] = query.Unclassified == true ? "true" : null,
             ["favorite"] = query.Favorite?.ToString().ToLowerInvariant(),
             ["has_gps"] = query.HasGps?.ToString().ToLowerInvariant(),
             ["date_from"] = query.DateFrom?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),

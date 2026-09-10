@@ -139,7 +139,10 @@ public sealed partial class GalleryPage : Page
             if (e.PropertyName is nameof(GalleryViewModel.Items))
             {
                 ResubscribeItems();
-                ClearNativeSelection();
+                // ItemsSource replacement owns native selection teardown. Mutating
+                // SelectedItems synchronously here collides with WinUI's vector reset.
+                ViewModel.ResetSelectionForItemsReplacement();
+                UpdateSelectAllButtonContent();
             }
 
             UpdateEmptyState();
@@ -147,6 +150,10 @@ public sealed partial class GalleryPage : Page
         else if (e.PropertyName is nameof(GalleryViewModel.SelectedNode))
         {
             UpdateEmptyState();
+        }
+        else if (e.PropertyName is nameof(GalleryViewModel.SelectedCount))
+        {
+            UpdateSelectAllButtonContent();
         }
     }
 
@@ -164,6 +171,7 @@ public sealed partial class GalleryPage : Page
     private void Items_OnCollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
     {
         UpdateEmptyState();
+        UpdateSelectAllButtonContent();
     }
 
     private void UpdateEmptyState()
@@ -535,28 +543,46 @@ public sealed partial class GalleryPage : Page
         await CloseDetailPanelAsync();
         ViewModel.ClearDisplaySelection();
         _pageSelectedItem = null;
-        ClearNativeSelection();
-        PhotoGrid.SelectionMode = ListViewSelectionMode.Multiple;
+        // Start a fresh native selection session by changing modes; do not mutate
+        // the WinUI SelectedItems vector while SelectionMode is None.
         ViewModel.EnterEditMode();
+        PhotoGrid.SelectionMode = ListViewSelectionMode.Multiple;
+        UpdateSelectAllButtonContent();
         ApplySelectionVisuals();
     }
 
     private void ExitEditMode_OnClick(object sender, RoutedEventArgs e)
     {
         if (ViewModel.IsMutating) return;
-        ClearNativeSelection();
+        // Returning to None lets WinUI tear down its own native selection state.
         PhotoGrid.SelectionMode = ListViewSelectionMode.None;
         ViewModel.ExitEditMode();
+        UpdateSelectAllButtonContent();
     }
 
     private void SelectAll_OnClick(object sender, RoutedEventArgs e)
     {
         if (!ViewModel.IsEditing || ViewModel.IsMutating) return;
-        foreach (var item in ViewModel.Items)
+        var allLoadedItemsSelected = GallerySelectionPolicy.AreAllLoadedItemsSelected(
+            ViewModel.Items.Count,
+            ViewModel.SelectedCount);
+        if (allLoadedItemsSelected)
         {
-            if (!PhotoGrid.SelectedItems.Contains(item)) PhotoGrid.SelectedItems.Add(item);
+            foreach (var item in PhotoGrid.SelectedItems.Cast<object>().ToList())
+            {
+                PhotoGrid.SelectedItems.Remove(item);
+            }
         }
+        else
+        {
+            foreach (var item in ViewModel.Items)
+            {
+                if (!PhotoGrid.SelectedItems.Contains(item)) PhotoGrid.SelectedItems.Add(item);
+            }
+        }
+
         ViewModel.SelectedCount = PhotoGrid.SelectedItems.Count;
+        UpdateSelectAllButtonContent();
     }
 
     private void PhotoGrid_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -565,6 +591,14 @@ public sealed partial class GalleryPage : Page
         {
             ViewModel.SelectedCount = PhotoGrid.SelectedItems.Count;
         }
+        UpdateSelectAllButtonContent();
+    }
+
+    private void UpdateSelectAllButtonContent()
+    {
+        SelectAllButton.Content = GallerySelectionPolicy.GetToggleLabel(
+            ViewModel.Items.Count,
+            ViewModel.SelectedCount);
     }
 
     private async void ChangePlace_OnClick(object sender, RoutedEventArgs e)
@@ -589,7 +623,7 @@ public sealed partial class GalleryPage : Page
             HostXamlRoot = XamlRoot,
             RadiusExpansionPreviewHandler = ShowRadiusExpansionPreviewAsync,
             MutationStarted = ViewModel.BeginMutation,
-            MutationProgress = ViewModel.UpdateMutationStatus,
+            MutationProgress = UpdateMutationProgressOnUiThread,
         };
 
         try
@@ -615,7 +649,6 @@ public sealed partial class GalleryPage : Page
                 ViewModel.UpdateMutationStatus("사진첩을 갱신하고 있습니다", "잠시 기다려 주세요");
                 _catalogInvalidation.Consume(CatalogSurface.Gallery);
                 await ViewModel.ReloadAndSelectRegisteredPlaceAsync(targetId);
-                ClearNativeSelection();
                 PhotoGrid.SelectionMode = ListViewSelectionMode.None;
                 ViewModel.CompleteMutation(true, $"{selected.Count}장의 장소 변경이 완료되었습니다.");
                 ViewModel.ExitEditMode();
@@ -624,10 +657,7 @@ public sealed partial class GalleryPage : Page
 
             _catalogInvalidation.Consume(CatalogSurface.Gallery);
             await ViewModel.LoadCommand.ExecuteAsync(null);
-            foreach (var item in ViewModel.Items.Where(item => selectedIds.Contains(item.BackendFileId)))
-            {
-                PhotoGrid.SelectedItems.Add(item);
-            }
+            await RestoreNativeSelectionAfterItemsReplacementAsync(selectedIds);
             ViewModel.CompleteMutation(false, session.PlaceDialogStatus);
             ViewModel.SelectedCount = PhotoGrid.SelectedItems.Count;
         }
@@ -649,6 +679,20 @@ public sealed partial class GalleryPage : Page
 
     private Task<bool> ShowRadiusExpansionPreviewAsync(string placeName, PlaceRadiusExpansionPlan plan) =>
         PlaceRadiusExpansionDialog.ShowAsync(XamlRoot, _loggerFactory, _settingRepository, placeName, plan);
+
+    private void UpdateMutationProgressOnUiThread(string status, string hint)
+    {
+        if (DispatcherQueue.HasThreadAccess)
+        {
+            ViewModel.UpdateMutationStatus(status, hint);
+            return;
+        }
+
+        if (!DispatcherQueue.TryEnqueue(() => ViewModel.UpdateMutationStatus(status, hint)))
+        {
+            throw new InvalidOperationException("Gallery mutation progress could not be dispatched to the UI thread.");
+        }
+    }
 
     private Task ShowMapPickInPlaceDialogAsync(ContentDialog host, GalleryPlaceEditSessionViewModel session) =>
         MapPickSession.RunInDialogAsync(
@@ -675,9 +719,27 @@ public sealed partial class GalleryPage : Page
                 ResolveCoordinatesAsync = session.ResolveSuggestionCoordinatesAsync,
             });
 
-    private void ClearNativeSelection()
+    private Task RestoreNativeSelectionAfterItemsReplacementAsync(IReadOnlySet<string> selectedFileIds)
     {
-        PhotoGrid.SelectedItems.Clear();
-        ViewModel.SelectedCount = 0;
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (!DispatcherQueue.TryEnqueue(() =>
+            {
+                try
+                {
+                    foreach (var item in ViewModel.Items.Where(item => selectedFileIds.Contains(item.BackendFileId)))
+                    {
+                        PhotoGrid.SelectedItems.Add(item);
+                    }
+                    completion.TrySetResult();
+                }
+                catch (Exception ex)
+                {
+                    completion.TrySetException(ex);
+                }
+            }))
+        {
+            completion.TrySetResult();
+        }
+        return completion.Task;
     }
 }

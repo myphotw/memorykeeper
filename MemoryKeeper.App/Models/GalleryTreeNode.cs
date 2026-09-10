@@ -34,6 +34,15 @@ public partial class GalleryTreeNode : ObservableObject
 
     public string? City { get; init; }
 
+    /// <summary>Canonical grouping identity, separate from the user-facing city label.</summary>
+    public string? CanonicalRegion { get; init; }
+
+    /// <summary>
+    /// Exact Backend region values represented by a canonical Gallery city node.
+    /// Empty for nodes that do not project region aliases.
+    /// </summary>
+    public IReadOnlyList<string> RegionFilters { get; init; } = [];
+
     public Guid? PlaceId { get; init; }
 
     /// <summary>Opaque Backend identity for a registered or raw Fast Gallery location leaf.</summary>
@@ -95,7 +104,7 @@ public partial class GalleryTreeNode : ObservableObject
         GalleryTreeNodeKind.Year => $"year:{Year}",
         GalleryTreeNodeKind.Unclassified => $"year:{Year}:unclassified",
         GalleryTreeNodeKind.Country => $"year:{Year}:country:{Country}",
-        GalleryTreeNodeKind.City => $"year:{Year}:country:{Country}:city:{City}",
+        GalleryTreeNodeKind.City => $"year:{Year}:country:{Country}:city:{CanonicalRegion ?? City}",
         GalleryTreeNodeKind.Place => $"year:{Year}:country:{Country}:city:{City}:place:{BuildPlaceIdentityKey()}",
         GalleryTreeNodeKind.PlaceBrowse => $"place-browse:{BuildPlaceIdentityKey()}",
         GalleryTreeNodeKind.PlaceYear => $"place-browse:{BuildPlaceIdentityKey()}:year:{Year}",
@@ -139,7 +148,7 @@ public partial class GalleryTreeNode : ObservableObject
             ? Country
             : null,
         City = Kind is GalleryTreeNodeKind.City or GalleryTreeNodeKind.Place
-            ? City
+            ? (RegionFilters.Count == 1 ? RegionFilters[0] : City)
             : null,
         PlaceId = Kind is GalleryTreeNodeKind.Place or GalleryTreeNodeKind.PlaceBrowse or GalleryTreeNodeKind.PlaceYear
             ? PlaceId

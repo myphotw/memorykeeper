@@ -19,6 +19,7 @@ namespace MemoryKeeper.App.ViewModels;
 public partial class GalleryViewModel : ObservableObject
 {
     public const int DefaultPageSize = 50;
+    private const string MultiRegionCursor = "multi-region";
 
     private readonly GalleryHierarchyService _hierarchyService;
     private readonly IFastGalleryApiRepository _fastGallery;
@@ -37,6 +38,7 @@ public partial class GalleryViewModel : ObservableObject
     private IReadOnlyList<GalleryPhotoDto> _matchedPhotos = [];
     private string? _nextCursor;
     private bool _hasMore;
+    private IReadOnlyList<RegionPagingState>? _regionPagingState;
     private int _queryGeneration;
     private int _thumbnailBatchSequence;
     private int _fastMediaDiagnosticsRemaining;
@@ -282,6 +284,12 @@ public partial class GalleryViewModel : ObservableObject
     {
         foreach (var item in Items) item.IsSelected = false;
         SelectedItem = null;
+    }
+
+    public void ResetSelectionForItemsReplacement()
+    {
+        SelectedCount = 0;
+        ClearDisplaySelection();
     }
 
     [RelayCommand]
@@ -664,6 +672,7 @@ public partial class GalleryViewModel : ObservableObject
         Items = [];
         _nextCursor = null;
         _hasMore = false;
+        _regionPagingState = null;
         _totalCount = 0;
         OnPropertyChanged(nameof(CanLoadMore));
         OnPropertyChanged(nameof(TotalCount));
@@ -712,16 +721,18 @@ public partial class GalleryViewModel : ObservableObject
                 {
                     var cities = FindYearNode(year)?.ChildNodes
                         .FirstOrDefault(item => string.Equals(item.Country, node.Country, StringComparison.OrdinalIgnoreCase))?.ChildNodes ?? [];
-                    foreach (var city in cities)
+                    foreach (var city in GalleryRegionHierarchyProjection.Build(cities))
                     {
                         node.Children.Add(new GalleryTreeNode
                         {
                             Kind = GalleryTreeNodeKind.City,
                             Year = year,
                             Country = node.Country,
-                            City = city.Region,
-                            Title = city.Region ?? LibraryConstants.UnclassifiedTitle,
-                            Count = city.Count,
+                            City = city.DisplayName,
+                            CanonicalRegion = city.CanonicalIdentity,
+                            RegionFilters = city.SourceRegions,
+                            Title = city.DisplayName,
+                            Count = city.PhotoCount,
                             Depth = node.Depth + 1,
                             CanExpand = true,
                         });
@@ -734,24 +745,35 @@ public partial class GalleryViewModel : ObservableObject
                          && !string.IsNullOrWhiteSpace(node.Country)
                          && !string.IsNullOrWhiteSpace(node.City):
                 {
-                    var places = FindYearNode(year)?.ChildNodes
+                    var sourceRegions = node.RegionFilters.Count > 0
+                        ? node.RegionFilters
+                        : [node.City!];
+                    var regionNodes = FindYearNode(year)?.ChildNodes
                         .FirstOrDefault(item => string.Equals(item.Country, node.Country, StringComparison.OrdinalIgnoreCase))?.ChildNodes
-                        .FirstOrDefault(item => string.Equals(item.Region, node.City, StringComparison.OrdinalIgnoreCase))?.ChildNodes ?? [];
-                    foreach (var place in places)
+                        .Where(item => sourceRegions.Contains(item.Region ?? string.Empty, StringComparer.Ordinal))
+                        .ToList() ?? [];
+                    foreach (var regionNode in regionNodes)
                     {
-                        node.Children.Add(new GalleryTreeNode
+                        foreach (var place in regionNode.ChildNodes)
                         {
-                            Kind = GalleryTreeNodeKind.Place,
-                            Year = year,
-                            Country = node.Country,
-                            City = node.City,
-                            PlaceId = place.MemorykeeperPlaceId ?? place.PlaceId,
-                            LocationKey = place.LocationKey,
-                            Title = place.DisplayName ?? LibraryConstants.UnclassifiedTitle,
-                            Count = place.Count,
-                            Depth = node.Depth + 1,
-                            CanExpand = false,
-                        });
+                            node.Children.Add(new GalleryTreeNode
+                            {
+                                Kind = GalleryTreeNodeKind.Place,
+                                Year = year,
+                                Country = node.Country,
+                                City = node.City,
+                                CanonicalRegion = node.CanonicalRegion,
+                                RegionFilters = string.IsNullOrWhiteSpace(regionNode.Region)
+                                    ? []
+                                    : [regionNode.Region!],
+                                PlaceId = place.MemorykeeperPlaceId ?? place.PlaceId,
+                                LocationKey = place.LocationKey,
+                                Title = place.DisplayName ?? LibraryConstants.UnclassifiedTitle,
+                                Count = place.Count,
+                                Depth = node.Depth + 1,
+                                CanExpand = false,
+                            });
+                        }
                     }
 
                     break;
@@ -926,6 +948,7 @@ public partial class GalleryViewModel : ObservableObject
         var token = _pageCts.Token;
         var generation = ++_queryGeneration;
         _pagingNode = node;
+        _regionPagingState = null;
         _currentPage = 1;
         var query = BuildQuery(node);
         GalleryDiagnostics.WriteStep(
@@ -955,12 +978,14 @@ public partial class GalleryViewModel : ObservableObject
 
             // Keep Fast-media diagnostics useful without producing one log per gallery item.
             Interlocked.Exchange(ref _fastMediaDiagnosticsRemaining, 3);
-            var page = await _fastGallery.GetPhotosAsync(ToFastQuery(node), token);
+            var loadResult = await LoadInitialFastPageAsync(node, token);
             if (generation != _queryGeneration || token.IsCancellationRequested)
             {
                 return;
             }
 
+            var page = loadResult.Page;
+            _regionPagingState = loadResult.RegionPaging;
             var galleryItems = page.Items.Select(ToGalleryItem)
                 .Where(item => item.MediaId != Guid.Empty)
                 .DistinctBy(item => item.BackendFileId, StringComparer.OrdinalIgnoreCase)
@@ -987,6 +1012,7 @@ public partial class GalleryViewModel : ObservableObject
                 Items = [];
                 _nextCursor = null;
                 _hasMore = false;
+                _regionPagingState = null;
                 _totalCount = 0;
                 OnPropertyChanged(nameof(CanLoadMore));
                 StatusMessage = "사진을 불러오는 중 오류가 발생했습니다. 다시 시도해 주세요.";
@@ -1068,9 +1094,21 @@ public partial class GalleryViewModel : ObservableObject
         {
             var generation = _queryGeneration;
             var cursor = _nextCursor!;
-            var page = await _fastGallery.GetPhotosAsync(ToFastQuery(_pagingNode, cursor));
+            FastPageLoadResult loadResult;
+            if (_regionPagingState is { Count: > 1 } regionPaging)
+            {
+                loadResult = await LoadNextRegionPageAsync(_pagingNode, regionPaging);
+            }
+            else
+            {
+                var exactRegion = GetSingleRegionFilter(_pagingNode);
+                var sourcePage = await _fastGallery.GetPhotosAsync(ToFastQuery(_pagingNode, cursor, exactRegion));
+                loadResult = new FastPageLoadResult(sourcePage, null);
+            }
             if (generation != _queryGeneration || !string.Equals(cursor, _nextCursor, StringComparison.Ordinal)) return;
 
+            var page = loadResult.Page;
+            _regionPagingState = loadResult.RegionPaging;
             var seen = Items.Select(item => item.BackendFileId).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var appended = page.Items.Select(ToGalleryItem)
                 .Where(item => item.MediaId != Guid.Empty && seen.Add(item.BackendFileId))
@@ -1092,7 +1130,90 @@ public partial class GalleryViewModel : ObservableObject
         }, "LoadMoreAsync");
     }
 
-    private FastGalleryPhotoQuery ToFastQuery(GalleryTreeNode node, string? cursor = null)
+    private async Task<FastPageLoadResult> LoadInitialFastPageAsync(
+        GalleryTreeNode node,
+        CancellationToken cancellationToken)
+    {
+        if (node.Kind != GalleryTreeNodeKind.City || node.RegionFilters.Count <= 1)
+        {
+            var exactRegion = GetSingleRegionFilter(node);
+            var page = await _fastGallery.GetPhotosAsync(
+                ToFastQuery(node, regionOverride: exactRegion),
+                cancellationToken);
+            return new FastPageLoadResult(page, null);
+        }
+
+        var sourceRegions = node.RegionFilters
+            .Where(region => !string.IsNullOrWhiteSpace(region))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        var pages = await Task.WhenAll(sourceRegions.Select(async region => new RegionPageResult(
+            region,
+            await _fastGallery.GetPhotosAsync(
+                ToFastQuery(node, regionOverride: region),
+                cancellationToken))));
+        return MergeRegionPages(pages);
+    }
+
+    private async Task<FastPageLoadResult> LoadNextRegionPageAsync(
+        GalleryTreeNode node,
+        IReadOnlyList<RegionPagingState> paging)
+    {
+        var pending = paging.Where(state => state.HasMore && !string.IsNullOrWhiteSpace(state.NextCursor)).ToList();
+        var pages = await Task.WhenAll(pending.Select(async state => new RegionPageResult(
+            state.Region,
+            await _fastGallery.GetPhotosAsync(
+                ToFastQuery(node, state.NextCursor, state.Region)))));
+        var pageByRegion = pages.ToDictionary(result => result.Region, StringComparer.Ordinal);
+        var nextPaging = paging.Select(state => pageByRegion.TryGetValue(state.Region, out var result)
+                ? ToRegionPagingState(result)
+                : state)
+            .ToList();
+        return CreateMergedRegionResult(pages.Select(result => result.Page), nextPaging);
+    }
+
+    private static FastPageLoadResult MergeRegionPages(IReadOnlyList<RegionPageResult> pages) =>
+        CreateMergedRegionResult(
+            pages.Select(result => result.Page),
+            pages.Select(ToRegionPagingState).ToList());
+
+    private static FastPageLoadResult CreateMergedRegionResult(
+        IEnumerable<FastGalleryPhotoPageDto> pages,
+        IReadOnlyList<RegionPagingState> paging)
+    {
+        var items = pages
+            .SelectMany(page => page.Items)
+            .Where(item => !string.IsNullOrWhiteSpace(item.FileId))
+            .DistinctBy(item => item.FileId, StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(item => item.EffectiveCaptureDatetime)
+            .ThenBy(item => item.FileId, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var hasMore = paging.Any(state => state.HasMore);
+        return new FastPageLoadResult(
+            new FastGalleryPhotoPageDto
+            {
+                Items = items,
+                HasMore = hasMore,
+                NextCursor = hasMore ? MultiRegionCursor : null,
+            },
+            paging);
+    }
+
+    private static RegionPagingState ToRegionPagingState(RegionPageResult result) => new(
+        result.Region,
+        result.Page.NextCursor,
+        result.Page.HasMore && !string.IsNullOrWhiteSpace(result.Page.NextCursor));
+
+    private static string? GetSingleRegionFilter(GalleryTreeNode node) =>
+        node.Kind is GalleryTreeNodeKind.City or GalleryTreeNodeKind.Place
+        && node.RegionFilters.Count == 1
+            ? node.RegionFilters[0]
+            : null;
+
+    private FastGalleryPhotoQuery ToFastQuery(
+        GalleryTreeNode node,
+        string? cursor = null,
+        string? regionOverride = null)
     {
         var isPlaceLeaf = IsHierarchyPlaceLeaf(node);
         var locationKey = isPlaceLeaf && !string.IsNullOrWhiteSpace(node.LocationKey)
@@ -1104,9 +1225,12 @@ public partial class GalleryViewModel : ObservableObject
             Cursor = cursor,
             Year = node.Year,
             Country = node.Kind is GalleryTreeNodeKind.Country or GalleryTreeNodeKind.City or GalleryTreeNodeKind.Place ? node.Country : null,
-            Region = node.Kind is GalleryTreeNodeKind.City or GalleryTreeNodeKind.Place ? node.City : null,
+            Region = node.Kind is GalleryTreeNodeKind.City or GalleryTreeNodeKind.Place
+                ? regionOverride ?? node.City
+                : null,
             LocationKey = locationKey,
             PlaceId = isPlaceLeaf && locationKey is null ? node.PlaceId : null,
+            Unclassified = node.Kind == GalleryTreeNodeKind.Unclassified ? true : null,
             Favorite = node.Kind == GalleryTreeNodeKind.Favorites ? true : null,
         };
     }
@@ -1118,9 +1242,19 @@ public partial class GalleryViewModel : ObservableObject
             return "표시할 사진이 없습니다.";
         }
 
-        var displayCount = IsHierarchyPlaceLeaf(node) ? node.Count : loadedCount;
+        var displayCount = IsHierarchyPlaceLeaf(node) || node.Kind == GalleryTreeNodeKind.City
+            ? node.Count
+            : loadedCount;
         return $"{node.Title} · {displayCount}장";
     }
+
+    private sealed record RegionPagingState(string Region, string? NextCursor, bool HasMore);
+
+    private sealed record RegionPageResult(string Region, FastGalleryPhotoPageDto Page);
+
+    private sealed record FastPageLoadResult(
+        FastGalleryPhotoPageDto Page,
+        IReadOnlyList<RegionPagingState>? RegionPaging);
 
     private static bool IsHierarchyPlaceLeaf(GalleryTreeNode node) =>
         node.Kind is GalleryTreeNodeKind.Place or GalleryTreeNodeKind.PlaceBrowse or GalleryTreeNodeKind.PlaceYear;

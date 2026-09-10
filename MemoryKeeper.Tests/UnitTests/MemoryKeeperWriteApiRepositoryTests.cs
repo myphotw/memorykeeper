@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using MemoryKeeper.Application.DTOs;
 using MemoryKeeper.Application.Interfaces;
+using MemoryKeeper.Application.Services;
 using MemoryKeeper.Infrastructure;
 using MemoryKeeper.Infrastructure.Repositories.Api;
 using MemoryKeeper.Infrastructure.Services.Api;
@@ -294,10 +295,34 @@ public sealed class MemoryKeeperWriteApiRepositoryTests
         var workflow = new MemoryKeeper.Application.Services.GalleryPlaceAssignmentWorkflow(
             repository,
             new CatalogInvalidation());
+        var stages = new List<GalleryPlaceAssignmentStage>();
+        var diagnostics = new List<GalleryPlaceAssignmentDiagnosticSnapshot>();
 
-        var result = await workflow.AssignAsync([FileId], targetPlaceId);
+        var result = await workflow.AssignAsync(
+            [FileId],
+            targetPlaceId,
+            reportStage: stages.Add,
+            reportDiagnostic: diagnostics.Add);
 
         Assert.True(result.IsVerified);
+        Assert.Equal(
+            new[]
+            {
+                GalleryPlaceAssignmentStage.RevisionRefresh,
+                GalleryPlaceAssignmentStage.Assign,
+                GalleryPlaceAssignmentStage.Invalidate,
+                GalleryPlaceAssignmentStage.VerifyQuery,
+                GalleryPlaceAssignmentStage.VerifyMatch,
+                GalleryPlaceAssignmentStage.Completed,
+            },
+            stages);
+        var completedDiagnostic = Assert.Single(
+            diagnostics.Where(item => item.Stage == GalleryPlaceAssignmentStage.Completed));
+        Assert.Equal(1, completedDiagnostic.SelectedCount);
+        Assert.Equal(1, completedDiagnostic.ReturnedCount);
+        Assert.Equal(1, completedDiagnostic.RevisionMapCount);
+        Assert.Equal(1, completedDiagnostic.VerifiedCount);
+        Assert.Equal(0, completedDiagnostic.MismatchCount);
         Assert.Equal(2, handler.Requests.Count(request => request == stateKey));
         Assert.Single(handler.Requests.Where(request => request == assignKey));
         using var payload = JsonDocument.Parse(handler.Bodies[assignKey]);
