@@ -113,11 +113,11 @@
                         <DataTemplate x:DataType="models:PlaceCleanupGroupItem">
                             <Border Padding="8" CornerRadius="6" Background="Transparent">
                                 <StackPanel Spacing="2">
-                                    <TextBlock Text="{x:Bind Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Text="{x:Bind CountText}" FontSize="12" Opacity="0.85" />
-                                    <TextBlock Text="{x:Bind PeriodText}" FontSize="11" Opacity="0.7" />
-                                    <TextBlock Text="{x:Bind LocationText}" FontSize="11" Opacity="0.75" TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Text="{x:Bind IssueStatusText}" FontSize="11" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                                    <TextBlock Text="{Binding Title, Mode=OneWay}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding CountText, Mode=OneWay}" FontSize="12" Opacity="0.85" />
+                                    <TextBlock Text="{Binding PeriodText, Mode=OneWay}" FontSize="11" Opacity="0.7" />
+                                    <TextBlock Text="{Binding LocationText, Mode=OneWay}" FontSize="11" Opacity="0.75" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding IssueStatusText, Mode=OneWay}" FontSize="11" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
                                 </StackPanel>
                             </Border>
                         </DataTemplate>
@@ -145,11 +145,11 @@
                         <DataTemplate x:DataType="models:CaptureDateCleanupGroupItem">
                             <Border Padding="8" CornerRadius="6" Background="Transparent">
                                 <StackPanel Spacing="2">
-                                    <TextBlock Text="{x:Bind Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Text="{x:Bind CountText}" FontSize="12" Opacity="0.85" />
-                                    <TextBlock Text="{x:Bind ReasonText}" FontSize="11" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-                                    <TextBlock Text="{x:Bind DateSummaryText}" FontSize="11" Opacity="0.75" TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Text="{x:Bind PeriodText}" FontSize="11" Opacity="0.7" />
+                                    <TextBlock Text="{Binding Title, Mode=OneWay}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding CountText, Mode=OneWay}" FontSize="12" Opacity="0.85" />
+                                    <TextBlock Text="{Binding ReasonText, Mode=OneWay}" FontSize="11" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                                    <TextBlock Text="{Binding DateSummaryText, Mode=OneWay}" FontSize="11" Opacity="0.75" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding PeriodText, Mode=OneWay}" FontSize="11" Opacity="0.7" />
                                 </StackPanel>
                             </Border>
                         </DataTemplate>

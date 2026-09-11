@@ -68,7 +68,7 @@ public sealed class GalleryRegionHierarchyProjectionTests
 
         Assert.Equal(3, result.Count);
         Assert.Equal(3, Assert.Single(result, item => item.DisplayName == "York").PhotoCount);
-        Assert.Equal(4, Assert.Single(result, item => item.DisplayName == "New York").PhotoCount);
+        Assert.Equal(4, Assert.Single(result, item => item.DisplayName == "뉴욕").PhotoCount);
     }
 
     [Fact]

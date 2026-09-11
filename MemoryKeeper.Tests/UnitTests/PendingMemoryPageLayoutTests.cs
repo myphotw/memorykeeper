@@ -8,23 +8,25 @@ public sealed class PendingMemoryPageLayoutTests
     [InlineData("IMPORTED", "가져온 날짜 기준")]
     [InlineData("CREATED", "파일 생성일 기준")]
     [InlineData(null, "날짜 정보 없음")]
-    public void CaptureDateBasis_UsesFriendlyText(string? value, string expected) =>
-        Assert.Equal(expected, MemoryKeeper.App.Models.CleanupDisplayText.DateBasis(value));
+    public void CaptureDateBasis_UsesFriendlyText(string? value, string expected)
+    {
+        var model = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Models", "PendingMemoryGroupItem.cs"));
+        var expectedSwitchArm = value is null
+            ? $"_ => \"{expected}\""
+            : $"\"{value}\" => \"{expected}\"";
+
+        Assert.Contains(expectedSwitchArm, model, StringComparison.Ordinal);
+    }
 
     [Fact]
     public void DatePrecision_HidesSyntheticMidnight()
     {
-        var item = new MemoryKeeper.App.Models.PendingMemoryMediaItem(
-            new MemoryKeeper.Application.DTOs.PendingMemoryItemDto
-            {
-                CapturedAt = new DateTimeOffset(2023, 10, 14, 0, 0, 0, TimeSpan.Zero),
-                EffectiveCaptureDate = "2023-10-14",
-                UserCapturePrecision = "DATE",
-            },
-            cleanupMode: MemoryKeeper.App.Models.CleanupMode.CaptureDate);
+        var model = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Models", "PendingMemoryGroupItem.cs"));
 
-        Assert.Equal("2023.10.14", item.CapturedAtText);
-        Assert.DoesNotContain("00:00", item.CapturedAtText, StringComparison.Ordinal);
+        Assert.Contains("string.Equals(Media.UserCapturePrecision, \"DATE\"", model, StringComparison.Ordinal);
+        Assert.Contains("? FormatDateOnly(Media.EffectiveCaptureDate, Media.CapturedAt)", model, StringComparison.Ordinal);
+        Assert.Contains("date.ToString(\"yyyy.MM.dd\"", model, StringComparison.Ordinal);
+        Assert.DoesNotContain("date.ToString(\"yyyy.MM.dd HH:mm\"", model, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -68,6 +70,44 @@ public sealed class PendingMemoryPageLayoutTests
         Assert.DoesNotContain("GetPlaceCleanupMemoriesAsync", viewModel[loadStart..loadEnd], StringComparison.Ordinal);
         Assert.Contains("/groups?limit=", repository, StringComparison.Ordinal);
         Assert.Contains("/photos?limit=", repository, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CleanupGroupTemplates_UseLooseXamlSafeBindingsForTheirDisplayModels()
+    {
+        var xaml = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Views", "PendingMemoryView.xaml"));
+
+        var placeTemplateStart = xaml.IndexOf(
+            "<DataTemplate x:DataType=\"models:PlaceCleanupGroupItem\">",
+            StringComparison.Ordinal);
+        var captureDateTemplateStart = xaml.IndexOf(
+            "<DataTemplate x:DataType=\"models:CaptureDateCleanupGroupItem\">",
+            StringComparison.Ordinal);
+        Assert.True(placeTemplateStart >= 0);
+        Assert.True(captureDateTemplateStart > placeTemplateStart);
+
+        var placeTemplate = xaml[placeTemplateStart..captureDateTemplateStart];
+        var captureDateTemplateEnd = xaml.IndexOf("</DataTemplate>", captureDateTemplateStart, StringComparison.Ordinal);
+        Assert.True(captureDateTemplateEnd > captureDateTemplateStart);
+        var captureDateTemplate = xaml[captureDateTemplateStart..captureDateTemplateEnd];
+
+        Assert.Contains("Text=\"{Binding Title, Mode=OneWay}\"", placeTemplate, StringComparison.Ordinal);
+        Assert.Contains("Text=\"{Binding CountText, Mode=OneWay}\"", placeTemplate, StringComparison.Ordinal);
+        Assert.Contains("Text=\"{Binding PeriodText, Mode=OneWay}\"", placeTemplate, StringComparison.Ordinal);
+        Assert.Contains("Text=\"{Binding LocationText, Mode=OneWay}\"", placeTemplate, StringComparison.Ordinal);
+        Assert.Contains("Text=\"{Binding IssueStatusText, Mode=OneWay}\"", placeTemplate, StringComparison.Ordinal);
+        Assert.DoesNotContain("{x:Bind", placeTemplate, StringComparison.Ordinal);
+
+        Assert.Contains("Text=\"{Binding Title, Mode=OneWay}\"", captureDateTemplate, StringComparison.Ordinal);
+        Assert.Contains("Text=\"{Binding CountText, Mode=OneWay}\"", captureDateTemplate, StringComparison.Ordinal);
+        Assert.Contains("Text=\"{Binding ReasonText, Mode=OneWay}\"", captureDateTemplate, StringComparison.Ordinal);
+        Assert.Contains("Text=\"{Binding DateSummaryText, Mode=OneWay}\"", captureDateTemplate, StringComparison.Ordinal);
+        Assert.Contains("Text=\"{Binding PeriodText, Mode=OneWay}\"", captureDateTemplate, StringComparison.Ordinal);
+        Assert.DoesNotContain("{x:Bind", captureDateTemplate, StringComparison.Ordinal);
+
+        Assert.Contains("SelectedItem=\"{Binding SelectedPlaceGroup, Mode=TwoWay}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("SelectedItem=\"{Binding SelectedCaptureDateGroup, Mode=TwoWay}\"", xaml, StringComparison.Ordinal);
+        Assert.True(CountOccurrences(xaml, "SelectionMode=\"Single\"") >= 2);
     }
 
     [Fact]

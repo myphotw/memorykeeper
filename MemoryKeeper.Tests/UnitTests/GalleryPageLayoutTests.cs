@@ -50,10 +50,14 @@ public sealed class GalleryPageLayoutTests
         Assert.Contains("Count = summary.PlaceCleanupCount", gallery, StringComparison.Ordinal);
         Assert.Contains("GalleryTreeNodeKind.Pending", gallery, StringComparison.Ordinal);
         Assert.Contains("OpenPendingRequested?.Invoke", page, StringComparison.Ordinal);
-        Assert.Contains("GetPlaceCleanupMemoriesAsync", pending, StringComparison.Ordinal);
+        Assert.Contains("GetPlaceCleanupGroupsAsync", pending, StringComparison.Ordinal);
+        Assert.Contains("GetCaptureDateCleanupGroupsAsync", pending, StringComparison.Ordinal);
         Assert.DoesNotContain("GetPendingMemoriesAsync", pending, StringComparison.Ordinal);
-        Assert.Contains("Command=\"{Binding LoadMoreCleanupCommand}\"", pendingView, StringComparison.Ordinal);
-        Assert.Contains("CleanupProgressText", pendingView, StringComparison.Ordinal);
+        Assert.Contains("Command=\"{Binding LoadMorePlaceGroupsCommand}\"", pendingView, StringComparison.Ordinal);
+        Assert.Contains("Command=\"{Binding LoadMoreCaptureDateGroupsCommand}\"", pendingView, StringComparison.Ordinal);
+        Assert.Contains("Command=\"{Binding LoadMoreGroupPhotosCommand}\"", pendingView, StringComparison.Ordinal);
+        Assert.Contains("ItemsSource=\"{Binding PlaceGroups", pendingView, StringComparison.Ordinal);
+        Assert.Contains("ItemsSource=\"{Binding CaptureDateGroups", pendingView, StringComparison.Ordinal);
         Assert.Contains("LibraryConstants.UnclassifiedTitle", gallery, StringComparison.Ordinal);
     }
 
@@ -73,10 +77,10 @@ public sealed class GalleryPageLayoutTests
         Assert.Contains("ViewModel.ActivateMediaCommand.Execute(item)", codeBehind, StringComparison.Ordinal);
         Assert.Contains("ViewModel.OpenPhotoDetailCommand.Execute(item)", codeBehind, StringComparison.Ordinal);
         Assert.Contains("Tapped=\"IncludeCheckBox_OnTapped\"", view, StringComparison.Ordinal);
-        Assert.Contains("ApplyOverview(overview, preserveSelection: false)", pending, StringComparison.Ordinal);
-        Assert.Contains("ApplyOverview(overview, preserveSelection: true)", pending, StringComparison.Ordinal);
-        Assert.Contains("_loadedMediaItems = overview.Items", pending, StringComparison.Ordinal);
-        Assert.Contains("ActiveMediaItems = new ObservableCollection<PendingMemoryMediaItem>(_loadedMediaItems)", pending, StringComparison.Ordinal);
+        Assert.Contains("LoadPlaceQueuePageAsync(cursor: null, selectFirst: false)", pending, StringComparison.Ordinal);
+        Assert.Contains("_loadedMediaItems = append", pending, StringComparison.Ordinal);
+        Assert.Contains("ActiveMediaItems = SelectedGroupMedia;", pending, StringComparison.Ordinal);
+        Assert.Contains("_groupPhotoCursor = nextCursor;", pending, StringComparison.Ordinal);
         Assert.Contains("media.WithEffectiveGeography(registeredPlace)", model, StringComparison.Ordinal);
         Assert.Contains("Command=\"{Binding SelectAllCleanupCommand}\"", view, StringComparison.Ordinal);
         Assert.Contains("Text=\"{Binding GeographyText}\"", view, StringComparison.Ordinal);
