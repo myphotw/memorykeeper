@@ -38,6 +38,7 @@ public sealed partial class PendingMemoryView : UserControl
         ViewModel.OpenMemoRequested += OnOpenMemoRequested;
         ViewModel.OpenCaptureDateEditorRequested += OnOpenCaptureDateEditorRequested;
         ViewModel.ClearCaptureDateRequested += OnClearCaptureDateRequested;
+        ViewModel.CaptureDateFeedbackRequested += OnCaptureDateFeedbackRequested;
         ViewModel.RadiusExpansionPreviewHandler = ShowRadiusExpansionPreviewAsync;
     }
 
@@ -47,6 +48,7 @@ public sealed partial class PendingMemoryView : UserControl
         ViewModel.OpenMemoRequested -= OnOpenMemoRequested;
         ViewModel.OpenCaptureDateEditorRequested -= OnOpenCaptureDateEditorRequested;
         ViewModel.ClearCaptureDateRequested -= OnClearCaptureDateRequested;
+        ViewModel.CaptureDateFeedbackRequested -= OnCaptureDateFeedbackRequested;
         ViewModel.RadiusExpansionPreviewHandler = null;
     }
 
@@ -128,6 +130,9 @@ public sealed partial class PendingMemoryView : UserControl
 
         await ViewModel.ChangeCaptureDateAsync(userCaptureDate: null, clearOnlyOverrides: true);
     }
+
+    private async void OnCaptureDateFeedbackRequested(object? sender, string message) =>
+        await UserFeedback.ShowInfoAsync(XamlRoot, "촬영일 변경", message);
 
     private static DateOnly? ResolveCaptureDate(PendingMemoryMediaItem item) =>
         DateOnly.TryParseExact(

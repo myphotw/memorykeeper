@@ -658,6 +658,34 @@ public sealed class MemoryKeeperWriteServiceTests
     }
 
     [Fact]
+    public async Task CaptureDateMutation_AllowsInitialZeroRevision()
+    {
+        var repository = new FakeRepository();
+        var service = new MemoryKeeperWriteService(repository, new CatalogInvalidation());
+
+        await service.SetCaptureDateAsync(
+            new Dictionary<Guid, int> { [MediaId] = 0 },
+            new DateOnly(2023, 10, 14));
+
+        Assert.NotNull(repository.LastCaptureDateRequest);
+        Assert.Equal(0, repository.LastCaptureDateRequest!.ExpectedDateRevisions[FileId]);
+    }
+
+    [Fact]
+    public async Task CaptureDateMutation_RejectsNegativeRevisionBeforeRepositoryCall()
+    {
+        var repository = new FakeRepository();
+        var service = new MemoryKeeperWriteService(repository, new CatalogInvalidation());
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+            service.SetCaptureDateAsync(
+                new Dictionary<Guid, int> { [MediaId] = -1 },
+                new DateOnly(2023, 10, 14)));
+
+        Assert.Null(repository.LastCaptureDateRequest);
+    }
+
+    [Fact]
     public async Task CaptureDateMutation_RejectsMoreThanFiveHundredPhotosBeforeRepositoryCall()
     {
         var repository = new FakeRepository();

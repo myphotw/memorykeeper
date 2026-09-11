@@ -278,6 +278,8 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
 
     public event EventHandler? ClearCaptureDateRequested;
 
+    public event EventHandler<string>? CaptureDateFeedbackRequested;
+
     public event EventHandler? BackRequested;
 
     public PendingMemoryViewModel(
@@ -625,6 +627,18 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
 
     public async Task ChangeCaptureDateAsync(DateOnly? userCaptureDate, bool clearOnlyOverrides = false)
     {
+        if (IsBusy)
+        {
+            ReportCaptureDateFeedback("다른 작업이 끝난 뒤 다시 시도해 주세요.");
+            return;
+        }
+
+        if (userCaptureDate is null && !clearOnlyOverrides)
+        {
+            ReportCaptureDateFeedback("변경할 촬영일을 선택하세요.");
+            return;
+        }
+
         var selected = ActiveMediaItems
             .Where(item => item.IsIncluded)
             .Where(item => !clearOnlyOverrides || item.HasUserCaptureOverride)
@@ -633,9 +647,15 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
             .ToList();
         if (selected.Count == 0)
         {
-            StatusMessage = clearOnlyOverrides
+            ReportCaptureDateFeedback(clearOnlyOverrides
                 ? "사용자가 지정한 촬영일이 있는 사진을 선택하세요."
-                : "촬영일을 변경할 사진을 선택하세요.";
+                : "촬영일을 변경할 사진을 선택하세요.");
+            return;
+        }
+
+        if (selected.Any(item => item.Media.DateRevision < 0))
+        {
+            ReportCaptureDateFeedback("선택한 사진의 최신 촬영일 revision을 확인할 수 없습니다. 목록을 새로 고친 뒤 다시 시도해 주세요.");
             return;
         }
 
@@ -670,6 +690,14 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
                 throw;
             }
         });
+
+        CaptureDateFeedbackRequested?.Invoke(this, StatusMessage);
+    }
+
+    private void ReportCaptureDateFeedback(string message)
+    {
+        StatusMessage = message;
+        CaptureDateFeedbackRequested?.Invoke(this, message);
     }
 
     [RelayCommand]

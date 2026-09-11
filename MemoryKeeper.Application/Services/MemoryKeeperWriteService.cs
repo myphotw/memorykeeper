@@ -443,9 +443,9 @@ public sealed class MemoryKeeperWriteService
             pair => FileId(pair.Key),
             pair => pair.Value,
             StringComparer.OrdinalIgnoreCase);
-        if (revisions.Any(pair => pair.Value <= 0))
+        if (revisions.Any(pair => pair.Value < 0))
         {
-            throw new ArgumentOutOfRangeException(nameof(expectedDateRevisions), "유효한 촬영일 revision이 필요합니다.");
+            throw new ArgumentOutOfRangeException(nameof(expectedDateRevisions), "촬영일 revision은 0 이상이어야 합니다.");
         }
 
         var response = await _repository.SetCaptureDateAsync(
