@@ -379,6 +379,87 @@ public sealed class MemoryKeeperWriteService
             response.PageSize == 0 ? pageSize : response.PageSize);
     }
 
+    public Task<PlaceCleanupGroupListDto> GetPlaceCleanupGroupsAsync(
+        int limit = 5,
+        string? cursor = null,
+        CancellationToken cancellationToken = default) =>
+        _repository.GetPlaceCleanupGroupsAsync(Math.Clamp(limit, 1, 5), cursor, cancellationToken);
+
+    public Task<CaptureDateCleanupGroupListDto> GetCaptureDateCleanupGroupsAsync(
+        int limit = 5,
+        string? cursor = null,
+        CancellationToken cancellationToken = default) =>
+        _repository.GetCaptureDateCleanupGroupsAsync(Math.Clamp(limit, 1, 5), cursor, cancellationToken);
+
+    public async Task<(IReadOnlyList<PendingMemoryItemDto> Items, string? NextCursor, bool HasMore, int TotalPhotos)>
+        GetPlaceCleanupGroupPhotosAsync(
+            string groupId,
+            int limit = 50,
+            string? cursor = null,
+            CancellationToken cancellationToken = default)
+    {
+        var response = await _repository.GetPlaceCleanupGroupPhotosAsync(
+            groupId, limit, cursor, cancellationToken).ConfigureAwait(false);
+        if (cursor is null)
+        {
+            _pendingRevisions.Clear();
+        }
+
+        var mapped = response.Items.Select(MapPending).ToList();
+        foreach (var item in mapped)
+        {
+            _pendingRevisions[item.MediaId] = (item.BackendFileId, item.PlaceRevision);
+        }
+
+        return (mapped, response.NextCursor, response.HasMore, response.TotalPhotos);
+    }
+
+    public async Task<(IReadOnlyList<PendingMemoryItemDto> Items, string? NextCursor, bool HasMore, int TotalPhotos)>
+        GetCaptureDateCleanupGroupPhotosAsync(
+            string groupId,
+            int limit = 50,
+            string? cursor = null,
+            CancellationToken cancellationToken = default)
+    {
+        var response = await _repository.GetCaptureDateCleanupGroupPhotosAsync(
+            groupId, limit, cursor, cancellationToken).ConfigureAwait(false);
+        return (response.Items.Select(MapPending).ToList(), response.NextCursor, response.HasMore, response.TotalPhotos);
+    }
+
+    public async Task<MemoryKeeperCaptureDateMutationResponse> SetCaptureDateAsync(
+        IReadOnlyDictionary<Guid, int> expectedDateRevisions,
+        DateOnly? userCaptureDate,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(expectedDateRevisions);
+        if (expectedDateRevisions.Count is 0 or > 500)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(expectedDateRevisions),
+                "촬영일은 한 번에 1장부터 500장까지 변경할 수 있습니다.");
+        }
+
+        var revisions = expectedDateRevisions.ToDictionary(
+            pair => FileId(pair.Key),
+            pair => pair.Value,
+            StringComparer.OrdinalIgnoreCase);
+        if (revisions.Any(pair => pair.Value <= 0))
+        {
+            throw new ArgumentOutOfRangeException(nameof(expectedDateRevisions), "유효한 촬영일 revision이 필요합니다.");
+        }
+
+        var response = await _repository.SetCaptureDateAsync(
+            new MemoryKeeperCaptureDateMutationRequest
+            {
+                FileIds = revisions.Keys.ToList(),
+                UserCaptureDate = userCaptureDate?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                ExpectedDateRevisions = revisions,
+            },
+            cancellationToken).ConfigureAwait(false);
+        _invalidation.Invalidate(CatalogSurface.AllRelated);
+        return response;
+    }
+
     private static PendingMemoryOverviewDto BuildPendingOverview(
         IReadOnlyList<PendingMemoryItemDto> mapped,
         int total,
@@ -476,7 +557,16 @@ public sealed class MemoryKeeperWriteService
         MediaId = BackendFileIdCodec.ToGuid(item.FileId),
         FileName = item.FileId,
         AbsoluteLibraryPath = item.ThumbnailUrl ?? string.Empty,
-        CapturedAt = item.CaptureDatetime,
+        CapturedAt = item.EffectiveCaptureDatetime ?? item.CaptureDatetime,
+        RawCapturedAt = item.RawCaptureDatetime,
+        UserCapturedAt = item.UserCaptureDatetime,
+        UserCapturePrecision = item.UserCapturePrecision ?? string.Empty,
+        EffectiveCaptureDate = item.EffectiveCaptureDate ?? string.Empty,
+        EffectiveCaptureYear = item.EffectiveCaptureYear,
+        DateBasis = item.DateBasis ?? string.Empty,
+        DateCleanupRequired = item.DateCleanupRequired,
+        DateCleanupReason = item.DateCleanupReason ?? string.Empty,
+        DateRevision = item.DateRevision,
         Latitude = item.GpsLat,
         Longitude = item.GpsLon,
         Country = item.Country ?? string.Empty,

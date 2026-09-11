@@ -21,6 +21,8 @@ namespace MemoryKeeper.App.ViewModels;
 public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrationDialogViewModel
 {
     private const int CleanupPageSize = 50;
+    private const int CleanupGroupLimit = 5;
+    private const int CleanupGroupPhotoLimit = 50;
     private readonly MemoryKeeperWriteService _pendingMemoryService;
     private readonly MemoryKeeperPlaceService _placeService;
     private readonly IGalleryApiRepository _galleryApiRepository;
@@ -35,9 +37,52 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
     private IReadOnlyDictionary<Guid, PlaceDto> _registeredPlacesById =
         new Dictionary<Guid, PlaceDto>();
     private int _cleanupPage;
+    private string? _placeGroupCursor;
+    private string? _captureDateGroupCursor;
+    private string? _groupPhotoCursor;
+    private bool _suppressGroupSelection;
 
     [ObservableProperty]
     private ObservableCollection<PendingMemoryGroupItem> groups = [];
+
+    [ObservableProperty]
+    private ObservableCollection<PlaceCleanupGroupItem> placeGroups = [];
+
+    [ObservableProperty]
+    private ObservableCollection<CaptureDateCleanupGroupItem> captureDateGroups = [];
+
+    [ObservableProperty]
+    private PlaceCleanupGroupItem? selectedPlaceGroup;
+
+    [ObservableProperty]
+    private CaptureDateCleanupGroupItem? selectedCaptureDateGroup;
+
+    [ObservableProperty]
+    private CleanupMode selectedCleanupMode = CleanupMode.Place;
+
+    [ObservableProperty]
+    private bool canLoadMorePlaceGroups;
+
+    [ObservableProperty]
+    private bool canLoadMoreCaptureDateGroups;
+
+    [ObservableProperty]
+    private bool canLoadMoreGroupPhotos;
+
+    [ObservableProperty]
+    private int placeTotalGroups;
+
+    [ObservableProperty]
+    private int placeTotalPhotos;
+
+    [ObservableProperty]
+    private int captureDateTotalGroups;
+
+    [ObservableProperty]
+    private int captureDateTotalPhotos;
+
+    [ObservableProperty]
+    private int activeGroupPhotoTotal;
 
     [ObservableProperty]
     private ObservableCollection<PendingMemoryMediaItem> reclassificationCandidates = [];
@@ -67,6 +112,13 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
     private bool canLoadMoreCleanup;
 
     public string CleanupProgressText => $"{CleanupLoadedCount:N0}/{CleanupTotal:N0}장";
+
+    public string PlaceQueueSummaryText => $"{PlaceGroups.Count:N0}/{PlaceTotalGroups:N0}개 그룹 · {PlaceTotalPhotos:N0}장";
+
+    public string CaptureDateQueueSummaryText =>
+        $"{CaptureDateGroups.Count:N0}/{CaptureDateTotalGroups:N0}개 그룹 · {CaptureDateTotalPhotos:N0}장";
+
+    public string ActiveGroupPhotoProgressText => $"{ActiveMediaItems.Count:N0}/{ActiveGroupPhotoTotal:N0}장";
 
     [ObservableProperty]
     private bool isBusy;
@@ -171,11 +223,42 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
             : $"사진 {ReclassificationCandidates.Count}장 · 우선 확인";
 
     public string ActiveMediaSectionTitle =>
-        IsGpsSectionSelected
+        IsCaptureDateMode
+            ? SelectedCaptureDateGroup is null
+                ? "날짜 정리 사진"
+                : $"{SelectedCaptureDateGroup.Title} (체크 해제 시 제외)"
+            : IsGpsSectionSelected
             ? "GPS 있음 · 장소 정리 필요 (체크 해제 시 제외)"
+            : SelectedPlaceGroup is not null
+                ? $"{SelectedPlaceGroup.Title} (체크 해제 시 제외)"
             : SelectedGroup is not null
                 ? "장소 정리 그룹 사진 (체크 해제 시 제외)"
                 : "전체 장소 정리 사진 (체크 해제 시 제외)";
+
+    public bool IsPlaceMode => SelectedCleanupMode == CleanupMode.Place;
+
+    public bool IsCaptureDateMode => SelectedCleanupMode == CleanupMode.CaptureDate;
+
+    public bool CanClearCaptureDate =>
+        IsCaptureDateMode
+        && ActiveMediaItems.Any(item => item.IsIncluded && item.HasUserCaptureOverride);
+
+    public string SelectedDateStatusText
+    {
+        get
+        {
+            var selected = ActiveMediaItems.Where(item => item.IsIncluded).ToList();
+            if (selected.Count == 0)
+            {
+                return "촬영일을 변경할 사진을 선택하세요.";
+            }
+
+            var basis = selected.Select(item => item.DateBasisText).Distinct().ToList();
+            return basis.Count == 1
+                ? $"{selected.Count:N0}장 · {basis[0]}"
+                : $"{selected.Count:N0}장 · 여러 날짜 기준";
+        }
+    }
 
     public int IncludedCount =>
         ActiveMediaItems.Count(item => item.IsIncluded);
@@ -190,6 +273,10 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
     public event EventHandler? OpenPlaceRegistrationRequested;
 
     public event EventHandler? OpenMemoRequested;
+
+    public event EventHandler? OpenCaptureDateEditorRequested;
+
+    public event EventHandler? ClearCaptureDateRequested;
 
     public event EventHandler? BackRequested;
 
@@ -238,6 +325,11 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
 
     partial void OnSelectedGroupChanged(PendingMemoryGroupItem? value)
     {
+        if (_suppressGroupSelection)
+        {
+            return;
+        }
+
         if (value is not null)
         {
             IsGpsSectionSelected = false;
@@ -325,6 +417,102 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
     }
 
     [RelayCommand]
+    private async Task LoadMorePlaceGroupsAsync()
+    {
+        if (!CanLoadMorePlaceGroups || string.IsNullOrWhiteSpace(_placeGroupCursor))
+        {
+            return;
+        }
+
+        await RunBusyAsync(async () =>
+        {
+            try
+            {
+                await LoadPlaceQueuePageAsync(_placeGroupCursor, selectFirst: true);
+            }
+            catch (ApiException ex) when (ex.DetailCode == "INVALID_CLEANUP_CURSOR")
+            {
+                await LoadPlaceQueuePageAsync(cursor: null, selectFirst: true);
+                StatusMessage = "장소 정리 목록이 변경되어 처음부터 다시 불러왔습니다.";
+            }
+        });
+    }
+
+    [RelayCommand]
+    private async Task LoadMoreCaptureDateGroupsAsync()
+    {
+        if (!CanLoadMoreCaptureDateGroups || string.IsNullOrWhiteSpace(_captureDateGroupCursor))
+        {
+            return;
+        }
+
+        await RunBusyAsync(async () =>
+        {
+            try
+            {
+                await LoadCaptureDateQueuePageAsync(_captureDateGroupCursor, selectFirst: true);
+            }
+            catch (ApiException ex) when (ex.DetailCode == "INVALID_CLEANUP_CURSOR")
+            {
+                await LoadCaptureDateQueuePageAsync(cursor: null, selectFirst: true);
+                StatusMessage = "날짜 정리 목록이 변경되어 처음부터 다시 불러왔습니다.";
+            }
+        });
+    }
+
+    [RelayCommand]
+    private async Task LoadMoreGroupPhotosAsync()
+    {
+        if (!CanLoadMoreGroupPhotos || string.IsNullOrWhiteSpace(_groupPhotoCursor))
+        {
+            return;
+        }
+
+        await RunBusyAsync(async () =>
+        {
+            try
+            {
+                if (IsCaptureDateMode && SelectedCaptureDateGroup is not null)
+                {
+                    await LoadCaptureDateGroupPhotosAsync(SelectedCaptureDateGroup, _groupPhotoCursor, append: true);
+                }
+                else if (SelectedPlaceGroup is not null)
+                {
+                    await LoadPlaceGroupPhotosAsync(SelectedPlaceGroup, _groupPhotoCursor, append: true);
+                }
+            }
+            catch (ApiException ex) when (ex.DetailCode == "INVALID_CLEANUP_CURSOR")
+            {
+                if (IsCaptureDateMode && SelectedCaptureDateGroup is not null)
+                {
+                    await LoadCaptureDateGroupPhotosAsync(SelectedCaptureDateGroup, cursor: null, append: false);
+                }
+                else if (SelectedPlaceGroup is not null)
+                {
+                    await LoadPlaceGroupPhotosAsync(SelectedPlaceGroup, cursor: null, append: false);
+                }
+
+                StatusMessage = "사진 목록이 변경되어 처음부터 다시 불러왔습니다.";
+            }
+            catch (ApiException ex) when (
+                ex.StatusCode == System.Net.HttpStatusCode.NotFound
+                && ex.DetailCode == "CLEANUP_GROUP_NOT_FOUND")
+            {
+                if (IsCaptureDateMode)
+                {
+                    await LoadCaptureDateQueuePageAsync(cursor: null, selectFirst: true);
+                }
+                else
+                {
+                    await LoadPlaceQueuePageAsync(cursor: null, selectFirst: true);
+                }
+
+                StatusMessage = "정리 그룹이 변경되어 최신 목록을 다시 불러왔습니다.";
+            }
+        });
+    }
+
+    [RelayCommand]
     private void OpenPhotoDetail(PendingMemoryMediaItem? item)
     {
         if (item is null || IsSelectionMode)
@@ -407,12 +595,82 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
     private void GoBack() => BackRequested?.Invoke(this, EventArgs.Empty);
 
     [RelayCommand]
-    private void OpenPlaceRegistration() =>
-        OpenPlaceRegistrationRequested?.Invoke(this, EventArgs.Empty);
+    private void OpenPlaceRegistration()
+    {
+        if (IsPlaceMode)
+        {
+            OpenPlaceRegistrationRequested?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(HasSelectionForActions))]
+    private void OpenCaptureDateEditor()
+    {
+        if (IsCaptureDateMode)
+        {
+            OpenCaptureDateEditorRequested?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanClearCaptureDate))]
+    private void RequestClearCaptureDate() => ClearCaptureDateRequested?.Invoke(this, EventArgs.Empty);
 
     [RelayCommand]
     private void OpenMemo() =>
         OpenMemoRequested?.Invoke(this, EventArgs.Empty);
+
+    public PendingMemoryMediaItem? GetRepresentativeSelectedMedia() =>
+        ActiveMediaItems.FirstOrDefault(item => item.IsIncluded)
+        ?? ActiveMediaItems.FirstOrDefault();
+
+    public async Task ChangeCaptureDateAsync(DateOnly? userCaptureDate, bool clearOnlyOverrides = false)
+    {
+        var selected = ActiveMediaItems
+            .Where(item => item.IsIncluded)
+            .Where(item => !clearOnlyOverrides || item.HasUserCaptureOverride)
+            .GroupBy(item => item.MediaId)
+            .Select(group => group.First())
+            .ToList();
+        if (selected.Count == 0)
+        {
+            StatusMessage = clearOnlyOverrides
+                ? "사용자가 지정한 촬영일이 있는 사진을 선택하세요."
+                : "촬영일을 변경할 사진을 선택하세요.";
+            return;
+        }
+
+        await RunBusyAsync(async () =>
+        {
+            StatusMessage = userCaptureDate is null
+                ? $"{selected.Count:N0}장의 촬영일 보정을 해제하고 있습니다."
+                : $"{selected.Count:N0}장의 촬영일을 변경하고 있습니다.";
+            try
+            {
+                var revisions = selected.ToDictionary(item => item.MediaId, item => item.Media.DateRevision);
+                var response = await _pendingMemoryService.SetCaptureDateAsync(revisions, userCaptureDate);
+                await ReloadAfterCaptureDateMutationAsync();
+                StatusMessage = userCaptureDate is null
+                    ? $"{response.UpdatedCount:N0}장의 촬영일 보정을 해제했습니다."
+                    : $"{response.UpdatedCount:N0}장의 촬영일을 변경했습니다.";
+            }
+            catch (ApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Conflict)
+            {
+                LogCaptureDateFailure("Mutation", selected.Count, ex);
+                await ReloadAfterCaptureDateMutationAsync();
+                StatusMessage = "사진 상태가 변경되었습니다. 최신 상태를 불러왔으니 다시 시도해 주세요.";
+            }
+            catch (ApiException ex)
+            {
+                LogCaptureDateFailure("Mutation", selected.Count, ex);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                LogCaptureDateFailure("Mutation", selected.Count, ex);
+                throw;
+            }
+        });
+    }
 
     [RelayCommand]
     private async Task ToggleFavoriteAsync()
@@ -1114,7 +1372,7 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
                     BuildRawLocationSource(place, SelectedLocation));
             }
 
-            await LoadCoreAsync();
+            await ReloadPlaceQueueAfterMutationAsync();
             var finalState = await VerifyFinalPlaceStateAsync(mediaIds, place.Id);
             var selectedIds = mediaIds.ToHashSet();
             var postReloadSelected = _loadedMediaItems
@@ -1199,6 +1457,54 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
         finally
         {
             IsPlaceDialogBusy = false;
+        }
+    }
+
+    partial void OnSelectedCleanupModeChanged(CleanupMode value)
+    {
+        OnPropertyChanged(nameof(IsPlaceMode));
+        OnPropertyChanged(nameof(IsCaptureDateMode));
+        OnPropertyChanged(nameof(ActiveMediaSectionTitle));
+        OnPropertyChanged(nameof(CanClearCaptureDate));
+    }
+
+    partial void OnPlaceGroupsChanged(ObservableCollection<PlaceCleanupGroupItem> value) =>
+        OnPropertyChanged(nameof(PlaceQueueSummaryText));
+
+    partial void OnCaptureDateGroupsChanged(ObservableCollection<CaptureDateCleanupGroupItem> value) =>
+        OnPropertyChanged(nameof(CaptureDateQueueSummaryText));
+
+    partial void OnPlaceTotalGroupsChanged(int value) => OnPropertyChanged(nameof(PlaceQueueSummaryText));
+
+    partial void OnPlaceTotalPhotosChanged(int value) => OnPropertyChanged(nameof(PlaceQueueSummaryText));
+
+    partial void OnCaptureDateTotalGroupsChanged(int value) => OnPropertyChanged(nameof(CaptureDateQueueSummaryText));
+
+    partial void OnCaptureDateTotalPhotosChanged(int value) => OnPropertyChanged(nameof(CaptureDateQueueSummaryText));
+
+    partial void OnActiveGroupPhotoTotalChanged(int value) =>
+        OnPropertyChanged(nameof(ActiveGroupPhotoProgressText));
+
+    partial void OnActiveMediaItemsChanged(ObservableCollection<PendingMemoryMediaItem> value)
+    {
+        OnPropertyChanged(nameof(ActiveGroupPhotoProgressText));
+        OnPropertyChanged(nameof(CanClearCaptureDate));
+        OnPropertyChanged(nameof(SelectedDateStatusText));
+    }
+
+    partial void OnSelectedPlaceGroupChanged(PlaceCleanupGroupItem? value)
+    {
+        if (!_suppressGroupSelection && value is not null)
+        {
+            _ = RunBusyAsync(() => ActivatePlaceGroupAsync(value));
+        }
+    }
+
+    partial void OnSelectedCaptureDateGroupChanged(CaptureDateCleanupGroupItem? value)
+    {
+        if (!_suppressGroupSelection && value is not null)
+        {
+            _ = RunBusyAsync(() => ActivateCaptureDateGroupAsync(value));
         }
     }
 
@@ -1551,11 +1857,30 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
     {
         try
         {
-            await LoadCoreAsync();
+            await ReloadPlaceQueueAfterMutationAsync();
         }
         catch (Exception reloadException)
         {
             _logger.LogWarning(reloadException, "Cleanup reload after place mutation failed.");
+        }
+    }
+
+    private async Task ReloadPlaceQueueAfterMutationAsync()
+    {
+        _placeGroupCursor = null;
+        _groupPhotoCursor = null;
+        await LoadPlaceQueuePageAsync(cursor: null, selectFirst: false);
+        if (PlaceGroups.FirstOrDefault() is { } placeGroup)
+        {
+            await ActivatePlaceGroupAsync(placeGroup);
+        }
+        else if (CaptureDateGroups.FirstOrDefault() is { } dateGroup)
+        {
+            await ActivateCaptureDateGroupAsync(dateGroup);
+        }
+        else
+        {
+            ClearActiveGroup();
         }
     }
 
@@ -1705,14 +2030,246 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
     private static string? FirstNotBlank(params string?[] values) =>
         values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim();
 
+    private async Task LoadPlaceQueuePageAsync(string? cursor, bool selectFirst)
+    {
+        var response = await _pendingMemoryService.GetPlaceCleanupGroupsAsync(
+            CleanupGroupLimit, cursor);
+        PlaceGroups = new ObservableCollection<PlaceCleanupGroupItem>(
+            response.Items.Take(CleanupGroupLimit).Select(item => new PlaceCleanupGroupItem(item)));
+        _placeGroupCursor = response.NextCursor;
+        CanLoadMorePlaceGroups = response.HasMore && !string.IsNullOrWhiteSpace(response.NextCursor);
+        PlaceTotalGroups = response.TotalGroups;
+        PlaceTotalPhotos = response.TotalPhotos;
+
+        if (selectFirst)
+        {
+            var first = PlaceGroups.FirstOrDefault();
+            if (first is not null)
+            {
+                await ActivatePlaceGroupAsync(first);
+            }
+            else if (CaptureDateGroups.Count > 0)
+            {
+                await ActivateCaptureDateGroupAsync(CaptureDateGroups[0]);
+            }
+            else
+            {
+                ClearActiveGroup();
+            }
+        }
+    }
+
+    private async Task LoadCaptureDateQueuePageAsync(string? cursor, bool selectFirst)
+    {
+        var response = await _pendingMemoryService.GetCaptureDateCleanupGroupsAsync(
+            CleanupGroupLimit, cursor);
+        CaptureDateGroups = new ObservableCollection<CaptureDateCleanupGroupItem>(
+            response.Items.Take(CleanupGroupLimit).Select(item => new CaptureDateCleanupGroupItem(item)));
+        _captureDateGroupCursor = response.NextCursor;
+        CanLoadMoreCaptureDateGroups = response.HasMore && !string.IsNullOrWhiteSpace(response.NextCursor);
+        CaptureDateTotalGroups = response.TotalGroups;
+        CaptureDateTotalPhotos = response.TotalPhotos;
+
+        if (selectFirst)
+        {
+            var first = CaptureDateGroups.FirstOrDefault();
+            if (first is not null)
+            {
+                await ActivateCaptureDateGroupAsync(first);
+            }
+            else if (PlaceGroups.Count > 0)
+            {
+                await ActivatePlaceGroupAsync(PlaceGroups[0]);
+            }
+            else
+            {
+                ClearActiveGroup();
+            }
+        }
+    }
+
+    private async Task ActivatePlaceGroupAsync(PlaceCleanupGroupItem group)
+    {
+        SetGroupSelection(group, null, CleanupMode.Place);
+        try
+        {
+            await LoadPlaceGroupPhotosAsync(group, cursor: null, append: false);
+        }
+        catch (ApiException ex) when (
+            ex.StatusCode == System.Net.HttpStatusCode.NotFound
+            && ex.DetailCode == "CLEANUP_GROUP_NOT_FOUND")
+        {
+            await LoadPlaceQueuePageAsync(cursor: null, selectFirst: false);
+            ClearActiveGroup();
+            StatusMessage = "장소 정리 그룹이 변경되어 최신 목록을 다시 불러왔습니다.";
+        }
+    }
+
+    private async Task ActivateCaptureDateGroupAsync(CaptureDateCleanupGroupItem group)
+    {
+        SetGroupSelection(null, group, CleanupMode.CaptureDate);
+        try
+        {
+            await LoadCaptureDateGroupPhotosAsync(group, cursor: null, append: false);
+        }
+        catch (ApiException ex) when (
+            ex.StatusCode == System.Net.HttpStatusCode.NotFound
+            && ex.DetailCode == "CLEANUP_GROUP_NOT_FOUND")
+        {
+            await LoadCaptureDateQueuePageAsync(cursor: null, selectFirst: false);
+            ClearActiveGroup();
+            StatusMessage = "날짜 정리 그룹이 변경되어 최신 목록을 다시 불러왔습니다.";
+        }
+    }
+
+    private async Task LoadPlaceGroupPhotosAsync(
+        PlaceCleanupGroupItem group,
+        string? cursor,
+        bool append)
+    {
+        var page = await _pendingMemoryService.GetPlaceCleanupGroupPhotosAsync(
+            group.GroupId, CleanupGroupPhotoLimit, cursor);
+        ApplyGroupPhotos(
+            page.Items,
+            page.NextCursor,
+            page.HasMore,
+            page.TotalPhotos > 0 ? page.TotalPhotos : group.Group.MediaCount,
+            append);
+    }
+
+    private async Task LoadCaptureDateGroupPhotosAsync(
+        CaptureDateCleanupGroupItem group,
+        string? cursor,
+        bool append)
+    {
+        var page = await _pendingMemoryService.GetCaptureDateCleanupGroupPhotosAsync(
+            group.GroupId, CleanupGroupPhotoLimit, cursor);
+        ApplyGroupPhotos(
+            page.Items,
+            page.NextCursor,
+            page.HasMore,
+            page.TotalPhotos > 0 ? page.TotalPhotos : group.Group.MediaCount,
+            append);
+    }
+
+    private void ApplyGroupPhotos(
+        IReadOnlyList<PendingMemoryItemDto> items,
+        string? nextCursor,
+        bool hasMore,
+        int totalPhotos,
+        bool append)
+    {
+        var mapped = items.Select(item =>
+        {
+            var registeredPlace = item.MemorykeeperPlaceId is Guid placeId
+                                  && _registeredPlacesById.TryGetValue(placeId, out var place)
+                ? place
+                : null;
+            return new PendingMemoryMediaItem(item, registeredPlace, SelectedCleanupMode);
+        });
+        _loadedMediaItems = append
+            ? _loadedMediaItems.Concat(mapped).GroupBy(item => item.MediaId).Select(group => group.First()).ToList()
+            : mapped.ToList();
+        SelectedGroupMedia = new ObservableCollection<PendingMemoryMediaItem>(_loadedMediaItems);
+        ActiveMediaItems = SelectedGroupMedia;
+        _groupPhotoCursor = nextCursor;
+        CanLoadMoreGroupPhotos = hasMore && !string.IsNullOrWhiteSpace(nextCursor);
+        ActiveGroupPhotoTotal = totalPhotos > 0 ? totalPhotos : ActiveMediaItems.Count;
+        ResubscribeMediaPropertyChanged();
+        NotifySelectionChanged();
+        OnPropertyChanged(nameof(ActiveMediaSectionTitle));
+        _ = LoadThumbnailsAsync(ActiveMediaItems);
+    }
+
+    private void SetGroupSelection(
+        PlaceCleanupGroupItem? placeGroup,
+        CaptureDateCleanupGroupItem? captureDateGroup,
+        CleanupMode mode)
+    {
+        _suppressGroupSelection = true;
+        try
+        {
+            SelectedPlaceGroup = placeGroup;
+            SelectedCaptureDateGroup = captureDateGroup;
+            SelectedCleanupMode = mode;
+            IsGpsSectionSelected = false;
+            SelectedGroup = null;
+        }
+        finally
+        {
+            _suppressGroupSelection = false;
+        }
+    }
+
+    private void ClearActiveGroup()
+    {
+        _suppressGroupSelection = true;
+        try
+        {
+            SelectedPlaceGroup = null;
+            SelectedCaptureDateGroup = null;
+        }
+        finally
+        {
+            _suppressGroupSelection = false;
+        }
+
+        _loadedMediaItems = [];
+        SelectedGroupMedia = [];
+        ActiveMediaItems = [];
+        _groupPhotoCursor = null;
+        CanLoadMoreGroupPhotos = false;
+        ActiveGroupPhotoTotal = 0;
+        ResubscribeMediaPropertyChanged();
+        NotifySelectionChanged();
+    }
+
+    private async Task ReloadAfterCaptureDateMutationAsync()
+    {
+        _captureDateGroupCursor = null;
+        _placeGroupCursor = null;
+        _groupPhotoCursor = null;
+        await LoadCaptureDateQueuePageAsync(cursor: null, selectFirst: false);
+        await LoadPlaceQueuePageAsync(cursor: null, selectFirst: false);
+
+        var next = CaptureDateGroups.FirstOrDefault();
+        if (next is not null)
+        {
+            await ActivateCaptureDateGroupAsync(next);
+        }
+        else if (PlaceGroups.FirstOrDefault() is { } place)
+        {
+            await ActivatePlaceGroupAsync(place);
+        }
+        else
+        {
+            ClearActiveGroup();
+        }
+    }
+
+    private void LogCaptureDateFailure(string stage, int selectedCount, Exception exception)
+    {
+        var apiException = exception as ApiException;
+        _logger.LogError(
+            exception,
+            "Capture-date cleanup failed. Operation={Operation} Stage={Stage} SelectedCount={SelectedCount} StatusCode={StatusCode} DetailCode={DetailCode} ExceptionType={ExceptionType}",
+            "CaptureDateMutation",
+            stage,
+            selectedCount,
+            apiException is null ? null : (int)apiException.StatusCode,
+            apiException?.DetailCode,
+            exception.GetType().Name);
+    }
+
     private async Task LoadCoreAsync()
     {
         CancelThumbnailLoading();
 
-        var overview = await _pendingMemoryService.GetPlaceCleanupMemoriesAsync(
-            page: 1,
-            pageSize: CleanupPageSize);
-        var placeList = await _placeService.GetPlaceListAsync();
+        var placeGroupsTask = _pendingMemoryService.GetPlaceCleanupGroupsAsync(CleanupGroupLimit);
+        var captureDateGroupsTask = _pendingMemoryService.GetCaptureDateCleanupGroupsAsync(CleanupGroupLimit);
+        var placeListTask = _placeService.GetPlaceListAsync();
+        await Task.WhenAll(placeGroupsTask, captureDateGroupsTask, placeListTask);
+        var placeList = await placeListTask;
 
         _registeredPlacesById = placeList
             .GroupBy(place => place.Id)
@@ -1725,7 +2282,36 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
                 .ThenByDescending(place => place.LastUsedAt ?? DateTime.MinValue)
                 .ThenBy(place => place.DisplayName));
 
-        ApplyOverview(overview, preserveSelection: false);
+        var placeGroupPage = await placeGroupsTask;
+        PlaceGroups = new ObservableCollection<PlaceCleanupGroupItem>(
+            placeGroupPage.Items.Take(CleanupGroupLimit).Select(item => new PlaceCleanupGroupItem(item)));
+        _placeGroupCursor = placeGroupPage.NextCursor;
+        CanLoadMorePlaceGroups = placeGroupPage.HasMore && !string.IsNullOrWhiteSpace(placeGroupPage.NextCursor);
+        PlaceTotalGroups = placeGroupPage.TotalGroups;
+        PlaceTotalPhotos = placeGroupPage.TotalPhotos;
+
+        var dateGroupPage = await captureDateGroupsTask;
+        CaptureDateGroups = new ObservableCollection<CaptureDateCleanupGroupItem>(
+            dateGroupPage.Items.Take(CleanupGroupLimit).Select(item => new CaptureDateCleanupGroupItem(item)));
+        _captureDateGroupCursor = dateGroupPage.NextCursor;
+        CanLoadMoreCaptureDateGroups = dateGroupPage.HasMore && !string.IsNullOrWhiteSpace(dateGroupPage.NextCursor);
+        CaptureDateTotalGroups = dateGroupPage.TotalGroups;
+        CaptureDateTotalPhotos = dateGroupPage.TotalPhotos;
+
+        if (PlaceGroups.FirstOrDefault() is { } placeGroup)
+        {
+            await ActivatePlaceGroupAsync(placeGroup);
+        }
+        else if (CaptureDateGroups.FirstOrDefault() is { } dateGroup)
+        {
+            await ActivateCaptureDateGroupAsync(dateGroup);
+        }
+        else
+        {
+            ClearActiveGroup();
+        }
+
+        StatusMessage = $"장소 {PlaceTotalGroups:N0}개 · 날짜 {CaptureDateTotalGroups:N0}개 정리 그룹";
     }
 
     private void ApplyOverview(PendingMemoryOverviewDto overview, bool preserveSelection)
@@ -1879,6 +2465,10 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
         OnPropertyChanged(nameof(HasSelectionForActions));
         OnPropertyChanged(nameof(IsSelectionMode));
         OnPropertyChanged(nameof(EmphasizePlaceRegistration));
+        OnPropertyChanged(nameof(CanClearCaptureDate));
+        OnPropertyChanged(nameof(SelectedDateStatusText));
+        OpenCaptureDateEditorCommand.NotifyCanExecuteChanged();
+        RequestClearCaptureDateCommand.NotifyCanExecuteChanged();
     }
 
     private async Task LoadThumbnailsAsync(IEnumerable<PendingMemoryMediaItem> items)

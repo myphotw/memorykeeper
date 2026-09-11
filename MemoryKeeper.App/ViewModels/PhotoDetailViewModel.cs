@@ -43,6 +43,8 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
     [ObservableProperty] private Guid mediaId;
     [ObservableProperty] private string fileName = string.Empty;
     [ObservableProperty] private string capturedAtText = "-";
+    [ObservableProperty] private string captureDateBasisText = "날짜 정보 없음";
+    [ObservableProperty] private bool hasUserCaptureOverride;
     [ObservableProperty] private string placeName = string.Empty;
     [ObservableProperty] private string country = string.Empty;
     [ObservableProperty] private string province = string.Empty;
@@ -97,6 +99,9 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
     [ObservableProperty] private bool isBackendOnlyMedia;
     private int _placeRevision;
     private int _metadataRevision;
+    private int _dateRevision;
+
+    public DateOnly? CurrentEffectiveCaptureDate { get; private set; }
 
     public bool CanEditPhoto => true;
 
@@ -170,9 +175,12 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
     public event EventHandler? OpenTagManagerRequested;
     public event EventHandler? OpenMemoEditorRequested;
     public event EventHandler? OpenRawLocationEditorRequested;
+    public event EventHandler? OpenCaptureDateEditorRequested;
+    public event EventHandler? ClearCaptureDateRequested;
     public event EventHandler? OpenMapPickRequested;
     public event EventHandler<string>? ToastRequested;
     public event EventHandler? PlaceRegistered;
+    public event EventHandler? CaptureDateChanged;
 
     public PhotoDetailViewModel(
         PhotoDetailService photoDetailService,
@@ -365,6 +373,85 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
     [RelayCommand]
     private void OpenRawLocationEditor() =>
         OpenRawLocationEditorRequested?.Invoke(this, EventArgs.Empty);
+
+    [RelayCommand]
+    private void OpenCaptureDateEditor() => OpenCaptureDateEditorRequested?.Invoke(this, EventArgs.Empty);
+
+    [RelayCommand(CanExecute = nameof(HasUserCaptureOverride))]
+    private void RequestClearCaptureDate() => ClearCaptureDateRequested?.Invoke(this, EventArgs.Empty);
+
+    public async Task ChangeCaptureDateAsync(DateOnly? userCaptureDate)
+    {
+        if (!IsBackendOnlyMedia || MediaId == Guid.Empty)
+        {
+            StatusMessage = "이 사진의 촬영일은 서버에서 변경할 수 없습니다.";
+            return;
+        }
+
+        await RunBusyAsync(async () =>
+        {
+            try
+            {
+                // favorite/memo/date share one revision space; refresh immediately before mutation.
+                await ReloadBackendDetailAsync();
+                var response = await _writeService.SetCaptureDateAsync(
+                    new Dictionary<Guid, int> { [MediaId] = _dateRevision },
+                    userCaptureDate);
+                var updated = response.Items.FirstOrDefault();
+                if (updated is not null)
+                {
+                    _dateRevision = updated.DateRevision;
+                    _metadataRevision = updated.DateRevision;
+                }
+
+                await ReloadBackendDetailAsync();
+                StatusMessage = userCaptureDate is null
+                    ? "촬영일 보정을 해제했습니다."
+                    : "촬영일을 변경했습니다.";
+                ToastRequested?.Invoke(this, StatusMessage);
+                CaptureDateChanged?.Invoke(this, EventArgs.Empty);
+            }
+            catch (ApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Conflict)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Photo capture-date conflict. Operation={Operation} Stage={Stage} SelectedCount={SelectedCount} StatusCode={StatusCode} DetailCode={DetailCode} ExceptionType={ExceptionType}",
+                    "CaptureDateMutation",
+                    "Mutation",
+                    1,
+                    (int)ex.StatusCode,
+                    ex.DetailCode,
+                    ex.GetType().Name);
+                await ReloadBackendDetailAsync();
+                StatusMessage = "사진 상태가 변경되었습니다. 최신 상태를 불러왔으니 다시 시도해 주세요.";
+                ToastRequested?.Invoke(this, StatusMessage);
+            }
+            catch (ApiException ex)
+            {
+                LogCaptureDateFailure(ex);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                LogCaptureDateFailure(ex);
+                throw;
+            }
+        });
+    }
+
+    private void LogCaptureDateFailure(Exception exception)
+    {
+        var apiException = exception as ApiException;
+        _logger.LogError(
+            exception,
+            "Photo capture-date failed. Operation={Operation} Stage={Stage} SelectedCount={SelectedCount} StatusCode={StatusCode} DetailCode={DetailCode} ExceptionType={ExceptionType}",
+            "CaptureDateMutation",
+            "Mutation",
+            1,
+            apiException is null ? null : (int)apiException.StatusCode,
+            apiException?.DetailCode,
+            exception.GetType().Name);
+    }
 
     [RelayCommand]
     private void OpenOnMap()
@@ -1662,7 +1749,22 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
         IsBackendOnlyMedia = detail.IsBackendOnly;
         MediaId = detail.MediaId;
         FileName = detail.FileName;
-        CapturedAtText = detail.CapturedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "촬영일 정보 없음";
+        CapturedAtText = string.Equals(detail.UserCapturePrecision, "DATE", StringComparison.OrdinalIgnoreCase)
+            ? FormatDateOnly(detail.EffectiveCaptureDate, detail.CapturedAt)
+            : detail.CapturedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "촬영일 정보 없음";
+        CurrentEffectiveCaptureDate = DateOnly.TryParseExact(
+            detail.EffectiveCaptureDate,
+            "yyyy-MM-dd",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.None,
+            out var effectiveDate)
+                ? effectiveDate
+                : detail.CapturedAt is DateTimeOffset capturedAt
+                    ? DateOnly.FromDateTime(capturedAt.ToLocalTime().Date)
+                    : null;
+        CaptureDateBasisText = CleanupDisplayText.DateBasis(detail.DateBasis);
+        HasUserCaptureOverride = string.Equals(detail.DateBasis, "USER", StringComparison.OrdinalIgnoreCase);
+        RequestClearCaptureDateCommand.NotifyCanExecuteChanged();
         PlaceName = string.IsNullOrWhiteSpace(detail.PlaceName) ? "장소 미지정" : detail.PlaceName;
         Country = string.IsNullOrWhiteSpace(geography.Country) ? "-" : geography.Country;
         Province = string.IsNullOrWhiteSpace(geography.Province) ? "-" : geography.Province;
@@ -1687,6 +1789,7 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
         PlaceId = detail.PlaceId;
         _placeRevision = detail.PlaceRevision;
         _metadataRevision = detail.MetadataRevision;
+        _dateRevision = detail.DateRevision > 0 ? detail.DateRevision : detail.MetadataRevision;
         Memo = detail.Memo;
         MemoDraft = detail.Memo;
         CameraText = FormatPair(detail.CameraMaker, detail.CameraModel);
@@ -1926,6 +2029,17 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
 
         return $"{bytes / (1024.0 * 1024.0):0.##} MB";
     }
+
+    private static string FormatDateOnly(string effectiveCaptureDate, DateTimeOffset? fallback) =>
+        DateOnly.TryParseExact(
+            effectiveCaptureDate,
+            "yyyy-MM-dd",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.None,
+            out var date)
+            ? date.ToString("yyyy.MM.dd", CultureInfo.InvariantCulture)
+            : fallback?.ToLocalTime().ToString("yyyy.MM.dd", CultureInfo.InvariantCulture)
+              ?? "촬영일 정보 없음";
 
     private async Task RunBusyAsync(Func<Task> action)
     {

@@ -96,6 +96,7 @@
                     <StackPanel Spacing="4">
                         <TextBlock Text="촬영 정보" FontWeight="SemiBold" />
                         <TextBlock Opacity="0.85"><Run Text="촬영일시: "/><Run Text="{Binding CapturedAtText, Mode=OneWay}"/></TextBlock>
+                        <TextBlock Opacity="0.75"><Run Text="날짜 기준: "/><Run Text="{Binding CaptureDateBasisText, Mode=OneWay}"/></TextBlock>
                         <TextBlock Opacity="0.85"><Run Text="촬영기기: "/><Run Text="{Binding CameraText, Mode=OneWay}"/></TextBlock>
                         <TextBlock Opacity="0.85"><Run Text="노출시간: "/><Run Text="{Binding ExposureText, Mode=OneWay}"/></TextBlock>
                         <TextBlock Opacity="0.85"><Run Text="조리개: "/><Run Text="{Binding ApertureText, Mode=OneWay}"/></TextBlock>
@@ -220,6 +221,11 @@
                     <Button Content="🏷 태그관리" Command="{Binding OpenTagManagerCommand}" IsEnabled="{Binding CanEditPhoto, Mode=OneWay}" />
                     <Button Content="{Binding FavoriteButtonText, Mode=OneWay}" Command="{Binding ToggleFavoriteCommand}" IsEnabled="{Binding CanEditPhoto, Mode=OneWay}" />
                     <Button Content="📝 메모수정" Command="{Binding OpenMemoEditorCommand}" IsEnabled="{Binding CanEditPhoto, Mode=OneWay}" />
+                    <Button Content="📅 촬영일 변경" Command="{Binding OpenCaptureDateEditorCommand}" IsEnabled="{Binding IsBackendOnlyMedia, Mode=OneWay}" />
+                    <Button
+                        Content="촬영일 보정 해제"
+                        Command="{Binding RequestClearCaptureDateCommand}"
+                        Visibility="{Binding HasUserCaptureOverride, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
                     <Button Content="🧭 원본 GPS·주소" Command="{Binding OpenRawLocationEditorCommand}" IsEnabled="{Binding IsBackendOnlyMedia, Mode=OneWay}" />
                     <Button Content="🌍 지도보기" Command="{Binding OpenOnMapCommand}" />
                     <Button Content="📂 원본열기" Command="{Binding OpenOriginalCommand}" />

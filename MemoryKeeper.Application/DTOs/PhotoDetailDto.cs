@@ -10,6 +10,20 @@ public sealed class RelatedPhotoDto
 
     public DateTimeOffset? CapturedAt { get; init; }
 
+    public DateTimeOffset? RawCapturedAt { get; init; }
+
+    public DateTimeOffset? UserCapturedAt { get; init; }
+
+    public string UserCapturePrecision { get; init; } = string.Empty;
+
+    public string EffectiveCaptureDate { get; init; } = string.Empty;
+
+    public int? EffectiveCaptureYear { get; init; }
+
+    public string DateBasis { get; init; } = string.Empty;
+
+    public int DateRevision { get; init; }
+
     public bool IsFavorite { get; init; }
 }
 

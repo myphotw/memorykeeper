@@ -68,12 +68,19 @@ public static class GalleryBackendMapper
             // Viewer/display: preview only (not original). Thumbnail is separate fallback.
             AbsoluteLibraryPath = preview ?? string.Empty,
             FileName = detail.Filename,
-            CapturedAt = GetFirstDate(
+            CapturedAt = detail.EffectiveCaptureDatetime ?? GetFirstDate(
                 metadata,
                 "datetime_original",
                 "datetime_digitized",
                 "datetime",
                 "capture_datetime"),
+            RawCapturedAt = detail.RawCaptureDatetime,
+            UserCapturedAt = detail.UserCaptureDatetime,
+            UserCapturePrecision = detail.UserCapturePrecision ?? string.Empty,
+            EffectiveCaptureDate = detail.EffectiveCaptureDate ?? string.Empty,
+            EffectiveCaptureYear = detail.EffectiveCaptureYear,
+            DateBasis = detail.DateBasis ?? string.Empty,
+            DateRevision = detail.DateRevision > 0 ? detail.DateRevision : detail.MetadataRevision,
             Country = GetFirstString(metadata, "country", "reverse_geocoded_country"),
             Province = GetFirstString(metadata, "province", "state", "administrative_area_level_1"),
             City = GetFirstString(metadata, "city", "locality", "administrative_area_level_2"),

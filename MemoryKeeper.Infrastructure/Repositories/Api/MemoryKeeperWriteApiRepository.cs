@@ -223,6 +223,90 @@ public sealed class MemoryKeeperWriteApiRepository : IMemoryKeeperWriteApiReposi
         };
     }
 
+    public async Task<PlaceCleanupGroupListDto> GetPlaceCleanupGroupsAsync(
+        int limit = 5,
+        string? cursor = null,
+        CancellationToken cancellationToken = default)
+    {
+        var response = (await _apiClient.GetAsync<PlaceCleanupGroupListDto>(
+            CleanupPath("place-cleanup", limit, cursor), cancellationToken).ConfigureAwait(false)).Data
+            ?? new PlaceCleanupGroupListDto();
+        return new PlaceCleanupGroupListDto
+        {
+            Items = response.Items.Select(item => new PlaceCleanupGroupDto
+            {
+                GroupId = item.GroupId,
+                IssueType = item.IssueType,
+                Title = item.Title,
+                MediaCount = item.MediaCount,
+                FirstEffectiveCaptureDatetime = item.FirstEffectiveCaptureDatetime,
+                LastEffectiveCaptureDatetime = item.LastEffectiveCaptureDatetime,
+                EstimatedLocation = item.EstimatedLocation,
+                ProcessingStatus = item.ProcessingStatus,
+                RepresentativeFileId = item.RepresentativeFileId,
+                RepresentativeThumbnailUrl = AbsoluteUrl(item.RepresentativeThumbnailUrl),
+            }).ToList(),
+            NextCursor = response.NextCursor,
+            HasMore = response.HasMore,
+            TotalGroups = response.TotalGroups,
+            TotalPhotos = response.TotalPhotos,
+        };
+    }
+
+    public async Task<CleanupGroupPhotoListDto> GetPlaceCleanupGroupPhotosAsync(
+        string groupId,
+        int limit = 50,
+        string? cursor = null,
+        CancellationToken cancellationToken = default) =>
+        await GetCleanupGroupPhotosAsync("place-cleanup", groupId, limit, cursor, cancellationToken)
+            .ConfigureAwait(false);
+
+    public async Task<CaptureDateCleanupGroupListDto> GetCaptureDateCleanupGroupsAsync(
+        int limit = 5,
+        string? cursor = null,
+        CancellationToken cancellationToken = default)
+    {
+        var response = (await _apiClient.GetAsync<CaptureDateCleanupGroupListDto>(
+            CleanupPath("capture-date-cleanup", limit, cursor), cancellationToken).ConfigureAwait(false)).Data
+            ?? new CaptureDateCleanupGroupListDto();
+        return new CaptureDateCleanupGroupListDto
+        {
+            Items = response.Items.Select(item => new CaptureDateCleanupGroupDto
+            {
+                GroupId = item.GroupId,
+                Title = item.Title,
+                MediaCount = item.MediaCount,
+                FirstEffectiveCaptureDatetime = item.FirstEffectiveCaptureDatetime,
+                LastEffectiveCaptureDatetime = item.LastEffectiveCaptureDatetime,
+                CleanupReason = item.CleanupReason,
+                DateBasis = item.DateBasis,
+                EffectiveCaptureDate = item.EffectiveCaptureDate,
+                ProcessingStatus = item.ProcessingStatus,
+                RepresentativeFileId = item.RepresentativeFileId,
+                RepresentativeThumbnailUrl = AbsoluteUrl(item.RepresentativeThumbnailUrl),
+            }).ToList(),
+            NextCursor = response.NextCursor,
+            HasMore = response.HasMore,
+            TotalGroups = response.TotalGroups,
+            TotalPhotos = response.TotalPhotos,
+        };
+    }
+
+    public async Task<CleanupGroupPhotoListDto> GetCaptureDateCleanupGroupPhotosAsync(
+        string groupId,
+        int limit = 50,
+        string? cursor = null,
+        CancellationToken cancellationToken = default) =>
+        await GetCleanupGroupPhotosAsync("capture-date-cleanup", groupId, limit, cursor, cancellationToken)
+            .ConfigureAwait(false);
+
+    public async Task<MemoryKeeperCaptureDateMutationResponse> SetCaptureDateAsync(
+        MemoryKeeperCaptureDateMutationRequest request,
+        CancellationToken cancellationToken = default) =>
+        Require((await _apiClient.PostAsync<MemoryKeeperCaptureDateMutationResponse>(
+            $"{Root}/files/capture-date", request, cancellationToken).ConfigureAwait(false)).Data,
+            "촬영일 변경 응답이 비어 있습니다.");
+
     public async Task<MemoryKeeperPendingAssignResponse> AssignPendingPlaceAsync(
         MemoryKeeperPendingAssignRequest request,
         CancellationToken cancellationToken = default) =>
@@ -300,6 +384,49 @@ public sealed class MemoryKeeperWriteApiRepository : IMemoryKeeperWriteApiReposi
     private static string FilePath(string fileId) =>
         $"{Root}/files/{Uri.EscapeDataString(fileId)}";
 
+    private async Task<CleanupGroupPhotoListDto> GetCleanupGroupPhotosAsync(
+        string queue,
+        string groupId,
+        int limit,
+        string? cursor,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(groupId);
+        var path = $"{Root}/{queue}/groups/{Uri.EscapeDataString(groupId)}/photos?limit={Math.Clamp(limit, 1, 200)}";
+        if (!string.IsNullOrWhiteSpace(cursor))
+        {
+            path += $"&cursor={Uri.EscapeDataString(cursor)}";
+        }
+
+        var response = (await _apiClient.GetAsync<CleanupGroupPhotoListDto>(path, cancellationToken)
+            .ConfigureAwait(false)).Data ?? new CleanupGroupPhotoListDto();
+        return new CleanupGroupPhotoListDto
+        {
+            Items = response.Items.Select(item => WithAbsoluteThumbnail(item, _apiClient.ApiBaseUrl)).ToList(),
+            NextCursor = response.NextCursor,
+            HasMore = response.HasMore,
+            TotalPhotos = response.TotalPhotos,
+        };
+    }
+
+    private static string CleanupPath(string queue, int limit, string? cursor)
+    {
+        var path = $"{Root}/{queue}/groups?limit={Math.Clamp(limit, 1, 100)}";
+        return string.IsNullOrWhiteSpace(cursor)
+            ? path
+            : $"{path}&cursor={Uri.EscapeDataString(cursor)}";
+    }
+
+    private string? AbsoluteUrl(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || Uri.TryCreate(value, UriKind.Absolute, out _))
+        {
+            return value;
+        }
+
+        return _apiClient.ApiBaseUrl.TrimEnd('/') + "/" + value.TrimStart('/');
+    }
+
     private static MemoryKeeperPendingItemDto WithAbsoluteThumbnail(
         MemoryKeeperPendingItemDto item,
         string apiBaseUrl)
@@ -316,6 +443,16 @@ public sealed class MemoryKeeperWriteApiRepository : IMemoryKeeperWriteApiReposi
             FileId = item.FileId,
             ThumbnailUrl = thumbnail,
             CaptureDatetime = item.CaptureDatetime,
+            RawCaptureDatetime = item.RawCaptureDatetime,
+            UserCaptureDatetime = item.UserCaptureDatetime,
+            UserCapturePrecision = item.UserCapturePrecision,
+            EffectiveCaptureDatetime = item.EffectiveCaptureDatetime,
+            EffectiveCaptureDate = item.EffectiveCaptureDate,
+            EffectiveCaptureYear = item.EffectiveCaptureYear,
+            DateBasis = item.DateBasis,
+            DateCleanupRequired = item.DateCleanupRequired,
+            DateCleanupReason = item.DateCleanupReason,
+            DateRevision = item.DateRevision,
             GpsLat = item.GpsLat,
             GpsLon = item.GpsLon,
             Country = item.Country,

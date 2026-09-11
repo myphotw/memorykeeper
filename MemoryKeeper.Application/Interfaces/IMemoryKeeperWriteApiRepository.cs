@@ -21,6 +21,11 @@ public interface IMemoryKeeperWriteApiRepository
     Task<MemoryKeeperFileTagMutationResponse> RemoveFileTagAsync(string fileId, int tagId, int expectedRevision, CancellationToken cancellationToken = default);
     Task<MemoryKeeperPendingListDto> GetPendingAsync(bool includeSuggestions = true, CancellationToken cancellationToken = default);
     Task<MemoryKeeperPendingListDto> GetPlaceCleanupAsync(int page = 1, int pageSize = 50, CancellationToken cancellationToken = default);
+    Task<PlaceCleanupGroupListDto> GetPlaceCleanupGroupsAsync(int limit = 5, string? cursor = null, CancellationToken cancellationToken = default);
+    Task<CleanupGroupPhotoListDto> GetPlaceCleanupGroupPhotosAsync(string groupId, int limit = 50, string? cursor = null, CancellationToken cancellationToken = default);
+    Task<CaptureDateCleanupGroupListDto> GetCaptureDateCleanupGroupsAsync(int limit = 5, string? cursor = null, CancellationToken cancellationToken = default);
+    Task<CleanupGroupPhotoListDto> GetCaptureDateCleanupGroupPhotosAsync(string groupId, int limit = 50, string? cursor = null, CancellationToken cancellationToken = default);
+    Task<MemoryKeeperCaptureDateMutationResponse> SetCaptureDateAsync(MemoryKeeperCaptureDateMutationRequest request, CancellationToken cancellationToken = default);
     Task<MemoryKeeperPendingAssignResponse> AssignPendingPlaceAsync(MemoryKeeperPendingAssignRequest request, CancellationToken cancellationToken = default);
     Task<MemoryKeeperFilePlaceStateQueryResponse> QueryFilePlaceStatesAsync(MemoryKeeperFilePlaceStateQueryRequest request, CancellationToken cancellationToken = default);
     Task<MemoryKeeperFilesAssignPlaceResponse> AssignFilePlacesAsync(MemoryKeeperFilesAssignPlaceRequest request, CancellationToken cancellationToken = default);

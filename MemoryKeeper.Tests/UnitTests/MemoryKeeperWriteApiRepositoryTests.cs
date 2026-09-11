@@ -371,6 +371,105 @@ public sealed class MemoryKeeperWriteApiRepositoryTests
     }
 
     [Fact]
+    public async Task CleanupGroups_UseIndependentOpaqueCursorsAndGroupPhotoEndpoints()
+    {
+        const string placeGroupsKey = "GET /api/memorykeeper/place-cleanup/groups?limit=5&cursor=place-next";
+        const string dateGroupsKey = "GET /api/memorykeeper/capture-date-cleanup/groups?limit=5&cursor=date-next";
+        const string placePhotosKey = "GET /api/memorykeeper/place-cleanup/groups/place%3Abucket%2F1/photos?limit=50&cursor=place-photo-next";
+        const string datePhotosKey = "GET /api/memorykeeper/capture-date-cleanup/groups/date%3Afallback%2F1/photos?limit=50&cursor=date-photo-next";
+        var handler = new RecordingHandler
+        {
+            Responses =
+            {
+                [placeGroupsKey] = "{\"items\":[{\"group_id\":\"place:bucket/1\",\"issue_type\":\"PLACE_UNASSIGNED\",\"title\":\"서울\",\"media_count\":7,\"representative_thumbnail_url\":\"/place.jpg\"}],\"next_cursor\":\"place-next-2\",\"has_more\":true,\"total_groups\":9,\"total_photos\":40}",
+                [dateGroupsKey] = "{\"items\":[{\"group_id\":\"date:fallback/1\",\"title\":\"촬영일 확인\",\"media_count\":3,\"cleanup_reason\":\"FALLBACK_DATE_REQUIRES_REVIEW\",\"date_basis\":\"IMPORTED\"}],\"next_cursor\":\"date-next-2\",\"has_more\":true,\"total_groups\":8,\"total_photos\":30}",
+                [placePhotosKey] = $"{{\"items\":[{{\"file_id\":\"{FileId}\",\"thumbnail_url\":\"/place-photo.jpg\",\"place_revision\":4}}],\"next_cursor\":null,\"has_more\":false,\"total_photos\":1}}",
+                [datePhotosKey] = $"{{\"items\":[{{\"file_id\":\"{FileId}\",\"thumbnail_url\":\"/date-photo.jpg\",\"effective_capture_datetime\":\"2023-10-14T00:00:00Z\",\"user_capture_precision\":\"DATE\",\"date_basis\":\"USER\",\"date_revision\":5}}],\"next_cursor\":null,\"has_more\":false,\"total_photos\":1}}",
+            },
+        };
+        using var provider = BuildProvider(handler);
+        var repository = provider.GetRequiredService<IMemoryKeeperWriteApiRepository>();
+
+        var place = await repository.GetPlaceCleanupGroupsAsync(5, "place-next");
+        var date = await repository.GetCaptureDateCleanupGroupsAsync(5, "date-next");
+        var placePhotos = await repository.GetPlaceCleanupGroupPhotosAsync("place:bucket/1", 50, "place-photo-next");
+        var datePhotos = await repository.GetCaptureDateCleanupGroupPhotosAsync("date:fallback/1", 50, "date-photo-next");
+
+        Assert.Equal("place-next-2", place.NextCursor);
+        Assert.Equal("date-next-2", date.NextCursor);
+        Assert.Equal("http://localhost:8000/place.jpg", Assert.Single(place.Items).RepresentativeThumbnailUrl);
+        Assert.Equal("FALLBACK_DATE_REQUIRES_REVIEW", Assert.Single(date.Items).CleanupReason);
+        Assert.Equal(4, Assert.Single(placePhotos.Items).PlaceRevision);
+        Assert.Equal(5, Assert.Single(datePhotos.Items).DateRevision);
+        Assert.Contains(placePhotosKey, handler.Requests);
+        Assert.Contains(datePhotosKey, handler.Requests);
+    }
+
+    [Fact]
+    public async Task CaptureDateMutation_SendsDateOnlyRevisionMapAndExplicitNullOverride()
+    {
+        const string key = "POST /api/memorykeeper/files/capture-date";
+        var handler = new RecordingHandler
+        {
+            Responses =
+            {
+                [key] = $"{{\"items\":[{{\"file_id\":\"{FileId}\",\"user_capture_datetime\":\"2023-10-14T00:00:00Z\",\"user_capture_precision\":\"DATE\",\"effective_capture_date\":\"2023-10-14\",\"date_basis\":\"USER\",\"date_revision\":5}}],\"updated_count\":1}}",
+            },
+        };
+        using var provider = BuildProvider(handler);
+        var repository = provider.GetRequiredService<IMemoryKeeperWriteApiRepository>();
+
+        var updated = await repository.SetCaptureDateAsync(new MemoryKeeperCaptureDateMutationRequest
+        {
+            FileIds = [FileId],
+            UserCaptureDate = "2023-10-14",
+            ExpectedDateRevisions = new Dictionary<string, int> { [FileId] = 4 },
+        });
+        using (var payload = JsonDocument.Parse(handler.Bodies[key]))
+        {
+            Assert.Equal("2023-10-14", payload.RootElement.GetProperty("user_capture_date").GetString());
+            Assert.Equal(4, payload.RootElement.GetProperty("expected_date_revisions").GetProperty(FileId).GetInt32());
+        }
+        Assert.Equal("DATE", Assert.Single(updated.Items).UserCapturePrecision);
+
+        await repository.SetCaptureDateAsync(new MemoryKeeperCaptureDateMutationRequest
+        {
+            FileIds = [FileId],
+            UserCaptureDate = null,
+            ExpectedDateRevisions = new Dictionary<string, int> { [FileId] = 5 },
+        });
+        using var clearPayload = JsonDocument.Parse(handler.Bodies[key]);
+        Assert.Equal(JsonValueKind.Null, clearPayload.RootElement.GetProperty("user_capture_date").ValueKind);
+    }
+
+    [Fact]
+    public async Task CaptureDateMutation_ExposesStructuredRevisionConflict()
+    {
+        const string key = "POST /api/memorykeeper/files/capture-date";
+        var handler = new RecordingHandler
+        {
+            Responses =
+            {
+                [key] = $"{{\"detail\":{{\"code\":\"REVISION_CONFLICT\",\"files\":[{{\"file_id\":\"{FileId}\",\"expected_revision\":4,\"current_revision\":5}}]}}}}",
+            },
+            StatusCodes = { [key] = HttpStatusCode.Conflict },
+        };
+        using var provider = BuildProvider(handler);
+        var repository = provider.GetRequiredService<IMemoryKeeperWriteApiRepository>();
+
+        var error = await Assert.ThrowsAsync<ApiException>(() => repository.SetCaptureDateAsync(
+            new MemoryKeeperCaptureDateMutationRequest
+            {
+                FileIds = [FileId],
+                UserCaptureDate = "2023-10-14",
+                ExpectedDateRevisions = new Dictionary<string, int> { [FileId] = 4 },
+            }));
+
+        Assert.Equal(HttpStatusCode.Conflict, error.StatusCode);
+        Assert.Equal("REVISION_CONFLICT", error.DetailCode);
+    }
+
+    [Fact]
     public async Task Conflict_IsExposedToCallerForRefreshFlow()
     {
         var key = $"PATCH /api/memorykeeper/files/{FileId}/metadata";

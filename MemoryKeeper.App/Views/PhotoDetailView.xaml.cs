@@ -136,6 +136,8 @@ public sealed partial class PhotoDetailView : UserControl
         ViewModel.OpenTagManagerRequested += OnOpenTagManagerRequested;
         ViewModel.OpenMemoEditorRequested += OnOpenMemoEditorRequested;
         ViewModel.OpenRawLocationEditorRequested += OnOpenRawLocationEditorRequested;
+        ViewModel.OpenCaptureDateEditorRequested += OnOpenCaptureDateEditorRequested;
+        ViewModel.ClearCaptureDateRequested += OnClearCaptureDateRequested;
         ViewModel.OpenMapPickRequested += OnOpenMapPickRequested;
         ViewModel.ToastRequested += OnToastRequested;
         _handlersAttached = true;
@@ -152,6 +154,8 @@ public sealed partial class PhotoDetailView : UserControl
         ViewModel.OpenTagManagerRequested -= OnOpenTagManagerRequested;
         ViewModel.OpenMemoEditorRequested -= OnOpenMemoEditorRequested;
         ViewModel.OpenRawLocationEditorRequested -= OnOpenRawLocationEditorRequested;
+        ViewModel.OpenCaptureDateEditorRequested -= OnOpenCaptureDateEditorRequested;
+        ViewModel.ClearCaptureDateRequested -= OnClearCaptureDateRequested;
         ViewModel.OpenMapPickRequested -= OnOpenMapPickRequested;
         ViewModel.ToastRequested -= OnToastRequested;
         _handlersAttached = false;
@@ -309,6 +313,28 @@ public sealed partial class PhotoDetailView : UserControl
 
     private async void OnOpenRawLocationEditorRequested(object? sender, EventArgs e) =>
         await ShowRawLocationDialogAsync();
+
+    private async void OnOpenCaptureDateEditorRequested(object? sender, EventArgs e)
+    {
+        var date = await CaptureDateDialog.ShowChangeAsync(
+            XamlRoot,
+            1,
+            ViewModel.PhotoImage,
+            $"현재 촬영일: {ViewModel.CapturedAtText} · {ViewModel.CaptureDateBasisText}",
+            ViewModel.CurrentEffectiveCaptureDate);
+        if (date is DateOnly selectedDate)
+        {
+            await ViewModel.ChangeCaptureDateAsync(selectedDate);
+        }
+    }
+
+    private async void OnClearCaptureDateRequested(object? sender, EventArgs e)
+    {
+        if (await CaptureDateDialog.ConfirmClearAsync(XamlRoot, 1))
+        {
+            await ViewModel.ChangeCaptureDateAsync(userCaptureDate: null);
+        }
+    }
 
     private async void OnOpenMapPickRequested(object? sender, EventArgs e) =>
         await ShowMapPickDialogAsync();

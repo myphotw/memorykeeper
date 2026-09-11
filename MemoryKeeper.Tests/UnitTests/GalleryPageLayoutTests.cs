@@ -298,6 +298,55 @@ public sealed class GalleryPageLayoutTests
     }
 
     [Fact]
+    public void GalleryUnclassifiedAssignmentSuccess_ReloadsSourceAndKeepsEditMode()
+    {
+        var page = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Views", "GalleryPage.xaml.cs"));
+        var viewModel = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "ViewModels", "GalleryViewModel.cs"));
+        var changePlaceStart = page.IndexOf("private async void ChangePlace_OnClick", StringComparison.Ordinal);
+        var changePlaceEnd = page.IndexOf("private Task<bool> ShowRadiusExpansionPreviewAsync", changePlaceStart, StringComparison.Ordinal);
+        Assert.True(changePlaceStart >= 0 && changePlaceEnd > changePlaceStart);
+        var changePlaceHandler = page[changePlaceStart..changePlaceEnd];
+        var unclassifiedStart = changePlaceHandler.IndexOf("if (sourceWasUnclassified)", StringComparison.Ordinal);
+        var targetReloadStart = changePlaceHandler.IndexOf("await ViewModel.ReloadAndSelectRegisteredPlaceAsync(targetId);", StringComparison.Ordinal);
+        Assert.True(unclassifiedStart >= 0 && targetReloadStart > unclassifiedStart);
+        var unclassifiedSuccess = changePlaceHandler[unclassifiedStart..targetReloadStart];
+
+        Assert.Contains("ViewModel.SelectedNode?.BuildQuery().UnclassifiedOnly == true", changePlaceHandler, StringComparison.Ordinal);
+        Assert.Contains("_catalogInvalidation.Consume(CatalogSurface.Gallery)", unclassifiedSuccess, StringComparison.Ordinal);
+        Assert.Contains("await ViewModel.LoadCommand.ExecuteAsync(null);", unclassifiedSuccess, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.CompleteMutation(true", unclassifiedSuccess, StringComparison.Ordinal);
+        Assert.Contains("return;", unclassifiedSuccess, StringComparison.Ordinal);
+        Assert.DoesNotContain("ReloadAndSelectRegisteredPlaceAsync", unclassifiedSuccess, StringComparison.Ordinal);
+        Assert.DoesNotContain("PhotoGrid.SelectionMode", unclassifiedSuccess, StringComparison.Ordinal);
+        Assert.DoesNotContain("ViewModel.ExitEditMode", unclassifiedSuccess, StringComparison.Ordinal);
+        Assert.DoesNotContain("Items.Remove", unclassifiedSuccess, StringComparison.Ordinal);
+        Assert.Contains("PhotoGrid.SelectionMode = ListViewSelectionMode.None;", changePlaceHandler[targetReloadStart..], StringComparison.Ordinal);
+        Assert.Contains("ViewModel.ExitEditMode();", changePlaceHandler[targetReloadStart..], StringComparison.Ordinal);
+        Assert.Contains("await RestoreNativeSelectionAfterItemsReplacementAsync(selectedIds);", changePlaceHandler[targetReloadStart..], StringComparison.Ordinal);
+
+        var loadStart = viewModel.IndexOf("private async Task LoadAsync()", StringComparison.Ordinal);
+        var captureStart = viewModel.IndexOf("public void CaptureFocusState", loadStart, StringComparison.Ordinal);
+        Assert.True(loadStart >= 0 && captureStart > loadStart);
+        var loadMethod = viewModel[loadStart..captureStart];
+        Assert.Contains("_fastHierarchy = null;", loadMethod, StringComparison.Ordinal);
+        Assert.Contains("await RebuildTreeRootsAsync();", loadMethod, StringComparison.Ordinal);
+        Assert.Contains("await RestoreSnapshotAsync(restore);", loadMethod, StringComparison.Ordinal);
+        Assert.Contains("Unclassified = node.Kind == GalleryTreeNodeKind.Unclassified ? true : null", viewModel, StringComparison.Ordinal);
+
+        var queryStart = viewModel.IndexOf("private async Task QueryForNodeAsync", StringComparison.Ordinal);
+        var queryEnd = viewModel.IndexOf("private async Task QueryLegacyAsync", queryStart, StringComparison.Ordinal);
+        Assert.True(queryStart >= 0 && queryEnd > queryStart);
+        var queryMethod = viewModel[queryStart..queryEnd];
+        Assert.Contains("_regionPagingState = null;", queryMethod, StringComparison.Ordinal);
+        Assert.Contains("_currentPage = 1;", queryMethod, StringComparison.Ordinal);
+
+        var resetStart = viewModel.IndexOf("public void ResetSelectionForItemsReplacement()", StringComparison.Ordinal);
+        var resetEnd = viewModel.IndexOf("[RelayCommand]", resetStart, StringComparison.Ordinal);
+        Assert.True(resetStart >= 0 && resetEnd > resetStart);
+        Assert.Contains("SelectedCount = 0;", viewModel[resetStart..resetEnd], StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void GallerySelectionLifecycle_DoesNotDirectlyClearWinUiSelectionVector()
     {
         var xaml = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Views", "GalleryPage.xaml"));

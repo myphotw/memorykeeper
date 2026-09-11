@@ -70,4 +70,29 @@ public sealed class MediaTypeResolverTests
         Assert.Equal(MediaType.Video, result.MediaType);
         Assert.Equal("https://backend.test/thumb.jpg", result.ThumbnailUrl);
     }
+
+    [Fact]
+    public void DetailMapperUsesEffectiveCaptureDateAndPreservesDateOverrideContract()
+    {
+        var effective = new DateTimeOffset(2023, 10, 14, 0, 0, 0, TimeSpan.Zero);
+        var result = GalleryBackendMapper.ToPhotoDetail(new BackendDetail
+        {
+            FileId = "000000000000002a",
+            Filename = "photo.jpg",
+            EffectiveCaptureDatetime = effective,
+            EffectiveCaptureDate = "2023-10-14",
+            EffectiveCaptureYear = 2023,
+            UserCaptureDatetime = effective,
+            UserCapturePrecision = "DATE",
+            DateBasis = "USER",
+            DateRevision = 5,
+            MetadataRevision = 5,
+        }, "https://backend.test");
+
+        Assert.Equal(effective, result.CapturedAt);
+        Assert.Equal("2023-10-14", result.EffectiveCaptureDate);
+        Assert.Equal("DATE", result.UserCapturePrecision);
+        Assert.Equal("USER", result.DateBasis);
+        Assert.Equal(5, result.DateRevision);
+    }
 }

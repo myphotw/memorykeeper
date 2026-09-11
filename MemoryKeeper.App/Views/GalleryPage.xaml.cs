@@ -84,6 +84,7 @@ public sealed partial class GalleryPage : Page
         _photoDetailView.ViewModel.Closed += OnDetailClosed;
         _photoDetailView.ViewModel.PhotoDeleted += OnPhotoDeleted;
         _photoDetailView.ViewModel.PlaceRegistered += OnDetailPlaceRegistered;
+        _photoDetailView.ViewModel.CaptureDateChanged += OnDetailCaptureDateChanged;
         _photoDetailView.ViewModel.OpenMapRequested += OnDetailOpenMapRequested;
         Loaded += GalleryPage_OnLoaded;
         SizeChanged += GalleryPage_OnSizeChanged;
@@ -422,6 +423,9 @@ public sealed partial class GalleryPage : Page
     private void OnDetailPlaceRegistered(object? sender, EventArgs e) =>
         _ = ReloadAfterPlaceChangeAsync();
 
+    private void OnDetailCaptureDateChanged(object? sender, EventArgs e) =>
+        _ = ReloadAfterPlaceChangeAsync();
+
     private async Task ReloadAfterPlaceChangeAsync()
     {
         ViewModel.CaptureFocusState(GetGridScrollOffset(), ViewModel.SelectedItem?.MediaId);
@@ -612,6 +616,7 @@ public sealed partial class GalleryPage : Page
         }
 
         var selectedIds = selected.Select(item => item.BackendFileId).ToHashSet(StringComparer.Ordinal);
+        var sourceWasUnclassified = ViewModel.SelectedNode?.BuildQuery().UnclassifiedOnly == true;
         ViewModel.CaptureFocusState(GetGridScrollOffset(), ViewModel.SelectedItem?.MediaId);
         var session = new GalleryPlaceEditSessionViewModel(
             _placeService,
@@ -647,6 +652,14 @@ public sealed partial class GalleryPage : Page
             if (session.Succeeded && session.TargetPlaceId is Guid targetId)
             {
                 ViewModel.UpdateMutationStatus("사진첩을 갱신하고 있습니다", "잠시 기다려 주세요");
+                if (sourceWasUnclassified)
+                {
+                    _catalogInvalidation.Consume(CatalogSurface.Gallery);
+                    await ViewModel.LoadCommand.ExecuteAsync(null);
+                    ViewModel.CompleteMutation(true, $"{selected.Count}장의 장소 변경이 완료되었습니다.");
+                    return;
+                }
+
                 _catalogInvalidation.Consume(CatalogSurface.Gallery);
                 await ViewModel.ReloadAndSelectRegisteredPlaceAsync(targetId);
                 PhotoGrid.SelectionMode = ListViewSelectionMode.None;

@@ -15,6 +15,24 @@ public sealed class PendingMemoryItemDto
 
     public DateTimeOffset? CapturedAt { get; init; }
 
+    public DateTimeOffset? RawCapturedAt { get; init; }
+
+    public DateTimeOffset? UserCapturedAt { get; init; }
+
+    public string UserCapturePrecision { get; init; } = string.Empty;
+
+    public string EffectiveCaptureDate { get; init; } = string.Empty;
+
+    public int? EffectiveCaptureYear { get; init; }
+
+    public string DateBasis { get; init; } = string.Empty;
+
+    public bool DateCleanupRequired { get; init; }
+
+    public string DateCleanupReason { get; init; } = string.Empty;
+
+    public int DateRevision { get; init; }
+
     public double? Latitude { get; init; }
 
     public double? Longitude { get; init; }
@@ -67,6 +85,15 @@ public sealed class PendingMemoryItemDto
             FileName = FileName,
             AbsoluteLibraryPath = AbsoluteLibraryPath,
             CapturedAt = CapturedAt,
+            RawCapturedAt = RawCapturedAt,
+            UserCapturedAt = UserCapturedAt,
+            UserCapturePrecision = UserCapturePrecision,
+            EffectiveCaptureDate = EffectiveCaptureDate,
+            EffectiveCaptureYear = EffectiveCaptureYear,
+            DateBasis = DateBasis,
+            DateCleanupRequired = DateCleanupRequired,
+            DateCleanupReason = DateCleanupReason,
+            DateRevision = DateRevision,
             Latitude = Latitude,
             Longitude = Longitude,
             Country = FirstNotBlank(registeredPlace.Country, Country),

@@ -36,6 +36,8 @@ public sealed partial class PendingMemoryView : UserControl
         ViewModel.HostXamlRoot = XamlRoot;
         ViewModel.OpenPlaceRegistrationRequested += OnOpenPlaceRegistrationRequested;
         ViewModel.OpenMemoRequested += OnOpenMemoRequested;
+        ViewModel.OpenCaptureDateEditorRequested += OnOpenCaptureDateEditorRequested;
+        ViewModel.ClearCaptureDateRequested += OnClearCaptureDateRequested;
         ViewModel.RadiusExpansionPreviewHandler = ShowRadiusExpansionPreviewAsync;
     }
 
@@ -43,6 +45,8 @@ public sealed partial class PendingMemoryView : UserControl
     {
         ViewModel.OpenPlaceRegistrationRequested -= OnOpenPlaceRegistrationRequested;
         ViewModel.OpenMemoRequested -= OnOpenMemoRequested;
+        ViewModel.OpenCaptureDateEditorRequested -= OnOpenCaptureDateEditorRequested;
+        ViewModel.ClearCaptureDateRequested -= OnClearCaptureDateRequested;
         ViewModel.RadiusExpansionPreviewHandler = null;
     }
 
@@ -93,6 +97,49 @@ public sealed partial class PendingMemoryView : UserControl
 
         ViewModel.OpenPhotoDetailCommand.Execute(item);
     }
+
+    private async void OnOpenCaptureDateEditorRequested(object? sender, EventArgs e)
+    {
+        var representative = ViewModel.GetRepresentativeSelectedMedia();
+        if (representative is null)
+        {
+            return;
+        }
+
+        var selectedDate = await CaptureDateDialog.ShowChangeAsync(
+            XamlRoot,
+            ViewModel.IncludedCount,
+            representative.ThumbnailImage,
+            ViewModel.SelectedDateStatusText,
+            ResolveCaptureDate(representative));
+        if (selectedDate is DateOnly date)
+        {
+            await ViewModel.ChangeCaptureDateAsync(date);
+        }
+    }
+
+    private async void OnClearCaptureDateRequested(object? sender, EventArgs e)
+    {
+        var count = ViewModel.ActiveMediaItems.Count(item => item.IsIncluded && item.HasUserCaptureOverride);
+        if (count == 0 || !await CaptureDateDialog.ConfirmClearAsync(XamlRoot, count))
+        {
+            return;
+        }
+
+        await ViewModel.ChangeCaptureDateAsync(userCaptureDate: null, clearOnlyOverrides: true);
+    }
+
+    private static DateOnly? ResolveCaptureDate(PendingMemoryMediaItem item) =>
+        DateOnly.TryParseExact(
+            item.Media.EffectiveCaptureDate,
+            "yyyy-MM-dd",
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None,
+            out var date)
+            ? date
+            : item.Media.CapturedAt is DateTimeOffset capturedAt
+                ? DateOnly.FromDateTime(capturedAt.ToLocalTime().Date)
+                : null;
 
     private async Task ShowPlaceRegistrationDialogAsync()
     {

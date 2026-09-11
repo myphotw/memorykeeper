@@ -624,6 +624,54 @@ public sealed class MemoryKeeperWriteServiceTests
         Assert.True(invalidation.Consume(CatalogSurface.Tags));
     }
 
+    [Fact]
+    public async Task CaptureDateMutation_UsesDateOnlyAndSharedRevisionThenInvalidatesRelatedCatalogs()
+    {
+        var repository = new FakeRepository();
+        var invalidation = new CatalogInvalidation();
+        var service = new MemoryKeeperWriteService(repository, invalidation);
+
+        var response = await service.SetCaptureDateAsync(
+            new Dictionary<Guid, int> { [MediaId] = 4 },
+            new DateOnly(2023, 10, 14));
+
+        Assert.Equal(1, response.UpdatedCount);
+        Assert.NotNull(repository.LastCaptureDateRequest);
+        Assert.Equal("2023-10-14", repository.LastCaptureDateRequest!.UserCaptureDate);
+        Assert.Equal(4, repository.LastCaptureDateRequest.ExpectedDateRevisions[FileId]);
+        Assert.True(invalidation.Consume(CatalogSurface.Gallery));
+        Assert.True(invalidation.Consume(CatalogSurface.Pending));
+        Assert.True(invalidation.Consume(CatalogSurface.Travel));
+    }
+
+    [Fact]
+    public async Task CaptureDateOverrideClear_SendsExplicitNull()
+    {
+        var repository = new FakeRepository();
+        var service = new MemoryKeeperWriteService(repository, new CatalogInvalidation());
+
+        await service.SetCaptureDateAsync(new Dictionary<Guid, int> { [MediaId] = 5 }, userCaptureDate: null);
+
+        Assert.NotNull(repository.LastCaptureDateRequest);
+        Assert.Null(repository.LastCaptureDateRequest!.UserCaptureDate);
+        Assert.Equal(5, repository.LastCaptureDateRequest.ExpectedDateRevisions[FileId]);
+    }
+
+    [Fact]
+    public async Task CaptureDateMutation_RejectsMoreThanFiveHundredPhotosBeforeRepositoryCall()
+    {
+        var repository = new FakeRepository();
+        var service = new MemoryKeeperWriteService(repository, new CatalogInvalidation());
+        var revisions = Enumerable.Range(1, 501).ToDictionary(
+            index => BackendFileIdCodec.ToGuid($"{index:x8}{new string('0', 56)}"),
+            _ => 1);
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+            service.SetCaptureDateAsync(revisions, new DateOnly(2023, 10, 14)));
+
+        Assert.Null(repository.LastCaptureDateRequest);
+    }
+
     private sealed class FakeRepository : IMemoryKeeperWriteApiRepository
     {
         public int MetadataRevision { get; set; }
@@ -638,6 +686,7 @@ public sealed class MemoryKeeperWriteServiceTests
         public List<(int TagId, int Revision)> FileTagMutations { get; } = [];
         public List<(string Identity, int Revision, bool Hidden)> FileCatalogTagMutations { get; } = [];
         public (string Identity, int Revision, string Name)? CatalogRename { get; private set; }
+        public MemoryKeeperCaptureDateMutationRequest? LastCaptureDateRequest { get; private set; }
 
         public Task<MemoryKeeperFileMetadataPatchResponse> PatchMetadataAsync(string fileId, MemoryKeeperFileMetadataPatchRequest request, CancellationToken cancellationToken = default)
         {
@@ -666,6 +715,35 @@ public sealed class MemoryKeeperWriteServiceTests
             return Task.FromResult(PlaceCleanupPages.TryGetValue(page, out var response)
                 ? response
                 : new MemoryKeeperPendingListDto { Page = page, PageSize = pageSize });
+        }
+
+        public Task<PlaceCleanupGroupListDto> GetPlaceCleanupGroupsAsync(int limit = 5, string? cursor = null, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new PlaceCleanupGroupListDto());
+
+        public Task<CleanupGroupPhotoListDto> GetPlaceCleanupGroupPhotosAsync(string groupId, int limit = 50, string? cursor = null, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new CleanupGroupPhotoListDto());
+
+        public Task<CaptureDateCleanupGroupListDto> GetCaptureDateCleanupGroupsAsync(int limit = 5, string? cursor = null, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new CaptureDateCleanupGroupListDto());
+
+        public Task<CleanupGroupPhotoListDto> GetCaptureDateCleanupGroupPhotosAsync(string groupId, int limit = 50, string? cursor = null, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new CleanupGroupPhotoListDto());
+
+        public Task<MemoryKeeperCaptureDateMutationResponse> SetCaptureDateAsync(MemoryKeeperCaptureDateMutationRequest request, CancellationToken cancellationToken = default)
+        {
+            LastCaptureDateRequest = request;
+            return Task.FromResult(new MemoryKeeperCaptureDateMutationResponse
+            {
+                Items = request.FileIds.Select(fileId => new MemoryKeeperCaptureDateMutationItemDto
+                {
+                    FileId = fileId,
+                    UserCapturePrecision = request.UserCaptureDate is null ? null : "DATE",
+                    EffectiveCaptureDate = request.UserCaptureDate,
+                    DateBasis = request.UserCaptureDate is null ? "EXIF" : "USER",
+                    DateRevision = request.ExpectedDateRevisions[fileId] + 1,
+                }).ToList(),
+                UpdatedCount = request.FileIds.Count,
+            });
         }
 
         public Task<MemoryKeeperPendingAssignResponse> AssignPendingPlaceAsync(MemoryKeeperPendingAssignRequest request, CancellationToken cancellationToken = default)

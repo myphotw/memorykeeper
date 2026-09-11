@@ -36,6 +36,30 @@ public sealed class PhotoDetailDto
     [JsonPropertyName("metadata_revision")]
     public int MetadataRevision { get; init; }
 
+    [JsonPropertyName("raw_capture_datetime")]
+    public DateTimeOffset? RawCaptureDatetime { get; init; }
+
+    [JsonPropertyName("user_capture_datetime")]
+    public DateTimeOffset? UserCaptureDatetime { get; init; }
+
+    [JsonPropertyName("user_capture_precision")]
+    public string? UserCapturePrecision { get; init; }
+
+    [JsonPropertyName("effective_capture_datetime")]
+    public DateTimeOffset? EffectiveCaptureDatetime { get; init; }
+
+    [JsonPropertyName("effective_capture_date")]
+    public string? EffectiveCaptureDate { get; init; }
+
+    [JsonPropertyName("effective_capture_year")]
+    public int? EffectiveCaptureYear { get; init; }
+
+    [JsonPropertyName("date_basis")]
+    public string? DateBasis { get; init; }
+
+    [JsonPropertyName("date_revision")]
+    public int DateRevision { get; init; }
+
     [JsonPropertyName("incomplete")]
     public bool Incomplete { get; init; }
 

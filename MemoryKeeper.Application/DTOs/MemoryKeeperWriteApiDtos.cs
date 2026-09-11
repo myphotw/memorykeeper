@@ -142,6 +142,26 @@ public sealed class MemoryKeeperPendingItemDto
     public string FileId { get; init; } = string.Empty;
     public string? ThumbnailUrl { get; init; }
     public DateTimeOffset? CaptureDatetime { get; init; }
+    [JsonPropertyName("raw_capture_datetime")]
+    public DateTimeOffset? RawCaptureDatetime { get; init; }
+    [JsonPropertyName("user_capture_datetime")]
+    public DateTimeOffset? UserCaptureDatetime { get; init; }
+    [JsonPropertyName("user_capture_precision")]
+    public string? UserCapturePrecision { get; init; }
+    [JsonPropertyName("effective_capture_datetime")]
+    public DateTimeOffset? EffectiveCaptureDatetime { get; init; }
+    [JsonPropertyName("effective_capture_date")]
+    public string? EffectiveCaptureDate { get; init; }
+    [JsonPropertyName("effective_capture_year")]
+    public int? EffectiveCaptureYear { get; init; }
+    [JsonPropertyName("date_basis")]
+    public string? DateBasis { get; init; }
+    [JsonPropertyName("date_cleanup_required")]
+    public bool DateCleanupRequired { get; init; }
+    [JsonPropertyName("date_cleanup_reason")]
+    public string? DateCleanupReason { get; init; }
+    [JsonPropertyName("date_revision")]
+    public int DateRevision { get; init; }
     public double? GpsLat { get; init; }
     public double? GpsLon { get; init; }
     public string? Country { get; init; }

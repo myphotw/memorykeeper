@@ -10,10 +10,15 @@
 
     <UserControl.Resources>
         <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+        <converters:BoolNegationConverter x:Key="BoolNegationConverter" />
     </UserControl.Resources>
 
     <Grid RowDefinitions="Auto,*" RowSpacing="12">
-        <ScrollViewer Grid.Row="0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+        <ScrollViewer
+            Grid.Row="0"
+            HorizontalScrollBarVisibility="Auto"
+            VerticalScrollBarVisibility="Disabled"
+            IsHitTestVisible="{Binding IsBusy, Mode=OneWay, Converter={StaticResource BoolNegationConverter}}">
             <StackPanel Orientation="Horizontal" Spacing="8" MinWidth="520">
                 <TextBlock
                     Text="{Binding StatusMessage, Mode=OneWay}"
@@ -32,42 +37,57 @@
                     MinWidth="88" />
 
                 <TextBlock
-                    Text="{Binding CleanupProgressText, Mode=OneWay}"
+                    Text="{Binding ActiveGroupPhotoProgressText, Mode=OneWay}"
                     VerticalAlignment="Center"
                     Opacity="0.8" />
 
                 <Button
-                    Content="더 보기"
+                    Content="사진 더 보기"
                     Style="{StaticResource MkButtonStyle}"
                     VerticalAlignment="Center"
-                    Command="{Binding LoadMoreCleanupCommand}"
-                    Visibility="{Binding CanLoadMoreCleanup, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                    MinWidth="88" />
+                    Command="{Binding LoadMoreGroupPhotosCommand}"
+                    Visibility="{Binding CanLoadMoreGroupPhotos, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
 
-                <Button
-                    Content="장소등록"
-                    Style="{StaticResource AccentButtonStyle}"
-                    VerticalAlignment="Center"
-                    MinHeight="40"
-                    Command="{Binding OpenPlaceRegistrationCommand}"
-                    MinWidth="96" />
+                <StackPanel
+                    Orientation="Horizontal"
+                    Spacing="8"
+                    Visibility="{Binding IsPlaceMode, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <Button
+                        Content="장소등록"
+                        Style="{StaticResource AccentButtonStyle}"
+                        MinHeight="40"
+                        Command="{Binding OpenPlaceRegistrationCommand}"
+                        MinWidth="96" />
+                    <ComboBox
+                        PlaceholderText="기존 장소"
+                        ItemsSource="{Binding Places, Mode=OneWay}"
+                        SelectedItem="{Binding SelectedPlace, Mode=TwoWay}"
+                        DisplayMemberPath="DisplayName"
+                        MinHeight="40"
+                        Width="180" />
+                    <Button
+                        Content="일괄 등록"
+                        Style="{StaticResource AccentButtonStyle}"
+                        MinHeight="40"
+                        Command="{Binding AssignPlaceCommand}"
+                        MinWidth="96" />
+                </StackPanel>
 
-                <ComboBox
-                    PlaceholderText="기존 장소"
-                    ItemsSource="{Binding Places, Mode=OneWay}"
-                    SelectedItem="{Binding SelectedPlace, Mode=TwoWay}"
-                    DisplayMemberPath="DisplayName"
-                    VerticalAlignment="Center"
-                    MinHeight="40"
-                    Width="180" />
-
-                <Button
-                    Content="일괄 등록"
-                    Style="{StaticResource AccentButtonStyle}"
-                    VerticalAlignment="Center"
-                    MinHeight="40"
-                    Command="{Binding AssignPlaceCommand}"
-                    MinWidth="96" />
+                <StackPanel
+                    Orientation="Horizontal"
+                    Spacing="8"
+                    Visibility="{Binding IsCaptureDateMode, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <Button
+                        Content="촬영일 변경"
+                        Style="{StaticResource AccentButtonStyle}"
+                        MinHeight="40"
+                        Command="{Binding OpenCaptureDateEditorCommand}" />
+                    <Button
+                        Content="촬영일 보정 해제"
+                        Style="{StaticResource MkButtonStyle}"
+                        MinHeight="40"
+                        Command="{Binding RequestClearCaptureDateCommand}" />
+                </StackPanel>
             </StackPanel>
         </ScrollViewer>
 
@@ -75,79 +95,73 @@
             Grid.Row="1"
             ColumnDefinitions="0.35*,0.65*"
             ColumnSpacing="12"
-            MinWidth="480">
-            <!-- Left rail: GPS candidates first (A), then cleanup groups -->
-            <Grid RowDefinitions="Auto,Auto,Auto,*" RowSpacing="8">
-                <Border
-                    Padding="10,8"
-                    CornerRadius="8"
-                    BorderThickness="1"
-                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                    Tapped="GpsSection_OnTapped"
-                    Visibility="{Binding HasGpsReclassificationCandidates, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
-                    <StackPanel Spacing="2">
-                        <TextBlock Text="📍 GPS 있음 · 장소 정리 필요" FontWeight="SemiBold" />
-                        <TextBlock
-                            Text="{Binding GpsSectionSummaryText, Mode=OneWay}"
-                            Opacity="0.8"
-                            FontSize="12" />
-                        <TextBlock
-                            Text="선택됨"
-                            FontSize="11"
-                            Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
-                            Visibility="{Binding IsGpsSectionSelected, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
-                    </StackPanel>
-                </Border>
+            MinWidth="480"
+            IsHitTestVisible="{Binding IsBusy, Mode=OneWay, Converter={StaticResource BoolNegationConverter}}">
+            <!-- Backend-authoritative Place and Capture-Date work queues (5 + 5). -->
+            <Grid RowDefinitions="Auto,*,Auto,Auto,*,Auto" RowSpacing="6">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="장소 정리 그룹" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding PlaceQueueSummaryText, Mode=OneWay}" FontSize="11" Opacity="0.7" VerticalAlignment="Center" />
+                </StackPanel>
 
                 <ListView
                     Grid.Row="1"
-                    MaxHeight="220"
-                    ItemsSource="{Binding ReclassificationCandidates, Mode=OneWay}"
-                    SelectionMode="Single"
-                    SelectionChanged="GpsCandidates_OnSelectionChanged"
-                    Visibility="{Binding HasGpsReclassificationCandidates, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                    ItemsSource="{Binding PlaceGroups, Mode=OneWay}"
+                    SelectedItem="{Binding SelectedPlaceGroup, Mode=TwoWay}"
+                    SelectionMode="Single">
                     <ListView.ItemTemplate>
-                        <DataTemplate>
-                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" Padding="0,4">
-                                <Border Width="40" Height="40" CornerRadius="4"
-                                        Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}">
-                                    <Image Stretch="Uniform" Source="{Binding ThumbnailImage, Mode=OneWay}" />
-                                </Border>
-                                <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding CapturedAtText}" FontWeight="SemiBold" FontSize="12" />
-                                    <TextBlock Text="{Binding StatusSummaryText}" Opacity="0.75" FontSize="11" />
-                                    <TextBlock
-                                        Text="{Binding GeographyText}"
-                                        Opacity="0.7"
-                                        FontSize="11"
-                                        TextTrimming="CharacterEllipsis" />
+                        <DataTemplate x:DataType="models:PlaceCleanupGroupItem">
+                            <Border Padding="8" CornerRadius="6" Background="Transparent">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="{x:Bind Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{x:Bind CountText}" FontSize="12" Opacity="0.85" />
+                                    <TextBlock Text="{x:Bind PeriodText}" FontSize="11" Opacity="0.7" />
+                                    <TextBlock Text="{x:Bind LocationText}" FontSize="11" Opacity="0.75" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{x:Bind IssueStatusText}" FontSize="11" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
                                 </StackPanel>
-                            </Grid>
+                            </Border>
                         </DataTemplate>
                     </ListView.ItemTemplate>
                 </ListView>
 
-                <TextBlock
+                <Button
                     Grid.Row="2"
-                    Text="장소 정리 그룹"
-                    FontWeight="SemiBold"
-                    Margin="0,4,0,0" />
+                    Content="다음 장소 그룹"
+                    HorizontalAlignment="Stretch"
+                    Command="{Binding LoadMorePlaceGroupsCommand}"
+                    Visibility="{Binding CanLoadMorePlaceGroups, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+
+                <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8" Margin="0,6,0,0">
+                    <TextBlock Text="날짜 정리 그룹" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding CaptureDateQueueSummaryText, Mode=OneWay}" FontSize="11" Opacity="0.7" VerticalAlignment="Center" />
+                </StackPanel>
 
                 <ListView
-                    Grid.Row="3"
-                    ItemsSource="{Binding Groups, Mode=OneWay}"
-                    SelectedItem="{Binding SelectedGroup, Mode=TwoWay}">
+                    Grid.Row="4"
+                    ItemsSource="{Binding CaptureDateGroups, Mode=OneWay}"
+                    SelectedItem="{Binding SelectedCaptureDateGroup, Mode=TwoWay}"
+                    SelectionMode="Single">
                     <ListView.ItemTemplate>
-                        <DataTemplate>
-                            <StackPanel Spacing="2" Padding="0,8">
-                                <TextBlock Text="{Binding GroupName}" FontWeight="SemiBold" />
-                                <TextBlock Text="{Binding PeriodText}" Opacity="0.75" FontSize="12" />
-                                <TextBlock Text="{Binding SummaryText}" Opacity="0.85" FontSize="12" />
-                            </StackPanel>
+                        <DataTemplate x:DataType="models:CaptureDateCleanupGroupItem">
+                            <Border Padding="8" CornerRadius="6" Background="Transparent">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="{x:Bind Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{x:Bind CountText}" FontSize="12" Opacity="0.85" />
+                                    <TextBlock Text="{x:Bind ReasonText}" FontSize="11" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                                    <TextBlock Text="{x:Bind DateSummaryText}" FontSize="11" Opacity="0.75" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{x:Bind PeriodText}" FontSize="11" Opacity="0.7" />
+                                </StackPanel>
+                            </Border>
                         </DataTemplate>
                     </ListView.ItemTemplate>
                 </ListView>
+
+                <Button
+                    Grid.Row="5"
+                    Content="다음 날짜 그룹"
+                    HorizontalAlignment="Stretch"
+                    Command="{Binding LoadMoreCaptureDateGroupsCommand}"
+                    Visibility="{Binding CanLoadMoreCaptureDateGroups, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
             </Grid>
 
             <Grid Grid.Column="1" RowDefinitions="Auto,Auto,*,Auto" RowSpacing="8">
@@ -240,6 +254,10 @@
                                             FontSize="11"
                                             Opacity="0.75"
                                             TextTrimming="CharacterEllipsis" />
+                                        <TextBlock
+                                            Text="{Binding DateBasisText}"
+                                            FontSize="11"
+                                            Opacity="0.75" />
                                     </StackPanel>
                                     <Button
                                         Grid.Row="2"
@@ -265,7 +283,19 @@
                             Style="{StaticResource AccentButtonStyle}"
                             MinHeight="40"
                             VerticalAlignment="Center"
-                            Command="{Binding OpenPlaceRegistrationCommand}" />
+                            Command="{Binding OpenPlaceRegistrationCommand}"
+                            Visibility="{Binding IsPlaceMode, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                        <Button
+                            Content="촬영일 변경"
+                            Style="{StaticResource AccentButtonStyle}"
+                            MinHeight="40"
+                            Command="{Binding OpenCaptureDateEditorCommand}"
+                            Visibility="{Binding IsCaptureDateMode, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                        <Button
+                            Content="촬영일 보정 해제"
+                            Style="{StaticResource MkButtonStyle}"
+                            Command="{Binding RequestClearCaptureDateCommand}"
+                            Visibility="{Binding IsCaptureDateMode, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
                         <Button
                             Content="메모"
                             Style="{StaticResource MkButtonStyle}"
@@ -285,5 +315,16 @@
                 </Border>
             </Grid>
         </Grid>
+
+        <Border
+            Grid.RowSpan="2"
+            Background="#33000000"
+            Visibility="{Binding IsBusy, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+            Canvas.ZIndex="10">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
+                <ProgressRing IsActive="True" Width="36" Height="36" />
+                <TextBlock Text="잠시 기다려 주세요" FontWeight="SemiBold" />
+            </StackPanel>
+        </Border>
     </Grid>
 </UserControl>
