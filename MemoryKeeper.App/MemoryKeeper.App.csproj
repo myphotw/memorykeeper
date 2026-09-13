@@ -111,5 +111,13 @@
           SkipUnchangedFiles="true"
           Condition="'$(MEMORYKEEPER_GOOGLE_MAPS_JAVASCRIPT_API_KEY)' != ''" />
   </Target>
+
+  <!-- Keep one stable, runnable desktop output after a successful Release x64 build. -->
+  <Target Name="DeployFixedReleaseOutput"
+          AfterTargets="Build"
+          DependsOnTargets="SanitizeLooseXaml;CopyMapsDeploymentCredentialToOutput"
+          Condition="'$(Configuration)' == 'Release' and '$(Platform)' == 'x64'">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\build\DeployFixedRelease.ps1&quot; -SourceDirectory &quot;$(TargetDir).&quot; -DestinationDirectory &quot;$(MSBuildProjectDirectory)\..\Release&quot;" />
+  </Target>
 </Project>
 
