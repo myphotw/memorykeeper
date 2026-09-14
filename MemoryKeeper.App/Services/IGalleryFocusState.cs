@@ -29,6 +29,9 @@ public sealed class GalleryFocusSnapshot
 
     public string? SelectedNodeKey { get; init; }
 
+    /// <summary>Stable identity used to restore a registered Place after its display name changes.</summary>
+    public Guid? SelectedPlaceId { get; init; }
+
     public IReadOnlyList<string> ExpandedNodeKeys { get; init; } = [];
 
     public Guid? FocusMediaId { get; init; }

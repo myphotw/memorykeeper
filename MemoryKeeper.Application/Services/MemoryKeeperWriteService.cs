@@ -460,6 +460,46 @@ public sealed class MemoryKeeperWriteService
         return response;
     }
 
+    public async Task<MemoryKeeperPhotoCategoryMutationResponse> SetPhotoCategoryAsync(
+        IReadOnlyDictionary<Guid, int> expectedCategoryRevisions,
+        string photoCategory,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(expectedCategoryRevisions);
+        if (expectedCategoryRevisions.Count is 0 or > 500)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(expectedCategoryRevisions),
+                "사진 분류는 한 번에 1장부터 500장까지 변경할 수 있습니다.");
+        }
+
+        var normalizedCategory = photoCategory?.Trim().ToUpperInvariant();
+        if (!MemoryKeeperPhotoCategories.IsSupported(normalizedCategory))
+        {
+            throw new ArgumentOutOfRangeException(nameof(photoCategory), "지원하지 않는 사진 분류입니다.");
+        }
+
+        var revisions = expectedCategoryRevisions.ToDictionary(
+            pair => FileId(pair.Key),
+            pair => pair.Value,
+            StringComparer.OrdinalIgnoreCase);
+        if (revisions.Any(pair => pair.Value < 0))
+        {
+            throw new ArgumentOutOfRangeException(nameof(expectedCategoryRevisions), "사진 분류 revision은 0 이상이어야 합니다.");
+        }
+
+        var response = await _repository.SetPhotoCategoryAsync(
+            new MemoryKeeperPhotoCategoryMutationRequest
+            {
+                FileIds = revisions.Keys.ToList(),
+                PhotoCategory = normalizedCategory!,
+                ExpectedCategoryRevisions = revisions,
+            },
+            cancellationToken).ConfigureAwait(false);
+        _invalidation.Invalidate(CatalogSurface.AllRelated);
+        return response;
+    }
+
     private static PendingMemoryOverviewDto BuildPendingOverview(
         IReadOnlyList<PendingMemoryItemDto> mapped,
         int total,

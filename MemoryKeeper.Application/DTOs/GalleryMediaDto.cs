@@ -17,6 +17,12 @@ public sealed class GalleryMediaDto
 
     public Guid? PlaceId { get; init; }
 
+    public string PhotoCategory { get; init; } = MemoryKeeperPhotoCategories.Normal;
+
+    public int PhotoCategoryRevision { get; init; }
+
+    public bool HasPhotoCategoryRevision { get; init; }
+
     public MediaType MediaType { get; init; }
 
     public bool IsFavorite { get; init; }

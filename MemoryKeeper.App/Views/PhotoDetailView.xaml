@@ -97,6 +97,10 @@
                         <TextBlock Text="촬영 정보" FontWeight="SemiBold" />
                         <TextBlock Opacity="0.85"><Run Text="촬영일시: "/><Run Text="{Binding CapturedAtText, Mode=OneWay}"/></TextBlock>
                         <TextBlock Opacity="0.75"><Run Text="날짜 기준: "/><Run Text="{Binding CaptureDateBasisText, Mode=OneWay}"/></TextBlock>
+                        <TextBlock
+                            Text="분류: 일상"
+                            Opacity="0.85"
+                            Visibility="{Binding IsDailyPhotoCategory, Converter={StaticResource BoolToVisibilityConverter}}" />
                         <TextBlock Opacity="0.85"><Run Text="촬영기기: "/><Run Text="{Binding CameraText, Mode=OneWay}"/></TextBlock>
                         <TextBlock Opacity="0.85"><Run Text="노출시간: "/><Run Text="{Binding ExposureText, Mode=OneWay}"/></TextBlock>
                         <TextBlock Opacity="0.85"><Run Text="조리개: "/><Run Text="{Binding ApertureText, Mode=OneWay}"/></TextBlock>

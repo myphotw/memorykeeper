@@ -45,6 +45,7 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
     [ObservableProperty] private string capturedAtText = "-";
     [ObservableProperty] private string captureDateBasisText = "날짜 정보 없음";
     [ObservableProperty] private bool hasUserCaptureOverride;
+    [ObservableProperty] private bool isDailyPhotoCategory;
     [ObservableProperty] private string placeName = string.Empty;
     [ObservableProperty] private string country = string.Empty;
     [ObservableProperty] private string province = string.Empty;
@@ -1764,6 +1765,10 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
                     : null;
         CaptureDateBasisText = CleanupDisplayText.DateBasis(detail.DateBasis);
         HasUserCaptureOverride = string.Equals(detail.DateBasis, "USER", StringComparison.OrdinalIgnoreCase);
+        IsDailyPhotoCategory = string.Equals(
+            detail.PhotoCategory,
+            MemoryKeeperPhotoCategories.Daily,
+            StringComparison.OrdinalIgnoreCase);
         RequestClearCaptureDateCommand.NotifyCanExecuteChanged();
         PlaceName = string.IsNullOrWhiteSpace(detail.PlaceName) ? "장소 미지정" : detail.PlaceName;
         Country = string.IsNullOrWhiteSpace(geography.Country) ? "-" : geography.Country;

@@ -30,6 +30,26 @@ public sealed class GalleryPlaceHierarchyProjectionTests
         var osaka = Assert.Single(japan.Places);
         Assert.Equal(osakaId, osaka.PlaceId);
         Assert.Equal($"registered:v1:{osakaId:D}", osaka.LocationKey);
+        Assert.True(osaka.IsRegisteredPlace);
+    }
+
+    [Fact]
+    public void Build_DistinguishesRegisteredPlacesFromRawLocationFallbackIds()
+    {
+        var registeredId = Guid.NewGuid();
+        var rawId = Guid.NewGuid();
+        var hierarchy = Hierarchy(
+            Year(2025,
+                Country(
+                    "대한민국",
+                    2,
+                    Place(registeredId, "등록 장소", 1),
+                    RawPlace(rawId, "원본 위치", 1))));
+
+        var places = Assert.Single(GalleryPlaceHierarchyProjection.Build(hierarchy)).Places;
+
+        Assert.True(Assert.Single(places, place => place.PlaceId == registeredId).IsRegisteredPlace);
+        Assert.False(Assert.Single(places, place => place.PlaceId == rawId).IsRegisteredPlace);
     }
 
     [Fact]
@@ -74,6 +94,15 @@ public sealed class GalleryPlaceHierarchyProjectionTests
         {
             MemorykeeperPlaceId = id,
             LocationKey = $"registered:v1:{id:D}",
+            DisplayName = name,
+            Count = count,
+        };
+
+    private static FastGalleryHierarchyNodeDto RawPlace(Guid id, string name, int count) =>
+        new()
+        {
+            PlaceId = id,
+            LocationKey = $"raw:v1:{id:D}",
             DisplayName = name,
             Count = count,
         };

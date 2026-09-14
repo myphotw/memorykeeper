@@ -307,6 +307,13 @@ public sealed class MemoryKeeperWriteApiRepository : IMemoryKeeperWriteApiReposi
             $"{Root}/files/capture-date", request, cancellationToken).ConfigureAwait(false)).Data,
             "촬영일 변경 응답이 비어 있습니다.");
 
+    public async Task<MemoryKeeperPhotoCategoryMutationResponse> SetPhotoCategoryAsync(
+        MemoryKeeperPhotoCategoryMutationRequest request,
+        CancellationToken cancellationToken = default) =>
+        Require((await _apiClient.PostAsync<MemoryKeeperPhotoCategoryMutationResponse>(
+            $"{Root}/files/category", request, cancellationToken).ConfigureAwait(false)).Data,
+            "사진 분류 변경 응답이 비어 있습니다.");
+
     public async Task<MemoryKeeperPendingAssignResponse> AssignPendingPlaceAsync(
         MemoryKeeperPendingAssignRequest request,
         CancellationToken cancellationToken = default) =>

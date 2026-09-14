@@ -95,7 +95,26 @@ public partial class GalleryViewModel : ObservableObject
 
     public bool CanInteract => !IsMutating;
 
-    public bool CanChangePlace => IsEditing && !IsMutating && SelectedCount > 0;
+    public bool CanManageCurrentPlace =>
+        !IsEditing
+        && !IsMutating
+        && SelectedNode is { IsRegisteredPlace: true, PlaceId: Guid placeId }
+        && SelectedNode.Kind is GalleryTreeNodeKind.Place or GalleryTreeNodeKind.PlaceBrowse
+        && placeId != Guid.Empty;
+
+    public bool IsDailySource => SelectedNode?.Kind == GalleryTreeNodeKind.Daily;
+
+    public bool ShowStandardPlaceChange => !IsDailySource;
+
+    public bool CanChangePlace => IsEditing && !IsMutating && SelectedCount > 0 && !IsDailySource;
+
+    public bool CanDirectAssignPlace => IsEditing && !IsMutating && SelectedCount > 0;
+
+    public bool CanChangePhotoCategory => IsEditing && !IsMutating && SelectedCount > 0;
+
+    public string PhotoCategoryActionText => IsDailySource ? "일상 해제" : "일상으로 분류";
+
+    public bool CanChangeCaptureDate => IsEditing && !IsMutating && SelectedCount > 0;
 
     public string SelectedCountText => $"{SelectedCount}장 선택";
 
@@ -188,6 +207,7 @@ public partial class GalleryViewModel : ObservableObject
         {
             SearchText = SearchText,
             SelectedNodeKey = SelectedNode?.BuildNodeKey(),
+            SelectedPlaceId = GetCurrentRegisteredPlaceId(),
             ExpandedNodeKeys = CollectExpandedNodeKeys(),
             FocusMediaId = mediaId ?? SelectedItem?.MediaId,
             GridScrollOffset = gridScrollOffset,
@@ -229,19 +249,61 @@ public partial class GalleryViewModel : ObservableObject
         OnPropertyChanged(nameof(IsPlaceBrowseMode));
     }
 
-    partial void OnIsEditingChanged(bool value) => OnPropertyChanged(nameof(CanChangePlace));
+    partial void OnIsEditingChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanManageCurrentPlace));
+        OnPropertyChanged(nameof(CanChangePlace));
+        OnPropertyChanged(nameof(CanDirectAssignPlace));
+        OnPropertyChanged(nameof(CanChangePhotoCategory));
+        OnPropertyChanged(nameof(CanChangeCaptureDate));
+    }
 
     partial void OnIsMutatingChanged(bool value)
     {
         OnPropertyChanged(nameof(CanInteract));
+        OnPropertyChanged(nameof(CanManageCurrentPlace));
         OnPropertyChanged(nameof(CanChangePlace));
+        OnPropertyChanged(nameof(CanDirectAssignPlace));
+        OnPropertyChanged(nameof(CanChangePhotoCategory));
+        OnPropertyChanged(nameof(CanChangeCaptureDate));
     }
 
     partial void OnSelectedCountChanged(int value)
     {
         OnPropertyChanged(nameof(CanChangePlace));
+        OnPropertyChanged(nameof(CanDirectAssignPlace));
+        OnPropertyChanged(nameof(CanChangePhotoCategory));
+        OnPropertyChanged(nameof(CanChangeCaptureDate));
         OnPropertyChanged(nameof(SelectedCountText));
     }
+
+    partial void OnSelectedNodeChanged(GalleryTreeNode? value)
+    {
+        OnPropertyChanged(nameof(CanManageCurrentPlace));
+        OnPropertyChanged(nameof(IsDailySource));
+        OnPropertyChanged(nameof(ShowStandardPlaceChange));
+        OnPropertyChanged(nameof(CanChangePlace));
+        OnPropertyChanged(nameof(PhotoCategoryActionText));
+    }
+
+    public bool TryGetCurrentRegisteredPlace(out Guid placeId, out string displayName)
+    {
+        if (CanManageCurrentPlace && SelectedNode is { PlaceId: Guid id } node)
+        {
+            placeId = id;
+            displayName = node.Title;
+            return true;
+        }
+
+        placeId = Guid.Empty;
+        displayName = string.Empty;
+        return false;
+    }
+
+    private Guid? GetCurrentRegisteredPlaceId() =>
+        SelectedNode is { IsRegisteredPlace: true, PlaceId: Guid placeId }
+            ? placeId
+            : null;
 
     public void EnterEditMode()
     {
@@ -411,7 +473,7 @@ public partial class GalleryViewModel : ObservableObject
 
         await RebuildPlaceTreeRootsAsync();
         var target = TreeRoots.SelectMany(root => root.Children)
-            .FirstOrDefault(node => node.PlaceId == placeId);
+            .FirstOrDefault(node => node.IsRegisteredPlace && node.PlaceId == placeId);
         if (target is null)
         {
             var fallback = TreeRoots.FirstOrDefault();
@@ -590,6 +652,7 @@ public partial class GalleryViewModel : ObservableObject
                         Kind = GalleryTreeNodeKind.PlaceBrowse,
                         Country = country.CountryFilter,
                         PlaceId = place.PlaceId,
+                        IsRegisteredPlace = place.IsRegisteredPlace,
                         LocationKey = place.LocationKey,
                         Title = place.DisplayName,
                         Count = place.PhotoCount,
@@ -697,20 +760,47 @@ public partial class GalleryViewModel : ObservableObject
                 case GalleryTreeNodeKind.Year when node.Year is int year:
                 {
                     _fastHierarchy ??= await _fastGallery.GetHierarchyAsync();
-                    var countries = FindYearNode(year)?.ChildNodes ?? [];
+                    var yearNode = FindYearNode(year);
+                    var countries = yearNode?.ChildNodes ?? [];
+                    var daily = GalleryDailyHierarchyProjection.Build(yearNode);
+                    var domesticCountries = countries.Where(country => IsDomesticCountry(country.Country)).ToList();
+                    var domesticAdded = false;
                     foreach (var country in countries)
                     {
+                        var isDomestic = IsDomesticCountry(country.Country);
+                        if (isDomestic && domesticAdded)
+                        {
+                            continue;
+                        }
+
+                        domesticAdded |= isDomestic;
                         node.Children.Add(new GalleryTreeNode
                         {
                             Kind = string.IsNullOrWhiteSpace(country.Country)
                                 ? GalleryTreeNodeKind.Unclassified
                                 : GalleryTreeNodeKind.Country,
                             Year = year,
-                            Country = country.Country,
-                            Title = country.Country ?? LibraryConstants.UnclassifiedTitle,
+                            Country = isDomestic ? GalleryDailyHierarchyProjection.DomesticCountryName : country.Country,
+                            Title = isDomestic ? "대한민국" : country.Country ?? LibraryConstants.UnclassifiedTitle,
                             Count = country.Count,
                             Depth = node.Depth + 1,
-                            CanExpand = country.ChildNodes.Count > 0,
+                            CanExpand = isDomestic
+                                ? domesticCountries.Any(item => item.ChildNodes.Count > 0) || daily is not null
+                                : country.ChildNodes.Count > 0,
+                        });
+                    }
+
+                    if (daily is { RequiresSyntheticDomesticCountry: true })
+                    {
+                        node.Children.Add(new GalleryTreeNode
+                        {
+                            Kind = GalleryTreeNodeKind.Country,
+                            Year = year,
+                            Country = "대한민국",
+                            Title = "대한민국",
+                            Count = daily.PhotoCount,
+                            Depth = node.Depth + 1,
+                            CanExpand = true,
                         });
                     }
 
@@ -719,8 +809,29 @@ public partial class GalleryViewModel : ObservableObject
                 case GalleryTreeNodeKind.Country
                     when node.Year is int year && !string.IsNullOrWhiteSpace(node.Country):
                 {
-                    var cities = FindYearNode(year)?.ChildNodes
-                        .FirstOrDefault(item => string.Equals(item.Country, node.Country, StringComparison.OrdinalIgnoreCase))?.ChildNodes ?? [];
+                    var yearNode = FindYearNode(year);
+                    var daily = GalleryDailyHierarchyProjection.Build(yearNode);
+                    if (IsDomesticCountry(node.Country) && daily is not null)
+                    {
+                        node.Children.Add(new GalleryTreeNode
+                        {
+                            Kind = GalleryTreeNodeKind.Daily,
+                            Year = year,
+                            Country = "대한민국",
+                            Title = "일상",
+                            Count = daily.PhotoCount,
+                            Depth = node.Depth + 1,
+                            CanExpand = false,
+                            ChildrenLoaded = true,
+                        });
+                    }
+
+                    var cities = yearNode?.ChildNodes
+                        .Where(item => IsDomesticCountry(node.Country)
+                            ? IsDomesticCountry(item.Country)
+                            : string.Equals(item.Country, node.Country, StringComparison.OrdinalIgnoreCase))
+                        .SelectMany(item => item.ChildNodes)
+                        .ToList() ?? [];
                     foreach (var city in GalleryRegionHierarchyProjection.Build(cities))
                     {
                         node.Children.Add(new GalleryTreeNode
@@ -749,7 +860,10 @@ public partial class GalleryViewModel : ObservableObject
                         ? node.RegionFilters
                         : [node.City!];
                     var regionNodes = FindYearNode(year)?.ChildNodes
-                        .FirstOrDefault(item => string.Equals(item.Country, node.Country, StringComparison.OrdinalIgnoreCase))?.ChildNodes
+                        .Where(item => IsDomesticCountry(node.Country)
+                            ? IsDomesticCountry(item.Country)
+                            : string.Equals(item.Country, node.Country, StringComparison.OrdinalIgnoreCase))
+                        .SelectMany(item => item.ChildNodes)
                         .Where(item => sourceRegions.Contains(item.Region ?? string.Empty, StringComparer.Ordinal))
                         .ToList() ?? [];
                     foreach (var regionNode in regionNodes)
@@ -767,6 +881,7 @@ public partial class GalleryViewModel : ObservableObject
                                     ? []
                                     : [regionNode.Region!],
                                 PlaceId = place.MemorykeeperPlaceId ?? place.PlaceId,
+                                IsRegisteredPlace = place.MemorykeeperPlaceId.HasValue,
                                 LocationKey = place.LocationKey,
                                 Title = place.DisplayName ?? LibraryConstants.UnclassifiedTitle,
                                 Count = place.Count,
@@ -790,6 +905,12 @@ public partial class GalleryViewModel : ObservableObject
 
     private FastGalleryHierarchyNodeDto? FindYearNode(int year) =>
         _fastHierarchy?.Roots.FirstOrDefault(node => node.Year == year);
+
+    private static bool IsDomesticCountry(string? country) =>
+        string.Equals(
+            PlaceNormalizer.NormalizeCountry(country),
+            "대한민국",
+            StringComparison.OrdinalIgnoreCase);
 
     private void RebuildVisibleTree()
     {
@@ -831,7 +952,10 @@ public partial class GalleryViewModel : ObservableObject
     private async Task RestoreSnapshotAsync(GalleryFocusSnapshot snapshot)
     {
         await ExpandNodesByKeysAsync(snapshot.ExpandedNodeKeys);
-        var node = FindNodeByKey(snapshot.SelectedNodeKey)
+        var node = snapshot.SelectedPlaceId is Guid placeId
+                       ? FindNodeByRegisteredPlaceId(placeId)
+                       : null;
+        node ??= FindNodeByKey(snapshot.SelectedNodeKey)
                    ?? TreeRoots.FirstOrDefault(n => n.Kind != GalleryTreeNodeKind.Separator);
         if (node is not null)
         {
@@ -920,6 +1044,39 @@ public partial class GalleryViewModel : ObservableObject
         return null;
     }
 
+    private GalleryTreeNode? FindNodeByRegisteredPlaceId(Guid placeId)
+    {
+        foreach (var root in TreeRoots)
+        {
+            var found = FindNodeByRegisteredPlaceId(root, placeId);
+            if (found is not null)
+            {
+                return found;
+            }
+        }
+
+        return null;
+    }
+
+    private static GalleryTreeNode? FindNodeByRegisteredPlaceId(GalleryTreeNode node, Guid placeId)
+    {
+        if (node.IsRegisteredPlace && node.PlaceId == placeId)
+        {
+            return node;
+        }
+
+        foreach (var child in node.Children)
+        {
+            var found = FindNodeByRegisteredPlaceId(child, placeId);
+            if (found is not null)
+            {
+                return found;
+            }
+        }
+
+        return null;
+    }
+
     private static GalleryTreeNode? FindNodeByKey(GalleryTreeNode node, string key)
     {
         if (string.Equals(node.BuildNodeKey(), key, StringComparison.Ordinal))
@@ -952,7 +1109,7 @@ public partial class GalleryViewModel : ObservableObject
         _currentPage = 1;
         var query = BuildQuery(node);
         GalleryDiagnostics.WriteStep(
-            $"Gallery hierarchy query year={query.Year}, country={query.Country}, city={query.City}, place={query.PlaceId}, search={query.SearchText}");
+            $"Gallery hierarchy query year={query.Year}, country={query.Country}, city={query.City}, place={query.PlaceId}, category={query.PhotoCategory}, search={query.SearchText}");
 
         try
         {
@@ -1232,6 +1389,7 @@ public partial class GalleryViewModel : ObservableObject
             PlaceId = isPlaceLeaf && locationKey is null ? node.PlaceId : null,
             Unclassified = node.Kind == GalleryTreeNodeKind.Unclassified ? true : null,
             Favorite = node.Kind == GalleryTreeNodeKind.Favorites ? true : null,
+            PhotoCategory = node.Kind == GalleryTreeNodeKind.Daily ? MemoryKeeperPhotoCategories.Daily : null,
         };
     }
 
@@ -1242,7 +1400,7 @@ public partial class GalleryViewModel : ObservableObject
             return "표시할 사진이 없습니다.";
         }
 
-        var displayCount = IsHierarchyPlaceLeaf(node) || node.Kind == GalleryTreeNodeKind.City
+        var displayCount = IsHierarchyPlaceLeaf(node) || node.Kind is GalleryTreeNodeKind.City or GalleryTreeNodeKind.Daily
             ? node.Count
             : loadedCount;
         return $"{node.Title} · {displayCount}장";
@@ -1283,6 +1441,9 @@ public partial class GalleryViewModel : ObservableObject
             AbsoluteLibraryPath = preview ?? thumbnail ?? string.Empty,
             CapturedAt = photo.EffectiveCaptureDatetime,
             PlaceId = photo.MemorykeeperPlaceId,
+            PhotoCategory = photo.PhotoCategory,
+            PhotoCategoryRevision = photo.PhotoCategoryRevision,
+            HasPhotoCategoryRevision = photo.HasPhotoCategoryRevision,
             MediaType = MediaTypeResolver.Resolve(photo.MimeType, photo.Extension, photo.Filename),
             IsFavorite = photo.Favorite,
             ThumbnailUrl = thumbnail,
@@ -1312,6 +1473,11 @@ public partial class GalleryViewModel : ObservableObject
                 break;
             case GalleryTreeNodeKind.Year:
                 parts.Add(node.Year?.ToString() ?? node.Title);
+                break;
+            case GalleryTreeNodeKind.Daily:
+                parts.Add(node.Year?.ToString() ?? "");
+                parts.Add("대한민국");
+                parts.Add("일상");
                 break;
             case GalleryTreeNodeKind.Unclassified:
                 parts.Add(node.Year?.ToString() ?? "");

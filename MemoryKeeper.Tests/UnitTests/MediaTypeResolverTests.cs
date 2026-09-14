@@ -95,4 +95,18 @@ public sealed class MediaTypeResolverTests
         Assert.Equal("USER", result.DateBasis);
         Assert.Equal(5, result.DateRevision);
     }
+
+    [Theory]
+    [InlineData("{\"date_revision\":0}", true, 0)]
+    [InlineData("{}", false, 0)]
+    public void DetailContractDistinguishesRevisionZeroFromMissingRevision(
+        string json,
+        bool expectedPresence,
+        int expectedRevision)
+    {
+        var detail = JsonSerializer.Deserialize<BackendDetail>(json)!;
+
+        Assert.Equal(expectedPresence, detail.HasDateRevision);
+        Assert.Equal(expectedRevision, detail.DateRevision);
+    }
 }

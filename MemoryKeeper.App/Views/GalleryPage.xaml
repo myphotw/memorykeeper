@@ -211,14 +211,25 @@
                     IsClosable="True" />
             </StackPanel>
 
-                <Button
-                    Content="편집"
+                <StackPanel
+                    Orientation="Horizontal"
+                    Spacing="8"
                     HorizontalAlignment="Right"
                     VerticalAlignment="Top"
-                    Style="{StaticResource MkSecondaryButtonStyle}"
-                    IsEnabled="{Binding CanInteract}"
-                    Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}"
-                    Click="EnterEditMode_OnClick" />
+                    Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}">
+                    <Button
+                        Content="편집"
+                        Style="{StaticResource MkSecondaryButtonStyle}"
+                        IsEnabled="{Binding CanInteract}"
+                        Click="EnterEditMode_OnClick" />
+                    <Button
+                        Content="장소 관리"
+                        Style="{StaticResource MkSecondaryButtonStyle}"
+                        IsEnabled="{Binding CanInteract}"
+                        Visibility="{Binding CanManageCurrentPlace, Converter={StaticResource BoolToVisibilityConverter}}"
+                        ToolTipService.ToolTip="현재 장소의 이름과 정보를 관리합니다."
+                        Click="ManageCurrentPlace_OnClick" />
+                </StackPanel>
 
                 <StackPanel
                     Orientation="Horizontal"
@@ -241,7 +252,24 @@
                         Content="장소 변경"
                         Style="{StaticResource MkPrimaryButtonStyle}"
                         IsEnabled="{Binding CanChangePlace}"
+                        Visibility="{Binding ShowStandardPlaceChange, Converter={StaticResource BoolToVisibilityConverter}}"
                         Click="ChangePlace_OnClick" />
+                    <Button
+                        Content="장소 직접 지정"
+                        Style="{StaticResource MkPrimaryButtonStyle}"
+                        IsEnabled="{Binding CanDirectAssignPlace}"
+                        ToolTipService.ToolTip="GPS 위치와 관계없이 선택한 기존 장소로 분류합니다. 장소 범위는 변경되지 않습니다."
+                        Click="DirectAssignPlace_OnClick" />
+                    <Button
+                        Content="{Binding PhotoCategoryActionText}"
+                        Style="{StaticResource MkPrimaryButtonStyle}"
+                        IsEnabled="{Binding CanChangePhotoCategory}"
+                        Click="ChangePhotoCategory_OnClick" />
+                    <Button
+                        Content="촬영일 변경"
+                        Style="{StaticResource MkPrimaryButtonStyle}"
+                        IsEnabled="{Binding CanChangeCaptureDate}"
+                        Click="ChangeCaptureDate_OnClick" />
                     <TextBlock
                         Text="{Binding SelectedCountText}"
                         VerticalAlignment="Center"

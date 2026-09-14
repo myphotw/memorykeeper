@@ -470,6 +470,35 @@ public sealed class MemoryKeeperWriteApiRepositoryTests
     }
 
     [Fact]
+    public async Task PhotoCategoryMutation_UsesMemoryKeeperCategoryContract()
+    {
+        const string key = "POST /api/memorykeeper/files/category";
+        var handler = new RecordingHandler
+        {
+            Responses =
+            {
+                [key] = $"{{\"items\":[{{\"file_id\":\"{FileId}\",\"photo_category\":\"DAILY\",\"category_revision\":4,\"memorykeeper_place_id\":null,\"place_match_source\":null,\"place_revision\":7}}]}}",
+            },
+        };
+        using var provider = BuildProvider(handler);
+        var repository = provider.GetRequiredService<IMemoryKeeperWriteApiRepository>();
+
+        var response = await repository.SetPhotoCategoryAsync(new MemoryKeeperPhotoCategoryMutationRequest
+        {
+            FileIds = [FileId],
+            PhotoCategory = MemoryKeeperPhotoCategories.Daily,
+            ExpectedCategoryRevisions = new Dictionary<string, int> { [FileId] = 3 },
+        });
+
+        using var payload = JsonDocument.Parse(handler.Bodies[key]);
+        Assert.Equal("DAILY", payload.RootElement.GetProperty("photo_category").GetString());
+        Assert.Equal(3, payload.RootElement.GetProperty("expected_category_revisions").GetProperty(FileId).GetInt32());
+        var item = Assert.Single(response.Items);
+        Assert.Equal(4, item.CategoryRevision);
+        Assert.Null(item.MemorykeeperPlaceId);
+    }
+
+    [Fact]
     public async Task Conflict_IsExposedToCallerForRefreshFlow()
     {
         var key = $"PATCH /api/memorykeeper/files/{FileId}/metadata";

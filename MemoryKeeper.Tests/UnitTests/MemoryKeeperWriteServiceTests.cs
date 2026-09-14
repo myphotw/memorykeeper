@@ -700,6 +700,43 @@ public sealed class MemoryKeeperWriteServiceTests
         Assert.Null(repository.LastCaptureDateRequest);
     }
 
+    [Fact]
+    public async Task PhotoCategoryMutation_SendsExpectedRevisionsAndInvalidatesRelatedCatalogs()
+    {
+        var repository = new FakeRepository();
+        var invalidation = new CatalogInvalidation();
+        var service = new MemoryKeeperWriteService(repository, invalidation);
+
+        var response = await service.SetPhotoCategoryAsync(
+            new Dictionary<Guid, int> { [MediaId] = 2 },
+            MemoryKeeperPhotoCategories.Daily);
+
+        Assert.NotNull(repository.LastPhotoCategoryRequest);
+        Assert.Equal(MemoryKeeperPhotoCategories.Daily, repository.LastPhotoCategoryRequest!.PhotoCategory);
+        Assert.Equal(2, repository.LastPhotoCategoryRequest.ExpectedCategoryRevisions[FileId]);
+        Assert.Equal(3, Assert.Single(response.Items).CategoryRevision);
+        Assert.True(invalidation.Consume(CatalogSurface.Gallery));
+        Assert.True(invalidation.Consume(CatalogSurface.Pending));
+        Assert.True(invalidation.Consume(CatalogSurface.Travel));
+    }
+
+    [Fact]
+    public async Task PhotoCategoryMutation_AllowsNormalAndRejectsUnsupportedCategory()
+    {
+        var repository = new FakeRepository();
+        var service = new MemoryKeeperWriteService(repository, new CatalogInvalidation());
+
+        await service.SetPhotoCategoryAsync(
+            new Dictionary<Guid, int> { [MediaId] = 0 },
+            MemoryKeeperPhotoCategories.Normal);
+        Assert.Equal(MemoryKeeperPhotoCategories.Normal, repository.LastPhotoCategoryRequest!.PhotoCategory);
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+            service.SetPhotoCategoryAsync(
+                new Dictionary<Guid, int> { [MediaId] = 1 },
+                "UNKNOWN"));
+    }
+
     private sealed class FakeRepository : IMemoryKeeperWriteApiRepository
     {
         public int MetadataRevision { get; set; }
@@ -715,6 +752,7 @@ public sealed class MemoryKeeperWriteServiceTests
         public List<(string Identity, int Revision, bool Hidden)> FileCatalogTagMutations { get; } = [];
         public (string Identity, int Revision, string Name)? CatalogRename { get; private set; }
         public MemoryKeeperCaptureDateMutationRequest? LastCaptureDateRequest { get; private set; }
+        public MemoryKeeperPhotoCategoryMutationRequest? LastPhotoCategoryRequest { get; private set; }
 
         public Task<MemoryKeeperFileMetadataPatchResponse> PatchMetadataAsync(string fileId, MemoryKeeperFileMetadataPatchRequest request, CancellationToken cancellationToken = default)
         {
@@ -771,6 +809,20 @@ public sealed class MemoryKeeperWriteServiceTests
                     DateRevision = request.ExpectedDateRevisions[fileId] + 1,
                 }).ToList(),
                 UpdatedCount = request.FileIds.Count,
+            });
+        }
+
+        public Task<MemoryKeeperPhotoCategoryMutationResponse> SetPhotoCategoryAsync(MemoryKeeperPhotoCategoryMutationRequest request, CancellationToken cancellationToken = default)
+        {
+            LastPhotoCategoryRequest = request;
+            return Task.FromResult(new MemoryKeeperPhotoCategoryMutationResponse
+            {
+                Items = request.FileIds.Select(fileId => new MemoryKeeperPhotoCategoryMutationItemDto
+                {
+                    FileId = fileId,
+                    PhotoCategory = request.PhotoCategory,
+                    CategoryRevision = request.ExpectedCategoryRevisions[fileId] + 1,
+                }).ToList(),
             });
         }
 

@@ -26,6 +26,7 @@ public interface IMemoryKeeperWriteApiRepository
     Task<CaptureDateCleanupGroupListDto> GetCaptureDateCleanupGroupsAsync(int limit = 5, string? cursor = null, CancellationToken cancellationToken = default);
     Task<CleanupGroupPhotoListDto> GetCaptureDateCleanupGroupPhotosAsync(string groupId, int limit = 50, string? cursor = null, CancellationToken cancellationToken = default);
     Task<MemoryKeeperCaptureDateMutationResponse> SetCaptureDateAsync(MemoryKeeperCaptureDateMutationRequest request, CancellationToken cancellationToken = default);
+    Task<MemoryKeeperPhotoCategoryMutationResponse> SetPhotoCategoryAsync(MemoryKeeperPhotoCategoryMutationRequest request, CancellationToken cancellationToken = default);
     Task<MemoryKeeperPendingAssignResponse> AssignPendingPlaceAsync(MemoryKeeperPendingAssignRequest request, CancellationToken cancellationToken = default);
     Task<MemoryKeeperFilePlaceStateQueryResponse> QueryFilePlaceStatesAsync(MemoryKeeperFilePlaceStateQueryRequest request, CancellationToken cancellationToken = default);
     Task<MemoryKeeperFilesAssignPlaceResponse> AssignFilePlacesAsync(MemoryKeeperFilesAssignPlaceRequest request, CancellationToken cancellationToken = default);

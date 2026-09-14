@@ -258,6 +258,32 @@ public sealed class SettingsPageLayoutTests
         }
     }
 
+    [Fact]
+    public void GalleryPlaceManagement_RequestSelectsTheExactPlaceIdInExistingSettingsView()
+    {
+        var settings = LoadSource("MemoryKeeper.App", "Views", "SettingsPage.xaml.cs");
+        var placeView = LoadSource("MemoryKeeper.App", "Views", "PlaceManagementView.xaml");
+        var placeCode = LoadSource("MemoryKeeper.App", "Views", "PlaceManagementView.xaml.cs");
+        var placeViewModel = LoadSource("MemoryKeeper.App", "ViewModels", "PlaceManagementViewModel.cs");
+        var settingsXaml = LoadSource("MemoryKeeper.App", "Views", "SettingsPage.xaml");
+
+        Assert.Contains("public void RequestPlaceSelection(Guid placeId)", settings, StringComparison.Ordinal);
+        Assert.Contains("_placeView.ViewModel.RequestSelection(placeId)", settings, StringComparison.Ordinal);
+        Assert.Contains("private Guid? _requestedPlaceId", placeViewModel, StringComparison.Ordinal);
+        Assert.Contains("Places.FirstOrDefault(place => place.Id == requestedPlaceId)", placeViewModel, StringComparison.Ordinal);
+        Assert.Contains("FilteredPlaces.FirstOrDefault(place => place.Id == requestedPlaceId)", placeViewModel, StringComparison.Ordinal);
+        Assert.Contains("ListSearchText = requestedPlace.DisplayName", placeViewModel, StringComparison.Ordinal);
+        Assert.Contains("ListSearchText = place.DisplayName", placeViewModel, StringComparison.Ordinal);
+        Assert.DoesNotContain("FirstOrDefault(place => place.DisplayName ==", placeViewModel, StringComparison.Ordinal);
+        Assert.Contains("SelectedPlace = FilteredPlaces.FirstOrDefault() ?? Places.FirstOrDefault()", placeViewModel, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"PlaceList\"", placeView, StringComparison.Ordinal);
+        Assert.Contains("PlaceList.ScrollIntoView(selectedPlace)", placeCode, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"BackNavigationButton\"", settingsXaml, StringComparison.Ordinal);
+        Assert.Contains("MkBackNavigationButtonStyle", settingsXaml, StringComparison.Ordinal);
+        Assert.Contains("current is { Kind: not NavigationKind.TopLevel }", settings, StringComparison.Ordinal);
+        Assert.Contains("BackRequested?.Invoke", settings, StringComparison.Ordinal);
+    }
+
     private static int Count(string source, string value)
     {
         var count = 0;

@@ -5,6 +5,9 @@ namespace MemoryKeeper.Application.DTOs;
 /// <summary>MemoryKeeper fast-read gallery contracts. These are deliberately separate from the common Gallery API.</summary>
 public sealed class FastGalleryPhotoDto
 {
+    private int _photoCategoryRevision;
+    private bool _hasPhotoCategoryRevision;
+
     [JsonPropertyName("common_file_id")] public long CommonFileId { get; init; }
     [JsonPropertyName("file_id")] public string FileId { get; init; } = string.Empty;
     [JsonPropertyName("filename")] public string Filename { get; init; } = string.Empty;
@@ -22,6 +25,20 @@ public sealed class FastGalleryPhotoDto
     [JsonPropertyName("place_display_name")] public string? PlaceDisplayName { get; init; }
     [JsonPropertyName("country")] public string? Country { get; init; }
     [JsonPropertyName("region")] public string? Region { get; init; }
+    [JsonPropertyName("photo_category")] public string PhotoCategory { get; init; } = MemoryKeeperPhotoCategories.Normal;
+    [JsonPropertyName("photo_category_revision")]
+    public int PhotoCategoryRevision
+    {
+        get => _photoCategoryRevision;
+        init
+        {
+            _photoCategoryRevision = value;
+            _hasPhotoCategoryRevision = true;
+        }
+    }
+
+    [JsonIgnore]
+    public bool HasPhotoCategoryRevision => _hasPhotoCategoryRevision;
 }
 
 public sealed class FastGalleryPhotoPageDto
@@ -62,6 +79,7 @@ public sealed class FastGalleryHierarchyNodeDto
     [JsonPropertyName("location_key")] public string? LocationKey { get; init; }
     [JsonPropertyName("display_name")] public string? DisplayName { get; init; }
     [JsonPropertyName("count")] public int Count { get; init; }
+    [JsonPropertyName("daily_count")] public int DailyCount { get; init; }
     [JsonPropertyName("children")] public IReadOnlyList<FastGalleryHierarchyNodeDto> Children { get; init; } = [];
     [JsonPropertyName("countries")] public IReadOnlyList<FastGalleryHierarchyNodeDto> Countries { get; init; } = [];
     [JsonPropertyName("regions")] public IReadOnlyList<FastGalleryHierarchyNodeDto> Regions { get; init; } = [];
@@ -92,4 +110,5 @@ public sealed class FastGalleryPhotoQuery
     public bool? HasGps { get; init; }
     public DateOnly? DateFrom { get; init; }
     public DateOnly? DateTo { get; init; }
+    public string? PhotoCategory { get; init; }
 }

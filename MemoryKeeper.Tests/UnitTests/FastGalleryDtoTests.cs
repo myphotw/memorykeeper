@@ -62,6 +62,21 @@ public sealed class FastGalleryDtoTests
     }
 
     [Fact]
+    public void PhotosAndHierarchy_DeserializeDailyCategoryContract()
+    {
+        const string photoJson = """{"file_id":"abc","filename":"daily.jpg","photo_category":"DAILY","photo_category_revision":3}""";
+        const string hierarchyJson = """{"year":2026,"count":12,"daily_count":4}""";
+
+        var photo = JsonSerializer.Deserialize<FastGalleryPhotoDto>(photoJson)!;
+        var year = JsonSerializer.Deserialize<FastGalleryHierarchyNodeDto>(hierarchyJson)!;
+
+        Assert.Equal(MemoryKeeperPhotoCategories.Daily, photo.PhotoCategory);
+        Assert.True(photo.HasPhotoCategoryRevision);
+        Assert.Equal(3, photo.PhotoCategoryRevision);
+        Assert.Equal(4, year.DailyCount);
+    }
+
+    [Fact]
     public void Hierarchy_OlderPayloadWithoutLocationKeyRemainsCompatible()
     {
         const string json = """{"years":[{"year":2025,"countries":[{"country":"Japan","regions":[{"region":"Tokyo","places":[{"memorykeeper_place_id":"00000000-0000-0000-0000-000000000001","display_name":"Shibuya","count":1}]}]}]}]}""";

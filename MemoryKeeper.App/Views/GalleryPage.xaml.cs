@@ -4,6 +4,7 @@ using MemoryKeeper.App.Models;
 using MemoryKeeper.App.Services;
 using MemoryKeeper.App.ViewModels;
 using MemoryKeeper.Application;
+using MemoryKeeper.Application.DTOs;
 using MemoryKeeper.Application.Interfaces;
 using MemoryKeeper.Application.Navigation;
 using MemoryKeeper.Application.Services;
@@ -20,8 +21,18 @@ using System.Numerics;
 
 namespace MemoryKeeper.App.Views;
 
+public sealed class GalleryPlaceManagementRequestedEventArgs(Guid placeId, string displayName) : EventArgs
+{
+    public Guid PlaceId { get; } = placeId;
+
+    public string DisplayName { get; } = displayName;
+}
+
 public sealed partial class GalleryPage : Page
 {
+    private const int MaximumCaptureDateBatchSize = 500;
+    private const int CaptureDateRevisionRefreshConcurrency = 8;
+
     private GalleryItem? _pageSelectedItem;
     private ObservableCollection<GalleryItem>? _subscribedItems;
     private readonly PhotoDetailView _photoDetailView;
@@ -29,6 +40,8 @@ public sealed partial class GalleryPage : Page
     private readonly ICatalogInvalidation _catalogInvalidation;
     private readonly MemoryKeeperPlaceService _placeService;
     private readonly GalleryPlaceAssignmentWorkflow _placeAssignmentWorkflow;
+    private readonly IGalleryApiRepository _galleryApiRepository;
+    private readonly MemoryKeeperWriteService _writeService;
     private readonly ILocationResolver _locationResolver;
     private readonly ILoggerFactory _loggerFactory;
     private readonly ISettingRepository _settingRepository;
@@ -41,6 +54,8 @@ public sealed partial class GalleryPage : Page
 
     public event EventHandler? OpenMapRequested;
 
+    public event EventHandler<GalleryPlaceManagementRequestedEventArgs>? OpenPlaceManagementRequested;
+
     public GalleryViewModel ViewModel { get; }
 
     public GalleryPage(
@@ -50,6 +65,8 @@ public sealed partial class GalleryPage : Page
         ICatalogInvalidation catalogInvalidation,
         MemoryKeeperPlaceService placeService,
         GalleryPlaceAssignmentWorkflow placeAssignmentWorkflow,
+        IGalleryApiRepository galleryApiRepository,
+        MemoryKeeperWriteService writeService,
         ILocationResolver locationResolver,
         ILoggerFactory loggerFactory,
         ISettingRepository settingRepository)
@@ -61,6 +78,8 @@ public sealed partial class GalleryPage : Page
         _catalogInvalidation = catalogInvalidation;
         _placeService = placeService;
         _placeAssignmentWorkflow = placeAssignmentWorkflow;
+        _galleryApiRepository = galleryApiRepository;
+        _writeService = writeService;
         _locationResolver = locationResolver;
         _loggerFactory = loggerFactory;
         _settingRepository = settingRepository;
@@ -605,6 +624,19 @@ public sealed partial class GalleryPage : Page
             ViewModel.SelectedCount);
     }
 
+    private void ManageCurrentPlace_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (!ViewModel.TryGetCurrentRegisteredPlace(out var placeId, out var displayName))
+        {
+            return;
+        }
+
+        ViewModel.CaptureFocusState(GetGridScrollOffset(), ViewModel.SelectedItem?.MediaId);
+        OpenPlaceManagementRequested?.Invoke(
+            this,
+            new GalleryPlaceManagementRequestedEventArgs(placeId, displayName));
+    }
+
     private async void ChangePlace_OnClick(object sender, RoutedEventArgs e)
     {
         if (!ViewModel.CanChangePlace) return;
@@ -688,6 +720,353 @@ public sealed partial class GalleryPage : Page
                 ViewModel.IsMutationInfoOpen = true;
             }
         }
+    }
+
+    private async void DirectAssignPlace_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (!ViewModel.CanDirectAssignPlace)
+        {
+            return;
+        }
+
+        var selected = GetSelectedMutationItems();
+        if (selected.Count == 0)
+        {
+            ViewModel.CompleteMutation(false, "장소를 지정할 사진을 선택하세요.");
+            return;
+        }
+        if (selected.Count > GalleryPlaceAssignmentWorkflow.MaximumBatchSize)
+        {
+            ViewModel.CompleteMutation(false, $"한 번에 최대 {GalleryPlaceAssignmentWorkflow.MaximumBatchSize:N0}장까지 변경할 수 있습니다.");
+            return;
+        }
+
+        PlaceDto? targetPlace;
+        try
+        {
+            var places = await _placeService.GetPlaceListAsync();
+            targetPlace = await DirectPlaceAssignmentDialog.ShowAsync(XamlRoot, places, selected.Count);
+        }
+        catch (Exception ex)
+        {
+            GalleryDiagnostics.WriteException("GalleryPage.DirectAssignPlace.LoadPlaces", ex);
+            ViewModel.MutationInfoSeverity = InfoBarSeverity.Error;
+            ViewModel.MutationInfoMessage = "등록된 장소를 불러오지 못했습니다. 다시 시도해 주세요.";
+            ViewModel.IsMutationInfoOpen = true;
+            return;
+        }
+
+        if (targetPlace is null)
+        {
+            return;
+        }
+
+        ViewModel.CaptureFocusState(GetGridScrollOffset(), ViewModel.SelectedItem?.MediaId);
+        ViewModel.BeginMutation(
+            $"{selected.Count:N0}장의 장소를 직접 지정하고 있습니다.",
+            "장소 범위는 변경하지 않습니다.");
+        try
+        {
+            await _placeAssignmentWorkflow.AssignPlaceDirectlyAsync(
+                selected.Select(item => item.BackendFileId).ToList(),
+                targetPlace.Id,
+                reportStage: stage => UpdateMutationProgressOnUiThread(
+                    $"{selected.Count:N0}장의 장소를 직접 지정하고 있습니다.",
+                    GalleryPlaceAssignmentWorkflow.GetDiagnosticStageName(stage)));
+
+            ViewModel.UpdateMutationStatus("사진첩을 갱신하고 있습니다.", "잠시 기다려 주세요.");
+            await ReloadCurrentGalleryAfterCaptureDateMutationAsync();
+            ViewModel.CompleteMutation(true, $"{selected.Count:N0}장을 {targetPlace.DisplayName}(으)로 분류했습니다.");
+        }
+        catch (ApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Conflict)
+        {
+            GalleryDiagnostics.WriteException("GalleryPage.DirectAssignPlace.Conflict", ex);
+            try
+            {
+                ViewModel.UpdateMutationStatus("최신 사진 상태를 불러오고 있습니다.", "잠시 기다려 주세요.");
+                await ReloadCurrentGalleryAfterCaptureDateMutationAsync();
+                ViewModel.CompleteMutation(false, "사진의 장소 상태가 변경되었습니다. 최신 상태를 불러왔으니 다시 시도해 주세요.");
+            }
+            catch (Exception reloadException)
+            {
+                GalleryDiagnostics.WriteException("GalleryPage.DirectAssignPlace.Reload", reloadException);
+                ViewModel.CompleteMutation(false, "장소 상태가 변경되었지만 최신 목록을 불러오지 못했습니다. 다시 시도해 주세요.");
+            }
+        }
+        catch (Exception ex)
+        {
+            GalleryDiagnostics.WriteException("GalleryPage.DirectAssignPlace", ex);
+            ViewModel.CompleteMutation(false, "사진의 장소를 직접 지정하지 못했습니다. 다시 시도해 주세요.");
+        }
+    }
+
+    private async void ChangePhotoCategory_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (!ViewModel.CanChangePhotoCategory)
+        {
+            return;
+        }
+
+        var selected = GetSelectedMutationItems();
+        if (selected.Count == 0)
+        {
+            ViewModel.CompleteMutation(false, "분류를 변경할 사진을 선택하세요.");
+            return;
+        }
+        if (selected.Count > MaximumCaptureDateBatchSize)
+        {
+            ViewModel.CompleteMutation(false, $"한 번에 최대 {MaximumCaptureDateBatchSize:N0}장까지 변경할 수 있습니다.");
+            return;
+        }
+
+        var sourceWasDaily = ViewModel.IsDailySource;
+        var targetCategory = sourceWasDaily
+            ? MemoryKeeperPhotoCategories.Normal
+            : MemoryKeeperPhotoCategories.Daily;
+        var actionText = sourceWasDaily ? "일상 해제" : "일상 분류";
+        ViewModel.CaptureFocusState(GetGridScrollOffset(), ViewModel.SelectedItem?.MediaId);
+        ViewModel.BeginMutation(
+            $"{selected.Count:N0}장의 {actionText}을 준비하고 있습니다.",
+            "최신 사진 상태를 확인하고 있습니다.");
+
+        try
+        {
+            var revisions = await LoadLatestPhotoCategoryRevisionsAsync(selected);
+            if (revisions is null)
+            {
+                ViewModel.CompleteMutation(false, "선택한 사진의 최신 분류 revision을 확인할 수 없습니다. 사진첩을 새로 고친 뒤 다시 시도해 주세요.");
+                return;
+            }
+
+            ViewModel.UpdateMutationStatus(
+                $"{selected.Count:N0}장의 {actionText}을 적용하고 있습니다.",
+                "잠시 기다려 주세요.");
+            await _writeService.SetPhotoCategoryAsync(revisions, targetCategory);
+
+            ViewModel.UpdateMutationStatus("사진첩을 갱신하고 있습니다.", "잠시 기다려 주세요.");
+            await ReloadCurrentGalleryAfterCaptureDateMutationAsync();
+            ViewModel.CompleteMutation(true, $"{selected.Count:N0}장의 {actionText}을 완료했습니다.");
+        }
+        catch (ApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Conflict)
+        {
+            GalleryDiagnostics.WriteException("GalleryPage.ChangePhotoCategory.Conflict", ex);
+            try
+            {
+                ViewModel.UpdateMutationStatus("최신 사진 상태를 불러오고 있습니다.", "잠시 기다려 주세요.");
+                await ReloadCurrentGalleryAfterCaptureDateMutationAsync();
+                ViewModel.CompleteMutation(false, "사진의 분류 상태가 변경되었습니다. 최신 상태를 불러왔으니 다시 시도해 주세요.");
+            }
+            catch (Exception reloadException)
+            {
+                GalleryDiagnostics.WriteException("GalleryPage.ChangePhotoCategory.Reload", reloadException);
+                ViewModel.CompleteMutation(false, "분류 상태가 변경되었지만 최신 목록을 불러오지 못했습니다. 다시 시도해 주세요.");
+            }
+        }
+        catch (Exception ex)
+        {
+            GalleryDiagnostics.WriteException("GalleryPage.ChangePhotoCategory", ex);
+            ViewModel.CompleteMutation(false, $"사진의 {actionText}을 완료하지 못했습니다. 다시 시도해 주세요.");
+        }
+    }
+
+    private List<GalleryItem> GetSelectedMutationItems() =>
+        PhotoGrid.SelectedItems
+            .OfType<GalleryItem>()
+            .Where(item => item.MediaId != Guid.Empty && !string.IsNullOrWhiteSpace(item.BackendFileId))
+            .DistinctBy(item => item.BackendFileId, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private async Task<IReadOnlyDictionary<Guid, int>?> LoadLatestPhotoCategoryRevisionsAsync(
+        IReadOnlyList<GalleryItem> selected)
+    {
+        var revisions = selected
+            .Where(item => item.Media.HasPhotoCategoryRevision && item.Media.PhotoCategoryRevision >= 0)
+            .ToDictionary(item => item.MediaId, item => item.Media.PhotoCategoryRevision);
+        var missing = selected.Where(item => !revisions.ContainsKey(item.MediaId)).ToList();
+        var refreshedCount = selected.Count - missing.Count;
+        foreach (var batch in missing.Chunk(CaptureDateRevisionRefreshConcurrency))
+        {
+            var refreshed = await Task.WhenAll(batch.Select(async item =>
+                (Item: item, Detail: await _galleryApiRepository.GetPhotoAsync(item.MediaId))));
+            foreach (var (item, detail) in refreshed)
+            {
+                if (!detail.HasPhotoCategoryRevision
+                    || detail.PhotoCategoryRevision < 0
+                    || !string.Equals(detail.FileId, item.BackendFileId, StringComparison.OrdinalIgnoreCase))
+                {
+                    return null;
+                }
+
+                revisions[item.MediaId] = detail.PhotoCategoryRevision;
+            }
+
+            refreshedCount += refreshed.Length;
+            ViewModel.UpdateMutationStatus(
+                $"{selected.Count:N0}장의 분류 변경을 준비하고 있습니다.",
+                $"최신 사진 상태 확인 {refreshedCount:N0}/{selected.Count:N0}");
+        }
+
+        return revisions.Count == selected.Count ? revisions : null;
+    }
+
+    private async void ChangeCaptureDate_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (!ViewModel.IsEditing || ViewModel.IsMutating)
+        {
+            return;
+        }
+
+        var selected = PhotoGrid.SelectedItems
+            .OfType<GalleryItem>()
+            .Where(item => item.MediaId != Guid.Empty && !string.IsNullOrWhiteSpace(item.BackendFileId))
+            .DistinctBy(item => item.BackendFileId, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (selected.Count == 0)
+        {
+            ViewModel.CompleteMutation(false, "촬영일을 변경할 사진을 선택하세요.");
+            return;
+        }
+        if (selected.Count > MaximumCaptureDateBatchSize)
+        {
+            ViewModel.CompleteMutation(false, $"한 번에 최대 {MaximumCaptureDateBatchSize:N0}장까지 변경할 수 있습니다.");
+            return;
+        }
+
+        var firstCapturedAt = selected[0].Media.CapturedAt;
+        var selectedDate = await CaptureDateDialog.ShowChangeAsync(
+            XamlRoot,
+            selected.Count,
+            selected[0].ThumbnailImage,
+            "선택한 사진에 같은 촬영일을 적용합니다.",
+            firstCapturedAt is DateTimeOffset capturedAt
+                ? DateOnly.FromDateTime(capturedAt.LocalDateTime)
+                : null);
+        if (selectedDate is not DateOnly captureDate)
+        {
+            return;
+        }
+
+        ViewModel.CaptureFocusState(GetGridScrollOffset(), ViewModel.SelectedItem?.MediaId);
+        ViewModel.BeginMutation(
+            $"{selected.Count:N0}장의 촬영일 변경을 준비하고 있습니다.",
+            "최신 사진 상태를 확인하고 있습니다.");
+        var stage = "prepare";
+
+        try
+        {
+            var revisions = await LoadLatestCaptureDateRevisionsAsync(selected);
+            if (revisions is null)
+            {
+                GalleryDiagnostics.WriteOperationFailure(
+                    operation: "GalleryCaptureDateAssignment",
+                    stage: stage,
+                    selectedCount: selected.Count,
+                    targetPlaceId: null,
+                    exceptionType: "CaptureDateRevisionUnavailable",
+                    safeMessage: "A selected photo did not provide a valid capture-date revision.");
+                ViewModel.CompleteMutation(
+                    false,
+                    "선택한 사진의 최신 촬영일 revision을 확인할 수 없습니다. 사진첩을 새로 고친 뒤 다시 시도해 주세요.");
+                return;
+            }
+
+            stage = "mutation";
+            ViewModel.UpdateMutationStatus(
+                $"{selected.Count:N0}장의 촬영일을 변경하고 있습니다.",
+                "잠시 기다려 주세요.");
+            var response = await _writeService.SetCaptureDateAsync(revisions, captureDate);
+
+            stage = "reload";
+            ViewModel.UpdateMutationStatus("사진첩을 갱신하고 있습니다.", "잠시 기다려 주세요.");
+            await ReloadCurrentGalleryAfterCaptureDateMutationAsync();
+            ViewModel.CompleteMutation(true, $"{response.UpdatedCount:N0}장의 촬영일을 변경했습니다.");
+        }
+        catch (ApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Conflict)
+        {
+            WriteCaptureDateFailure(stage, selected.Count, ex, "The capture-date revision was stale.");
+            try
+            {
+                ViewModel.UpdateMutationStatus("최신 사진 상태를 불러오고 있습니다.", "잠시 기다려 주세요.");
+                await ReloadCurrentGalleryAfterCaptureDateMutationAsync();
+                ViewModel.CompleteMutation(false, "사진 상태가 변경되었습니다. 최신 상태를 불러왔으니 다시 시도해 주세요.");
+            }
+            catch (Exception reloadException)
+            {
+                WriteCaptureDateFailure("reload", selected.Count, reloadException, "Gallery reload after a revision conflict failed.");
+                ViewModel.CompleteMutation(false, "사진 상태가 변경되었지만 최신 목록을 불러오지 못했습니다. 다시 시도해 주세요.");
+            }
+        }
+        catch (Exception ex)
+        {
+            WriteCaptureDateFailure(stage, selected.Count, ex, "Gallery capture-date assignment failed.");
+            ViewModel.CompleteMutation(
+                false,
+                stage == "reload"
+                    ? "촬영일은 변경했지만 사진첩을 새로 고치지 못했습니다. 다시 시도해 주세요."
+                    : "사진의 촬영일을 변경하지 못했습니다. 다시 시도해 주세요.");
+        }
+    }
+
+    private async Task<IReadOnlyDictionary<Guid, int>?> LoadLatestCaptureDateRevisionsAsync(
+        IReadOnlyList<GalleryItem> selected)
+    {
+        var revisions = new Dictionary<Guid, int>(selected.Count);
+        var refreshedCount = 0;
+        foreach (var batch in selected.Chunk(CaptureDateRevisionRefreshConcurrency))
+        {
+            var refreshed = await Task.WhenAll(batch.Select(async item =>
+                (Item: item, Detail: await _galleryApiRepository.GetPhotoAsync(item.MediaId))));
+            foreach (var (item, detail) in refreshed)
+            {
+                if (!detail.HasDateRevision
+                    || detail.DateRevision < 0
+                    || !string.Equals(detail.FileId, item.BackendFileId, StringComparison.OrdinalIgnoreCase))
+                {
+                    return null;
+                }
+
+                revisions[item.MediaId] = detail.DateRevision;
+            }
+
+            refreshedCount += refreshed.Length;
+            ViewModel.UpdateMutationStatus(
+                $"{selected.Count:N0}장의 촬영일 변경을 준비하고 있습니다.",
+                $"최신 사진 상태 확인 {refreshedCount:N0}/{selected.Count:N0}");
+        }
+
+        return revisions.Count == selected.Count ? revisions : null;
+    }
+
+    private async Task ReloadCurrentGalleryAfterCaptureDateMutationAsync()
+    {
+        _catalogInvalidation.Consume(CatalogSurface.Gallery);
+        try
+        {
+            await ViewModel.LoadCommand.ExecuteAsync(null);
+        }
+        catch
+        {
+            _catalogInvalidation.Invalidate(CatalogSurface.Gallery);
+            throw;
+        }
+    }
+
+    private static void WriteCaptureDateFailure(
+        string stage,
+        int selectedCount,
+        Exception exception,
+        string safeMessage)
+    {
+        var apiException = exception as ApiException;
+        GalleryDiagnostics.WriteOperationFailure(
+            operation: "GalleryCaptureDateAssignment",
+            stage: stage,
+            selectedCount: selectedCount,
+            targetPlaceId: null,
+            exceptionType: exception.GetType().Name,
+            safeMessage: safeMessage,
+            httpStatus: apiException is null ? null : (int)apiException.StatusCode,
+            detailCode: apiException?.DetailCode);
     }
 
     private Task<bool> ShowRadiusExpansionPreviewAsync(string placeName, PlaceRadiusExpansionPlan plan) =>

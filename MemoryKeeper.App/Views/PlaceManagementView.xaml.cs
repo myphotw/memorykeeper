@@ -36,6 +36,11 @@ public sealed partial class PlaceManagementView : UserControl
                     VerticalOffset = 24
                 }));
         }
+        else if (e.PropertyName is nameof(ViewModel.SelectedPlace)
+                 && ViewModel.SelectedPlace is { } selectedPlace)
+        {
+            DispatcherQueue.TryEnqueue(() => PlaceList.ScrollIntoView(selectedPlace));
+        }
     }
 
     private async void PlaceManagementView_OnLoaded(object sender, RoutedEventArgs e)

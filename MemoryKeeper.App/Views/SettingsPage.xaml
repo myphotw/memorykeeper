@@ -49,6 +49,24 @@
 
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
                 <StackPanel Spacing="6">
+                    <Button
+                        x:Name="BackNavigationButton"
+                        Style="{StaticResource MkBackNavigationButtonStyle}"
+                        Visibility="Collapsed"
+                        Click="BackNavigationButton_OnClick">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon
+                                FontFamily="{StaticResource MkIconFontFamily}"
+                                FontSize="14"
+                                Glyph="&#xE72B;" />
+                            <TextBlock
+                                x:Name="BackNavigationLabel"
+                                MaxWidth="280"
+                                Text="뒤로"
+                                TextTrimming="CharacterEllipsis"
+                                TextWrapping="NoWrap" />
+                        </StackPanel>
+                    </Button>
                     <TextBlock Text="설정" Style="{StaticResource MkPageTitleStyle}" Margin="0" />
                     <TextBlock
                         Text="사진과 MemoryKeeper의 동작을 관리합니다."

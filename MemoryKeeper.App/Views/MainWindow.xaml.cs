@@ -12,6 +12,8 @@ namespace MemoryKeeper.App.Views;
 
 public sealed partial class MainWindow : Window
 {
+    private const string GalleryPlaceManagementContextPrefix = "gallery-place:";
+
     private readonly IServiceProvider _serviceProvider;
     private readonly IPhotoNavigationState _photoNavigationState;
     private readonly IPlaceEditorSeedState _placeEditorSeedState;
@@ -836,6 +838,7 @@ public sealed partial class MainWindow : Window
             _galleryViewModel.BackRequested += OnShellBackRequested;
             page.OpenImportRequested += OnGalleryOpenImportRequested;
             page.OpenPendingRequested += OnGalleryOpenPendingRequested;
+            page.OpenPlaceManagementRequested += OnGalleryOpenPlaceManagementRequested;
             page.OpenMapRequested += OnPhotoDetailOpenMapRequested;
             ContentFrame.Content = page;
             if (ShouldReload("gallery", CatalogSurface.Gallery) || page.ViewModel.HasPendingFocusRestore)
@@ -960,7 +963,13 @@ public sealed partial class MainWindow : Window
         DetachHandlers();
         var page = GetOrCreatePage<SettingsPage>("settings");
         page.ViewModel.ResetCompleted += OnSettingsResetCompleted;
+        page.BackRequested += OnShellBackRequested;
         _settingsPage = page;
+        if (TryGetGalleryPlaceManagementId(entry.ContextKey, out var placeId))
+        {
+            page.RequestPlaceSelection(placeId);
+        }
+
         ContentFrame.Content = page;
         _ = page.ViewModel.LoadCommand.ExecuteAsync(targetSection);
     }
@@ -1066,6 +1075,23 @@ public sealed partial class MainWindow : Window
     private void OnGalleryOpenPendingRequested(object? sender, EventArgs e) =>
         SelectNavigationItem("pending");
 
+    private void OnGalleryOpenPlaceManagementRequested(
+        object? sender,
+        GalleryPlaceManagementRequestedEventArgs e) =>
+        NavigateDrillDown(
+            "settings",
+            $"{GalleryPlaceManagementContextPrefix}{e.PlaceId:D}",
+            "장소 관리",
+            "places");
+
+    private static bool TryGetGalleryPlaceManagementId(string? contextKey, out Guid placeId)
+    {
+        placeId = Guid.Empty;
+        return contextKey is not null
+               && contextKey.StartsWith(GalleryPlaceManagementContextPrefix, StringComparison.Ordinal)
+               && Guid.TryParse(contextKey[GalleryPlaceManagementContextPrefix.Length..], out placeId);
+    }
+
     private void OnTravelOpenDetailRequested(object? sender, EventArgs e) =>
         SelectNavigationItem(CreateTravelDetailEntry());
 
@@ -1115,6 +1141,7 @@ public sealed partial class MainWindow : Window
         if (_settingsPage is not null)
         {
             _settingsPage.ViewModel.ResetCompleted -= OnSettingsResetCompleted;
+            _settingsPage.BackRequested -= OnShellBackRequested;
             _settingsPage = null;
         }
 
@@ -1151,6 +1178,7 @@ public sealed partial class MainWindow : Window
         {
             _galleryPage.OpenImportRequested -= OnGalleryOpenImportRequested;
             _galleryPage.OpenPendingRequested -= OnGalleryOpenPendingRequested;
+            _galleryPage.OpenPlaceManagementRequested -= OnGalleryOpenPlaceManagementRequested;
             _galleryPage.OpenMapRequested -= OnPhotoDetailOpenMapRequested;
             _galleryPage = null;
         }

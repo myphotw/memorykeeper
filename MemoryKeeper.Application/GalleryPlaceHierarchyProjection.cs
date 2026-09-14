@@ -6,7 +6,8 @@ public sealed record GalleryPlaceProjectionItem(
     Guid PlaceId,
     string? LocationKey,
     string DisplayName,
-    int PhotoCount);
+    int PhotoCount,
+    bool IsRegisteredPlace);
 
 public sealed record GalleryCountryProjectionItem(
     string DisplayName,
@@ -57,7 +58,8 @@ public static class GalleryPlaceHierarchyProjection
                         place.PlaceId,
                         place.LocationKey,
                         place.DisplayName,
-                        place.PhotoCount))
+                        place.PhotoCount,
+                        place.IsRegisteredPlace))
                     .ToList()))
             .OrderByDescending(country => country.IsDomestic)
             .ThenBy(country => country.IsUnclassified)
@@ -89,12 +91,13 @@ public static class GalleryPlaceHierarchyProjection
         var placeId = node.MemorykeeperPlaceId ?? node.PlaceId;
         if (placeId is Guid id)
         {
+            var isRegisteredPlace = node.MemorykeeperPlaceId.HasValue;
             var title = string.IsNullOrWhiteSpace(node.DisplayName)
                 ? LibraryConstants.UnclassifiedTitle
                 : node.DisplayName.Trim();
             if (!country.Places.TryGetValue(id, out var place))
             {
-                place = new PlaceAccumulator(id, node.LocationKey, title);
+                place = new PlaceAccumulator(id, node.LocationKey, title, isRegisteredPlace);
                 country.Places.Add(id, place);
             }
             else if (string.IsNullOrWhiteSpace(place.LocationKey)
@@ -102,6 +105,8 @@ public static class GalleryPlaceHierarchyProjection
             {
                 place.LocationKey = node.LocationKey;
             }
+
+            place.IsRegisteredPlace |= isRegisteredPlace;
 
             place.PhotoCount += Math.Max(0, node.Count);
         }
@@ -123,7 +128,11 @@ public static class GalleryPlaceHierarchyProjection
         public Dictionary<Guid, PlaceAccumulator> Places { get; } = [];
     }
 
-    private sealed class PlaceAccumulator(Guid placeId, string? locationKey, string displayName)
+    private sealed class PlaceAccumulator(
+        Guid placeId,
+        string? locationKey,
+        string displayName,
+        bool isRegisteredPlace)
     {
         public Guid PlaceId { get; } = placeId;
 
@@ -132,5 +141,7 @@ public static class GalleryPlaceHierarchyProjection
         public string DisplayName { get; } = displayName;
 
         public int PhotoCount { get; set; }
+
+        public bool IsRegisteredPlace { get; set; } = isRegisteredPlace;
     }
 }

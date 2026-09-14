@@ -1,11 +1,17 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using MemoryKeeper.Application.DTOs;
 
 namespace MemoryKeeper.Application.DTOs.Gallery;
 
 /// <summary>TC-Backend Gallery detail response.</summary>
 public sealed class PhotoDetailDto
 {
+    private int _dateRevision;
+    private bool _hasDateRevision;
+    private int _photoCategoryRevision;
+    private bool _hasPhotoCategoryRevision;
+
     [JsonPropertyName("file_id")]
     public string FileId { get; init; } = string.Empty;
 
@@ -58,7 +64,35 @@ public sealed class PhotoDetailDto
     public string? DateBasis { get; init; }
 
     [JsonPropertyName("date_revision")]
-    public int DateRevision { get; init; }
+    public int DateRevision
+    {
+        get => _dateRevision;
+        init
+        {
+            _dateRevision = value;
+            _hasDateRevision = true;
+        }
+    }
+
+    [JsonIgnore]
+    public bool HasDateRevision => _hasDateRevision;
+
+    [JsonPropertyName("photo_category")]
+    public string PhotoCategory { get; init; } = MemoryKeeperPhotoCategories.Normal;
+
+    [JsonPropertyName("photo_category_revision")]
+    public int PhotoCategoryRevision
+    {
+        get => _photoCategoryRevision;
+        init
+        {
+            _photoCategoryRevision = value;
+            _hasPhotoCategoryRevision = true;
+        }
+    }
+
+    [JsonIgnore]
+    public bool HasPhotoCategoryRevision => _hasPhotoCategoryRevision;
 
     [JsonPropertyName("incomplete")]
     public bool Incomplete { get; init; }

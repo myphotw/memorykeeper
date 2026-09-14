@@ -32,6 +32,7 @@ public partial class PlaceManagementViewModel : ObservableObject
     private bool _suppressFormHandlers;
     private bool _applyingLocation;
     private List<Guid> _seedMediaIds = [];
+    private Guid? _requestedPlaceId;
 
     [ObservableProperty]
     private ObservableCollection<PlaceDto> places = [];
@@ -135,6 +136,14 @@ public partial class PlaceManagementViewModel : ObservableObject
     public XamlRoot? HostXamlRoot { get; set; }
 
     public event EventHandler? BackRequested;
+
+    public void RequestSelection(Guid placeId)
+    {
+        if (placeId != Guid.Empty)
+        {
+            _requestedPlaceId = placeId;
+        }
+    }
 
     public PlaceManagementViewModel(
         MemoryKeeperPlaceService placeService,
@@ -286,6 +295,11 @@ public partial class PlaceManagementViewModel : ObservableObject
         {
             await ReloadListsAsync();
 
+            if (TryApplyRequestedSelection())
+            {
+                return;
+            }
+
             if (_seedState.TryConsumeSeed(out var lat, out var lng, out var mediaIds))
             {
                 ClearFormInternal();
@@ -308,6 +322,30 @@ public partial class PlaceManagementViewModel : ObservableObject
                 StatusMessage = $"장소 {Places.Count}개 로드됨.";
             }
         });
+    }
+
+    private bool TryApplyRequestedSelection()
+    {
+        if (_requestedPlaceId is not Guid requestedPlaceId)
+        {
+            return false;
+        }
+
+        _requestedPlaceId = null;
+        var requestedPlace = Places.FirstOrDefault(place => place.Id == requestedPlaceId);
+        if (requestedPlace is null)
+        {
+            ClearFormInternal();
+            ListSearchText = string.Empty;
+            StatusMessage = "요청한 장소를 찾을 수 없습니다. 장소 목록을 확인하세요.";
+            return true;
+        }
+
+        ListSearchText = requestedPlace.DisplayName;
+        SelectedPlace = FilteredPlaces.FirstOrDefault(place => place.Id == requestedPlaceId)
+                        ?? requestedPlace;
+        StatusMessage = $"'{requestedPlace.DisplayName}' 장소를 선택했습니다.";
+        return true;
     }
 
     [RelayCommand]
@@ -713,11 +751,17 @@ public partial class PlaceManagementViewModel : ObservableObject
     private async Task ReloadAndSelectAsync(Guid placeId)
     {
         await ReloadListsAsync();
-        SelectedPlace = Places.FirstOrDefault(place => place.Id == placeId);
-        if (SelectedPlace is not null)
+        var place = Places.FirstOrDefault(item => item.Id == placeId);
+        if (place is not null)
         {
+            ListSearchText = place.DisplayName;
+            SelectedPlace = FilteredPlaces.FirstOrDefault(item => item.Id == placeId) ?? place;
             await SyncEditablePinAsync();
             await RefreshIncludedPhotoCountAsync();
+        }
+        else
+        {
+            SelectedPlace = null;
         }
     }
 

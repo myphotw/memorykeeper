@@ -115,6 +115,7 @@
                             Text="{Binding ListSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                             PlaceholderText="이름·주소" />
                         <ListView
+                            x:Name="PlaceList"
                             ItemsSource="{Binding FilteredPlaces, Mode=OneWay}"
                             SelectedItem="{Binding SelectedPlace, Mode=TwoWay}"
                             MaxHeight="120"

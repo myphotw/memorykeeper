@@ -74,6 +74,10 @@ public sealed class PhotoDetailDto
 
     public int DateRevision { get; init; }
 
+    public string PhotoCategory { get; init; } = MemoryKeeperPhotoCategories.Normal;
+
+    public int PhotoCategoryRevision { get; init; }
+
     public string Country { get; init; } = string.Empty;
 
     public string Province { get; init; } = string.Empty;

@@ -1,6 +1,8 @@
 using MemoryKeeper.App.ViewModels;
 using MemoryKeeper.Application.DTOs;
+using MemoryKeeper.Application.Navigation;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 
@@ -12,6 +14,7 @@ public sealed partial class SettingsPage : Page
     private readonly PendingMemoryView _pendingView;
     private readonly PlaceManagementView _placeView;
     private readonly TagManagementView _tagView;
+    private readonly INavigationService _navigation;
     private readonly HashSet<SettingsSection> _activatedSections = [];
     private readonly HashSet<SettingsSection> _activatingSections = [];
     private bool _syncingNavigation;
@@ -19,12 +22,18 @@ public sealed partial class SettingsPage : Page
 
     public SettingsViewModel ViewModel { get; }
 
+    public event EventHandler? BackRequested;
+
+    public void RequestPlaceSelection(Guid placeId) =>
+        _placeView.ViewModel.RequestSelection(placeId);
+
     public SettingsPage(
         SettingsViewModel viewModel,
         PhotoManagementView photoManagementView,
         PendingMemoryView pendingView,
         PlaceManagementView placeView,
-        TagManagementView tagView)
+        TagManagementView tagView,
+        INavigationService navigation)
     {
         ViewModel = viewModel;
         DataContext = viewModel;
@@ -32,6 +41,7 @@ public sealed partial class SettingsPage : Page
         _pendingView = pendingView;
         _placeView = placeView;
         _tagView = tagView;
+        _navigation = navigation;
         InitializeComponent();
 
         PhotoManagementHost.Content = _photoManagementView;
@@ -72,6 +82,7 @@ public sealed partial class SettingsPage : Page
         ViewModel.HostXamlRoot = XamlRoot;
         ApplyResponsiveNavigation(ActualWidth);
         SyncNavigationSelection();
+        RefreshBackNavigation();
         _ = ActivateSelectedSectionAsync();
     }
 
@@ -84,6 +95,23 @@ public sealed partial class SettingsPage : Page
         // MainWindow calls LoadCommand with the target section; avoid overwriting with null.
     }
 
+    private void RefreshBackNavigation()
+    {
+        var current = _navigation.Current;
+        var isVisible = current is { Kind: not NavigationKind.TopLevel }
+                        && _navigation.CanGoBack;
+        var label = _navigation.BackEntry?.DisplayLabel;
+        label = string.IsNullOrWhiteSpace(label) ? "뒤로" : label.Trim();
+
+        BackNavigationLabel.Text = label;
+        BackNavigationButton.Visibility = isVisible ? Visibility.Visible : Visibility.Collapsed;
+        ToolTipService.SetToolTip(BackNavigationButton, $"{label}(으)로 돌아가기");
+        AutomationProperties.SetName(BackNavigationButton, $"이전 화면: {label}");
+    }
+
+    private void BackNavigationButton_OnClick(object sender, RoutedEventArgs e) =>
+        BackRequested?.Invoke(this, EventArgs.Empty);
+
     private async Task ActivateSelectedSectionAsync()
     {
         var section = ViewModel.SelectedSettingsSection;
@@ -92,6 +120,7 @@ public sealed partial class SettingsPage : Page
             if (section == SettingsSection.Places)
             {
                 await _placeView.ActivateAsync();
+                await _placeView.ViewModel.LoadCommand.ExecuteAsync(null);
             }
             else if (section == SettingsSection.PendingMemories)
             {

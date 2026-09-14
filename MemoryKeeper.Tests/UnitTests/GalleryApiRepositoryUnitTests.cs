@@ -229,6 +229,29 @@ public sealed class GalleryApiRepositoryUnitTests
     }
 
     [Fact]
+    public async Task FastGallery_DailyCursorPageUsesOnlyYearCategoryAndCursorScope()
+    {
+        var handler = new StubHandler();
+        handler.Map["GET /api/memorykeeper/gallery/photos?limit=50&cursor=next%2B%2F%3D&year=2026&photo_category=DAILY"] = "{}";
+        using var provider = BuildProvider(handler);
+        var repo = provider.GetRequiredService<IFastGalleryApiRepository>();
+
+        await repo.GetPhotosAsync(new MemoryKeeper.Application.DTOs.FastGalleryPhotoQuery
+        {
+            Cursor = "next+/=",
+            Year = 2026,
+            PhotoCategory = MemoryKeeper.Application.DTOs.MemoryKeeperPhotoCategories.Daily,
+        });
+
+        var path = Assert.Single(handler.RequestPaths);
+        Assert.DoesNotContain("unclassified", path, StringComparison.Ordinal);
+        Assert.DoesNotContain("country", path, StringComparison.Ordinal);
+        Assert.DoesNotContain("region", path, StringComparison.Ordinal);
+        Assert.DoesNotContain("place_id", path, StringComparison.Ordinal);
+        Assert.DoesNotContain("location_key", path, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Catalog_Recovers_Gps_And_Region_From_Detail_When_Map_Row_Is_Missing()
     {
         var handler = new StubHandler();

@@ -17,6 +17,8 @@ public enum GalleryTreeNodeKind
     PlaceBrowse,
     /// <summary>Year under a place in Place browse mode.</summary>
     PlaceYear,
+    /// <summary>Virtual year-scoped DAILY category shown under 대한민국.</summary>
+    Daily,
     Unclassified,
     Favorites,
     Recent,
@@ -44,6 +46,9 @@ public partial class GalleryTreeNode : ObservableObject
     public IReadOnlyList<string> RegionFilters { get; init; } = [];
 
     public Guid? PlaceId { get; init; }
+
+    /// <summary>True only when this leaf represents a registered MemoryKeeper Place.</summary>
+    public bool IsRegisteredPlace { get; init; }
 
     /// <summary>Opaque Backend identity for a registered or raw Fast Gallery location leaf.</summary>
     public string? LocationKey { get; init; }
@@ -102,6 +107,7 @@ public partial class GalleryTreeNode : ObservableObject
     {
         GalleryTreeNodeKind.All => "all",
         GalleryTreeNodeKind.Year => $"year:{Year}",
+        GalleryTreeNodeKind.Daily => $"year:{Year}:daily",
         GalleryTreeNodeKind.Unclassified => $"year:{Year}:unclassified",
         GalleryTreeNodeKind.Country => $"year:{Year}:country:{Country}",
         GalleryTreeNodeKind.City => $"year:{Year}:country:{Country}:city:{CanonicalRegion ?? City}",
@@ -136,7 +142,9 @@ public partial class GalleryTreeNode : ObservableObject
     /// <summary>Shared Gallery/Visit Map filter contract for this hierarchy node.</summary>
     public GalleryHierarchyQuery BuildQuery(string? searchText = null) => new()
     {
-        SearchText = string.IsNullOrWhiteSpace(searchText) ? null : searchText.Trim(),
+        SearchText = Kind == GalleryTreeNodeKind.Daily || string.IsNullOrWhiteSpace(searchText)
+            ? null
+            : searchText.Trim(),
         FavoritesOnly = Kind == GalleryTreeNodeKind.Favorites,
         RecentOnly = Kind == GalleryTreeNodeKind.Recent,
         PendingOnly = Kind == GalleryTreeNodeKind.Pending,
@@ -154,6 +162,7 @@ public partial class GalleryTreeNode : ObservableObject
             ? PlaceId
             : null,
         UnclassifiedOnly = Kind == GalleryTreeNodeKind.Unclassified,
+        PhotoCategory = Kind == GalleryTreeNodeKind.Daily ? MemoryKeeperPhotoCategories.Daily : null,
     };
 
     partial void OnIsExpandedChanged(bool value) => OnPropertyChanged(nameof(ExpandGlyph));

@@ -232,6 +232,18 @@ public sealed class GalleryPlaceAssignmentWorkflow
         }
     }
 
+    /// <summary>
+    /// Assigns only the selected files to an existing Place. This direct path never
+    /// evaluates GPS containment and never updates the Place radius or geometry.
+    /// </summary>
+    public Task<GalleryPlaceAssignmentResult> AssignPlaceDirectlyAsync(
+        IReadOnlyCollection<string> fileIds,
+        Guid targetPlaceId,
+        Action<GalleryPlaceAssignmentStage>? reportStage = null,
+        CancellationToken cancellationToken = default,
+        Action<GalleryPlaceAssignmentDiagnosticSnapshot>? reportDiagnostic = null) =>
+        AssignAsync(fileIds, targetPlaceId, reportStage, cancellationToken, reportDiagnostic);
+
     public static string GetDiagnosticStageName(GalleryPlaceAssignmentStage stage) => stage switch
     {
         GalleryPlaceAssignmentStage.InitialStateQuery => "initial-state-query",

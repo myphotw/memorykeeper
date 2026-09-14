@@ -40,6 +40,31 @@ public class MainWindowNavigationSemanticsTests
         Assert.DoesNotContain("_photoNavigationState.ReturnSourceTag)", source, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void GalleryPlaceManagement_UsesExistingDrillDownBackStackAndPlaceIdContext()
+    {
+        var source = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Views", "MainWindow.xaml.cs"));
+        var placeService = File.ReadAllText(FindSourceFile(
+            "MemoryKeeper.Application",
+            "Services",
+            "MemoryKeeperPlaceService.cs"));
+
+        Assert.Contains("page.OpenPlaceManagementRequested += OnGalleryOpenPlaceManagementRequested", source, StringComparison.Ordinal);
+        Assert.Contains("_galleryPage.OpenPlaceManagementRequested -= OnGalleryOpenPlaceManagementRequested", source, StringComparison.Ordinal);
+        Assert.Contains("GalleryPlaceManagementContextPrefix", source, StringComparison.Ordinal);
+        Assert.Contains("$\"{GalleryPlaceManagementContextPrefix}{e.PlaceId:D}\"", source, StringComparison.Ordinal);
+        Assert.Contains("Guid.TryParse", source, StringComparison.Ordinal);
+        Assert.Contains("page.RequestPlaceSelection(placeId)", source, StringComparison.Ordinal);
+        Assert.Contains("page.BackRequested += OnShellBackRequested", source, StringComparison.Ordinal);
+        Assert.Contains("_galleryViewModel.BackRequested -= OnShellBackRequested", source, StringComparison.Ordinal);
+        Assert.Contains("NavigateDrillDown(", source, StringComparison.Ordinal);
+        Assert.Contains("\"places\"", source, StringComparison.Ordinal);
+        Assert.Contains("CaptureCurrentPageState();", source, StringComparison.Ordinal);
+        Assert.Contains("gallery.ViewModel.CaptureFocusState(offset)", source, StringComparison.Ordinal);
+        Assert.Contains("ShouldReload(\"gallery\", CatalogSurface.Gallery)", source, StringComparison.Ordinal);
+        Assert.Contains("_invalidation.Invalidate();", placeService, StringComparison.Ordinal);
+    }
+
     private static string FindSourceFile(params string[] segments)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

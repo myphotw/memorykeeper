@@ -33,6 +33,7 @@ public sealed class FastGalleryApiRepository : IFastGalleryApiRepository
             ["has_gps"] = query.HasGps?.ToString().ToLowerInvariant(),
             ["date_from"] = query.DateFrom?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             ["date_to"] = query.DateTo?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            ["photo_category"] = query.PhotoCategory,
         });
         return (await _apiClient.GetAsync<FastGalleryPhotoPageDto>(path, cancellationToken).ConfigureAwait(false)).Data
                ?? new FastGalleryPhotoPageDto();

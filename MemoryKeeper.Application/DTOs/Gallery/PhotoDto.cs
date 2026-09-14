@@ -1,10 +1,14 @@
 using System.Text.Json.Serialization;
+using MemoryKeeper.Application.DTOs;
 
 namespace MemoryKeeper.Application.DTOs.Gallery;
 
 /// <summary>TC-Backend Gallery list/search item.</summary>
 public sealed class PhotoDto
 {
+    private int _photoCategoryRevision;
+    private bool _hasPhotoCategoryRevision;
+
     [JsonPropertyName("file_id")]
     public string FileId { get; init; } = string.Empty;
 
@@ -107,4 +111,21 @@ public sealed class PhotoDto
 
     [JsonPropertyName("status")]
     public string? Status { get; init; }
+
+    [JsonPropertyName("photo_category")]
+    public string PhotoCategory { get; init; } = MemoryKeeperPhotoCategories.Normal;
+
+    [JsonPropertyName("photo_category_revision")]
+    public int PhotoCategoryRevision
+    {
+        get => _photoCategoryRevision;
+        init
+        {
+            _photoCategoryRevision = value;
+            _hasPhotoCategoryRevision = true;
+        }
+    }
+
+    [JsonIgnore]
+    public bool HasPhotoCategoryRevision => _hasPhotoCategoryRevision;
 }

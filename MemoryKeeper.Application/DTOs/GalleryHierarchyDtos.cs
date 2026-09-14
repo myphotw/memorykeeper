@@ -41,6 +41,9 @@ public sealed class GalleryHierarchyQuery
 
     public bool PendingOnly { get; init; }
 
+    /// <summary>Optional MemoryKeeper photo category filter (NORMAL or DAILY).</summary>
+    public string? PhotoCategory { get; init; }
+
     /// <summary>Optional Visit Map season filter, applied to the same NAS hierarchy rows.</summary>
     public TravelSeason? Season { get; init; }
 }

@@ -207,7 +207,7 @@ public sealed class GalleryPageLayoutTests
         Assert.Contains("ToFastQuery(_pagingNode, cursor, exactRegion)", gallery, StringComparison.Ordinal);
         Assert.Contains("StatusMessage = BuildFastStatusMessage(node, galleryItems.Count)", gallery, StringComparison.Ordinal);
         Assert.Contains("StatusMessage = BuildFastStatusMessage(_pagingNode, Items.Count)", gallery, StringComparison.Ordinal);
-        Assert.Contains("var displayCount = IsHierarchyPlaceLeaf(node) || node.Kind == GalleryTreeNodeKind.City", gallery, StringComparison.Ordinal);
+        Assert.Contains("var displayCount = IsHierarchyPlaceLeaf(node) || node.Kind is GalleryTreeNodeKind.City or GalleryTreeNodeKind.Daily", gallery, StringComparison.Ordinal);
         Assert.Contains("$\"{node.Title} · {galleryItems.Count}/{_totalCount}장\"", gallery, StringComparison.Ordinal);
     }
 
@@ -261,6 +261,7 @@ public sealed class GalleryPageLayoutTests
         Assert.Contains("Content=\"편집 종료\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Content=\"전체 선택\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Content=\"장소 변경\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Content=\"촬영일 변경\"", xaml, StringComparison.Ordinal);
         Assert.Contains("SelectionChanged=\"PhotoGrid_OnSelectionChanged\"", xaml, StringComparison.Ordinal);
         Assert.Contains("PhotoGrid.SelectionMode = ListViewSelectionMode.Multiple", page, StringComparison.Ordinal);
         Assert.Contains("PhotoGrid.SelectedItems", page, StringComparison.Ordinal);
@@ -287,6 +288,46 @@ public sealed class GalleryPageLayoutTests
     }
 
     [Fact]
+    public void GalleryPlaceManagement_IsARegisteredPlaceOnlyNormalModeAction()
+    {
+        var xaml = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Views", "GalleryPage.xaml"));
+        var page = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Views", "GalleryPage.xaml.cs"));
+        var viewModel = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "ViewModels", "GalleryViewModel.cs"));
+        var treeNode = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Models", "GalleryTreeNode.cs"));
+
+        Assert.Contains("Content=\"장소 관리\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Visibility=\"{Binding CanManageCurrentPlace", xaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"ManageCurrentPlace_OnClick\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("현재 장소의 이름과 정보를 관리합니다.", xaml, StringComparison.Ordinal);
+        Assert.Contains("ConverterParameter=Invert", xaml, StringComparison.Ordinal);
+        Assert.Contains("public bool IsRegisteredPlace { get; init; }", treeNode, StringComparison.Ordinal);
+        Assert.Contains("IsRegisteredPlace: true", viewModel, StringComparison.Ordinal);
+        Assert.Contains("SelectedNode.Kind is GalleryTreeNodeKind.Place or GalleryTreeNodeKind.PlaceBrowse", viewModel, StringComparison.Ordinal);
+        Assert.Contains("!IsEditing", viewModel, StringComparison.Ordinal);
+        Assert.Contains("TryGetCurrentRegisteredPlace", page, StringComparison.Ordinal);
+        Assert.Contains("OpenPlaceManagementRequested?.Invoke", page, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.CaptureFocusState", page, StringComparison.Ordinal);
+        Assert.Contains("Content=\"장소 변경\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Content=\"촬영일 변경\"", xaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GalleryPlaceManagement_PreservesRegisteredPlaceIdentityForRefreshAndRestore()
+    {
+        var focusState = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Services", "IGalleryFocusState.cs"));
+        var viewModel = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "ViewModels", "GalleryViewModel.cs"));
+        var projection = File.ReadAllText(FindSourceFile("MemoryKeeper.Application", "GalleryPlaceHierarchyProjection.cs"));
+
+        Assert.Contains("public Guid? SelectedPlaceId { get; init; }", focusState, StringComparison.Ordinal);
+        Assert.Contains("SelectedPlaceId = GetCurrentRegisteredPlaceId()", viewModel, StringComparison.Ordinal);
+        Assert.Contains("FindNodeByRegisteredPlaceId(placeId)", viewModel, StringComparison.Ordinal);
+        Assert.Contains("node.IsRegisteredPlace && node.PlaceId == placeId", viewModel, StringComparison.Ordinal);
+        Assert.Contains("IsRegisteredPlace = place.MemorykeeperPlaceId.HasValue", viewModel, StringComparison.Ordinal);
+        Assert.Contains("IsRegisteredPlace = place.IsRegisteredPlace", viewModel, StringComparison.Ordinal);
+        Assert.Contains("var isRegisteredPlace = node.MemorykeeperPlaceId.HasValue", projection, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void GalleryBatchEdit_PreservesLoadedSelectionAndTargetsAuthoritativeRegisteredNode()
     {
         var page = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Views", "GalleryPage.xaml.cs"));
@@ -299,6 +340,128 @@ public sealed class GalleryPageLayoutTests
         Assert.Contains("await SelectNodeAsync(target)", viewModel, StringComparison.Ordinal);
         Assert.Contains("_fastHierarchy = null", viewModel, StringComparison.Ordinal);
         Assert.Contains("LoadNextRegionPageAsync", viewModel, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GalleryCaptureDateBatch_ReusesExistingMutationAndKeepsCurrentEditSession()
+    {
+        var xaml = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Views", "GalleryPage.xaml"));
+        var page = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Views", "GalleryPage.xaml.cs"));
+        var viewModel = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "ViewModels", "GalleryViewModel.cs"));
+        var dialog = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Dialogs", "CaptureDateDialog.cs"));
+        var service = File.ReadAllText(FindSourceFile("MemoryKeeper.Application", "Services", "MemoryKeeperWriteService.cs"));
+        var request = File.ReadAllText(FindSourceFile("MemoryKeeper.Application", "DTOs", "CleanupGroupApiDtos.cs"));
+
+        var handlerStart = page.IndexOf("private async void ChangeCaptureDate_OnClick", StringComparison.Ordinal);
+        var revisionStart = page.IndexOf("private async Task<IReadOnlyDictionary<Guid, int>?> LoadLatestCaptureDateRevisionsAsync", handlerStart, StringComparison.Ordinal);
+        var reloadStart = page.IndexOf("private async Task ReloadCurrentGalleryAfterCaptureDateMutationAsync", revisionStart, StringComparison.Ordinal);
+        var diagnosticsStart = page.IndexOf("private static void WriteCaptureDateFailure", reloadStart, StringComparison.Ordinal);
+        Assert.True(handlerStart >= 0 && revisionStart > handlerStart && reloadStart > revisionStart && diagnosticsStart > reloadStart);
+        var handler = page[handlerStart..revisionStart];
+        var revisionRefresh = page[revisionStart..reloadStart];
+        var reload = page[reloadStart..diagnosticsStart];
+
+        Assert.Contains("Content=\"촬영일 변경\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("IsEnabled=\"{Binding CanChangeCaptureDate}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"ChangeCaptureDate_OnClick\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("CanChangeCaptureDate => IsEditing && !IsMutating && SelectedCount > 0", viewModel, StringComparison.Ordinal);
+        Assert.Contains("PhotoGrid.SelectedItems", handler, StringComparison.Ordinal);
+        Assert.Contains("DistinctBy(item => item.BackendFileId", handler, StringComparison.Ordinal);
+        Assert.Contains("CaptureDateDialog.ShowChangeAsync", handler, StringComparison.Ordinal);
+        Assert.Contains("public static async Task<DateOnly?> ShowChangeAsync", dialog, StringComparison.Ordinal);
+        Assert.Contains("MaximumCaptureDateBatchSize = 500", page, StringComparison.Ordinal);
+
+        Assert.Contains("_galleryApiRepository.GetPhotoAsync(item.MediaId)", revisionRefresh, StringComparison.Ordinal);
+        Assert.Contains("CaptureDateRevisionRefreshConcurrency", revisionRefresh, StringComparison.Ordinal);
+        Assert.Contains("!detail.HasDateRevision", revisionRefresh, StringComparison.Ordinal);
+        Assert.Contains("detail.DateRevision < 0", revisionRefresh, StringComparison.Ordinal);
+        Assert.DoesNotContain("detail.DateRevision <= 0", revisionRefresh, StringComparison.Ordinal);
+        Assert.Contains("revisions[item.MediaId] = detail.DateRevision", revisionRefresh, StringComparison.Ordinal);
+        Assert.Contains("_writeService.SetCaptureDateAsync(revisions, captureDate)", handler, StringComparison.Ordinal);
+        Assert.Contains("userCaptureDate?.ToString(\"yyyy-MM-dd\"", service, StringComparison.Ordinal);
+        Assert.Contains("ExpectedDateRevisions = revisions", service, StringComparison.Ordinal);
+        Assert.Contains("expected_date_revisions", request, StringComparison.Ordinal);
+
+        Assert.Contains("ViewModel.CaptureFocusState", handler, StringComparison.Ordinal);
+        Assert.Contains("_catalogInvalidation.Consume(CatalogSurface.Gallery)", reload, StringComparison.Ordinal);
+        Assert.Contains("await ViewModel.LoadCommand.ExecuteAsync(null)", reload, StringComparison.Ordinal);
+        Assert.Contains("_catalogInvalidation.Invalidate(CatalogSurface.Gallery)", reload, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.CompleteMutation(true", handler, StringComparison.Ordinal);
+        Assert.Contains("HttpStatusCode.Conflict", handler, StringComparison.Ordinal);
+        Assert.Contains("최신 상태를 불러왔으니 다시 시도해 주세요", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("ReloadAndSelectRegisteredPlaceAsync", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("ViewModel.ExitEditMode", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("PhotoGrid.SelectionMode = ListViewSelectionMode.None", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("Items.Remove", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("SelectedItems.Clear", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("ClearNativeSelection", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("Task.Delay", handler + revisionRefresh + reload, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GalleryDailyCategory_UsesVirtualNodeExactQueryAndSafeMutationReload()
+    {
+        var xaml = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Views", "GalleryPage.xaml"));
+        var page = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Views", "GalleryPage.xaml.cs"));
+        var viewModel = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "ViewModels", "GalleryViewModel.cs"));
+        var tree = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Models", "GalleryTreeNode.cs"));
+        var repository = File.ReadAllText(FindSourceFile("MemoryKeeper.Infrastructure", "Repositories", "Api", "FastGalleryApiRepository.cs"));
+
+        Assert.Contains("Content=\"{Binding PhotoCategoryActionText}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Content=\"장소 직접 지정\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Visibility=\"{Binding ShowStandardPlaceChange", xaml, StringComparison.Ordinal);
+        Assert.Contains("PhotoCategoryActionText => IsDailySource ? \"일상 해제\" : \"일상으로 분류\"", viewModel, StringComparison.Ordinal);
+        Assert.Contains("GalleryTreeNodeKind.Daily", tree, StringComparison.Ordinal);
+        Assert.Contains("GalleryTreeNodeKind.Daily => $\"year:{Year}:daily\"", tree, StringComparison.Ordinal);
+        Assert.Contains("if (isDomestic && domesticAdded)", viewModel, StringComparison.Ordinal);
+        var dailyNodeStart = viewModel.IndexOf("Kind = GalleryTreeNodeKind.Daily", StringComparison.Ordinal);
+        var dailyNodeEnd = viewModel.IndexOf("var cities = yearNode?.ChildNodes", dailyNodeStart, StringComparison.Ordinal);
+        Assert.True(dailyNodeStart >= 0 && dailyNodeEnd > dailyNodeStart);
+        Assert.DoesNotContain("PlaceId =", viewModel[dailyNodeStart..dailyNodeEnd], StringComparison.Ordinal);
+        Assert.Contains("PhotoCategory = Kind == GalleryTreeNodeKind.Daily ? MemoryKeeperPhotoCategories.Daily : null", tree, StringComparison.Ordinal);
+        Assert.Contains("PhotoCategory = node.Kind == GalleryTreeNodeKind.Daily ? MemoryKeeperPhotoCategories.Daily : null", viewModel, StringComparison.Ordinal);
+        Assert.Contains("[\"photo_category\"] = query.PhotoCategory", repository, StringComparison.Ordinal);
+        Assert.Contains("await _writeService.SetPhotoCategoryAsync(revisions, targetCategory)", page, StringComparison.Ordinal);
+        Assert.Contains("item.Media.HasPhotoCategoryRevision", page, StringComparison.Ordinal);
+        Assert.Contains("detail.HasPhotoCategoryRevision", page, StringComparison.Ordinal);
+        Assert.Contains("await ReloadCurrentGalleryAfterCaptureDateMutationAsync()", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("SelectedItems.Clear", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("ClearNativeSelection", page, StringComparison.Ordinal);
+        Assert.Contains("Text=\"분류: 일상\"", File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Views", "PhotoDetailView.xaml")), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GalleryDirectPlaceAssignment_BypassesRadiusWorkflowAndKeepsStandardPlaceChange()
+    {
+        var page = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Views", "GalleryPage.xaml.cs"));
+        var workflow = File.ReadAllText(FindSourceFile("MemoryKeeper.Application", "Services", "GalleryPlaceAssignmentWorkflow.cs"));
+        var dialog = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Dialogs", "DirectPlaceAssignmentDialog.cs"));
+        var directStart = page.IndexOf("private async void DirectAssignPlace_OnClick", StringComparison.Ordinal);
+        var categoryStart = page.IndexOf("private async void ChangePhotoCategory_OnClick", directStart, StringComparison.Ordinal);
+        Assert.True(directStart >= 0 && categoryStart > directStart);
+        var directHandler = page[directStart..categoryStart];
+        var directWorkflowStart = workflow.IndexOf("public Task<GalleryPlaceAssignmentResult> AssignPlaceDirectlyAsync", StringComparison.Ordinal);
+        var diagnosticStart = workflow.IndexOf("public static string GetDiagnosticStageName", directWorkflowStart, StringComparison.Ordinal);
+        Assert.True(directWorkflowStart >= 0 && diagnosticStart > directWorkflowStart);
+        var directWorkflow = workflow[directWorkflowStart..diagnosticStart];
+
+        Assert.Contains("DirectPlaceAssignmentDialog.ShowAsync", directHandler, StringComparison.Ordinal);
+        Assert.Contains("AssignPlaceDirectlyAsync", directHandler, StringComparison.Ordinal);
+        Assert.Contains("selected.Select(item => item.BackendFileId)", directHandler, StringComparison.Ordinal);
+        Assert.Contains("ReloadCurrentGalleryAfterCaptureDateMutationAsync", directHandler, StringComparison.Ordinal);
+        Assert.DoesNotContain("ExpandExistingRadiusAsync", directHandler, StringComparison.Ordinal);
+        Assert.DoesNotContain("UpdateWithRadiusImpactAsync", directHandler, StringComparison.Ordinal);
+        Assert.DoesNotContain("PlanRadius", directHandler, StringComparison.Ordinal);
+        Assert.DoesNotContain("HasGps", directHandler, StringComparison.Ordinal);
+        Assert.DoesNotContain("GpsLatitude", directHandler, StringComparison.Ordinal);
+        Assert.Contains("AssignAsync(fileIds, targetPlaceId", directWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("ExpandExistingRadiusAsync", directWorkflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("UpdateWithRadiusImpactAsync", directWorkflow, StringComparison.Ordinal);
+        Assert.Contains("장소 범위는 변경되지 않습니다", dialog, StringComparison.Ordinal);
+        Assert.DoesNotContain("ViewModel.ExitEditMode", directHandler, StringComparison.Ordinal);
+        Assert.Contains("private async void ChangePlace_OnClick", page, StringComparison.Ordinal);
+        Assert.Contains("PlaceRegistrationDialog.ShowAsync", page, StringComparison.Ordinal);
+        Assert.Contains("ShowRadiusExpansionPreviewAsync", page, StringComparison.Ordinal);
     }
 
     [Fact]
