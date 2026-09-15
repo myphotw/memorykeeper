@@ -866,29 +866,31 @@ public partial class GalleryViewModel : ObservableObject
                         .SelectMany(item => item.ChildNodes)
                         .Where(item => sourceRegions.Contains(item.Region ?? string.Empty, StringComparer.Ordinal))
                         .ToList() ?? [];
-                    foreach (var regionNode in regionNodes)
+                    var places = regionNodes
+                        .SelectMany(regionNode => regionNode.ChildNodes.Select(place => (RegionNode: regionNode, Place: place)))
+                        .OrderBy(
+                            item => item.Place.DisplayName ?? LibraryConstants.UnclassifiedTitle,
+                            StringComparer.CurrentCultureIgnoreCase);
+                    foreach (var (regionNode, place) in places)
                     {
-                        foreach (var place in regionNode.ChildNodes)
+                        node.Children.Add(new GalleryTreeNode
                         {
-                            node.Children.Add(new GalleryTreeNode
-                            {
-                                Kind = GalleryTreeNodeKind.Place,
-                                Year = year,
-                                Country = node.Country,
-                                City = node.City,
-                                CanonicalRegion = node.CanonicalRegion,
-                                RegionFilters = string.IsNullOrWhiteSpace(regionNode.Region)
-                                    ? []
-                                    : [regionNode.Region!],
-                                PlaceId = place.MemorykeeperPlaceId ?? place.PlaceId,
-                                IsRegisteredPlace = place.MemorykeeperPlaceId.HasValue,
-                                LocationKey = place.LocationKey,
-                                Title = place.DisplayName ?? LibraryConstants.UnclassifiedTitle,
-                                Count = place.Count,
-                                Depth = node.Depth + 1,
-                                CanExpand = false,
-                            });
-                        }
+                            Kind = GalleryTreeNodeKind.Place,
+                            Year = year,
+                            Country = node.Country,
+                            City = node.City,
+                            CanonicalRegion = node.CanonicalRegion,
+                            RegionFilters = string.IsNullOrWhiteSpace(regionNode.Region)
+                                ? []
+                                : [regionNode.Region!],
+                            PlaceId = place.MemorykeeperPlaceId ?? place.PlaceId,
+                            IsRegisteredPlace = place.MemorykeeperPlaceId.HasValue,
+                            LocationKey = place.LocationKey,
+                            Title = place.DisplayName ?? LibraryConstants.UnclassifiedTitle,
+                            Count = place.Count,
+                            Depth = node.Depth + 1,
+                            CanExpand = false,
+                        });
                     }
 
                     break;

@@ -26,7 +26,7 @@ public sealed class FastGalleryPhotoDto
     [JsonPropertyName("country")] public string? Country { get; init; }
     [JsonPropertyName("region")] public string? Region { get; init; }
     [JsonPropertyName("photo_category")] public string PhotoCategory { get; init; } = MemoryKeeperPhotoCategories.Normal;
-    [JsonPropertyName("photo_category_revision")]
+    [JsonPropertyName("category_revision")]
     public int PhotoCategoryRevision
     {
         get => _photoCategoryRevision;

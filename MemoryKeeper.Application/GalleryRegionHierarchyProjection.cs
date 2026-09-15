@@ -49,6 +49,7 @@ public static class GalleryRegionHierarchyProjection
                 SelectDisplayName(region),
                 region.PhotoCount,
                 region.SourceRegions.ToList()))
+            .OrderBy(region => region.DisplayName, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
     }
 

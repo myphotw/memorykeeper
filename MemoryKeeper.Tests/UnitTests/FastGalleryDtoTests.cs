@@ -64,7 +64,7 @@ public sealed class FastGalleryDtoTests
     [Fact]
     public void PhotosAndHierarchy_DeserializeDailyCategoryContract()
     {
-        const string photoJson = """{"file_id":"abc","filename":"daily.jpg","photo_category":"DAILY","photo_category_revision":3}""";
+        const string photoJson = """{"file_id":"abc","filename":"daily.jpg","photo_category":"DAILY","category_revision":0}""";
         const string hierarchyJson = """{"year":2026,"count":12,"daily_count":4}""";
 
         var photo = JsonSerializer.Deserialize<FastGalleryPhotoDto>(photoJson)!;
@@ -72,8 +72,22 @@ public sealed class FastGalleryDtoTests
 
         Assert.Equal(MemoryKeeperPhotoCategories.Daily, photo.PhotoCategory);
         Assert.True(photo.HasPhotoCategoryRevision);
-        Assert.Equal(3, photo.PhotoCategoryRevision);
+        Assert.Equal(0, photo.PhotoCategoryRevision);
         Assert.Equal(4, year.DailyCount);
+    }
+
+    [Fact]
+    public void CommonGalleryListAndDetail_DeserializeZeroCategoryRevisionAsProvided()
+    {
+        const string json = """{"file_id":"abc","filename":"daily.jpg","photo_category":"DAILY","category_revision":0}""";
+
+        var photo = JsonSerializer.Deserialize<MemoryKeeper.Application.DTOs.Gallery.PhotoDto>(json)!;
+        var detail = JsonSerializer.Deserialize<MemoryKeeper.Application.DTOs.Gallery.PhotoDetailDto>(json)!;
+
+        Assert.Equal(0, photo.PhotoCategoryRevision);
+        Assert.True(photo.HasPhotoCategoryRevision);
+        Assert.Equal(0, detail.PhotoCategoryRevision);
+        Assert.True(detail.HasPhotoCategoryRevision);
     }
 
     [Fact]

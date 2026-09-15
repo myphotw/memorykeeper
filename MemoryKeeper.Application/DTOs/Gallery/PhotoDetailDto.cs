@@ -80,7 +80,7 @@ public sealed class PhotoDetailDto
     [JsonPropertyName("photo_category")]
     public string PhotoCategory { get; init; } = MemoryKeeperPhotoCategories.Normal;
 
-    [JsonPropertyName("photo_category_revision")]
+    [JsonPropertyName("category_revision")]
     public int PhotoCategoryRevision
     {
         get => _photoCategoryRevision;

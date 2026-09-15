@@ -129,14 +129,16 @@
                                         ColumnDefinitions="Auto,*"
                                         ColumnSpacing="2"
                                         Visibility="{Binding IsSeparator, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}">
-                                        <Button
-                                            Content="{Binding ExpandGlyph, Mode=OneWay}"
-                                            Padding="4,2"
-                                            MinWidth="24"
-                                            Style="{StaticResource GalleryTreeNodeStyle}"
-                                            Click="Expand_OnClick"
-                                            Tag="{Binding}"
-                                            Visibility="{Binding CanExpand, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                        <Grid MinWidth="24">
+                                            <Button
+                                                Content="{Binding ExpandGlyph, Mode=OneWay}"
+                                                Padding="4,2"
+                                                MinWidth="24"
+                                                Style="{StaticResource GalleryTreeNodeStyle}"
+                                                Click="Expand_OnClick"
+                                                Tag="{Binding}"
+                                                Visibility="{Binding CanExpand, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                        </Grid>
                                         <Button
                                             Grid.Column="1"
                                             Style="{StaticResource GalleryTreeNodeStyle}"

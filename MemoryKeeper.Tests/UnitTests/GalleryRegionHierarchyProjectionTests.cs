@@ -50,6 +50,23 @@ public sealed class GalleryRegionHierarchyProjectionTests
     }
 
     [Fact]
+    public void Build_SortsProjectedDisplayNamesAfterCanonicalAliasMerge()
+    {
+        var result = GalleryRegionHierarchyProjection.Build(
+        [
+            Region("춘천", 1),
+            Region("Osaka", 3),
+            Region("오사카", 2),
+            Region("강릉", 4),
+            Region("인천", 5),
+        ]);
+
+        Assert.Equal(new[] { "강릉", "오사카", "인천", "춘천" }, result.Select(item => item.DisplayName));
+        Assert.Equal(5, Assert.Single(result, item => item.DisplayName == "오사카").PhotoCount);
+        Assert.Equal(new[] { "Osaka", "오사카" }, Assert.Single(result, item => item.DisplayName == "오사카").SourceRegions);
+    }
+
+    [Fact]
     public void Build_KeepsUnknownEnglishRegionWithoutInventingTranslation()
     {
         var result = GalleryRegionHierarchyProjection.Build([Region("Unknown Harbor", 7)]);

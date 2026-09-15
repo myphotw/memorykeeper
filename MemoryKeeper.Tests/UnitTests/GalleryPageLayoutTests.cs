@@ -659,6 +659,28 @@ public sealed class GalleryPageLayoutTests
     }
 
     [Fact]
+    public void GalleryYearHierarchy_SortsPlacesAndReservesExpandSpaceForLeafNodes()
+    {
+        var xaml = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Views", "GalleryPage.xaml"));
+        var viewModel = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "ViewModels", "GalleryViewModel.cs"));
+        var placeSortStart = viewModel.IndexOf("var places = regionNodes", StringComparison.Ordinal);
+        var placeLoopStart = viewModel.IndexOf("foreach (var (regionNode, place) in places)", placeSortStart, StringComparison.Ordinal);
+        Assert.True(placeSortStart >= 0 && placeLoopStart > placeSortStart);
+        var placeSort = viewModel[placeSortStart..placeLoopStart];
+
+        Assert.Contains(".OrderBy(", placeSort, StringComparison.Ordinal);
+        Assert.Contains("item => item.Place.DisplayName ?? LibraryConstants.UnclassifiedTitle", placeSort, StringComparison.Ordinal);
+        Assert.Contains("StringComparer.CurrentCultureIgnoreCase", placeSort, StringComparison.Ordinal);
+
+        var expandSlotStart = xaml.IndexOf("<Grid MinWidth=\"24\">", StringComparison.Ordinal);
+        var expandSlotEnd = xaml.IndexOf("</Grid>", expandSlotStart, StringComparison.Ordinal);
+        Assert.True(expandSlotStart >= 0 && expandSlotEnd > expandSlotStart);
+        var expandSlot = xaml[expandSlotStart..expandSlotEnd];
+        Assert.Contains("Content=\"{Binding ExpandGlyph, Mode=OneWay}\"", expandSlot, StringComparison.Ordinal);
+        Assert.Contains("Visibility=\"{Binding CanExpand, Converter={StaticResource BoolToVisibilityConverter}}\"", expandSlot, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void GalleryBatchWorkflow_UsesGenericAtomicApiWithoutRawMetadataOrPendingFallback()
     {
         var workflow = File.ReadAllText(FindSourceFile("MemoryKeeper.Application", "Services", "GalleryPlaceAssignmentWorkflow.cs"));
