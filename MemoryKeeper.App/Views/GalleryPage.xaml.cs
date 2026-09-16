@@ -45,8 +45,10 @@ public sealed partial class GalleryPage : Page
     private readonly ILocationResolver _locationResolver;
     private readonly ILoggerFactory _loggerFactory;
     private readonly ISettingRepository _settingRepository;
+    private readonly SingleInstanceEventSubscription<ScrollViewer> _photoScrollViewerSubscription = new();
     private bool _detailViewHosted;
-    private ScrollViewer? _photoScrollViewer;
+    private bool _photoScrollViewerAttachQueued;
+    private bool _isGalleryPageLoaded;
 
     public event EventHandler? OpenImportRequested;
 
@@ -106,6 +108,8 @@ public sealed partial class GalleryPage : Page
         _photoDetailView.ViewModel.CaptureDateChanged += OnDetailCaptureDateChanged;
         _photoDetailView.ViewModel.OpenMapRequested += OnDetailOpenMapRequested;
         Loaded += GalleryPage_OnLoaded;
+        Unloaded += GalleryPage_OnUnloaded;
+        PhotoGrid.Loaded += PhotoGrid_OnLoaded;
         SizeChanged += GalleryPage_OnSizeChanged;
         ResubscribeItems();
         GalleryDiagnostics.WriteStep("GalleryPage constructor complete");
@@ -113,15 +117,52 @@ public sealed partial class GalleryPage : Page
 
     private void GalleryPage_OnLoaded(object sender, RoutedEventArgs e)
     {
+        _isGalleryPageLoaded = true;
         GalleryDiagnostics.WriteStep("GalleryPage Loaded");
         RefreshBackNavigation();
         UpdateEmptyState();
-        _photoScrollViewer ??= FindDescendant<ScrollViewer>(PhotoGrid);
-        if (_photoScrollViewer is not null)
+        EnsurePhotoScrollViewerAfterLayout();
+    }
+
+    private void GalleryPage_OnUnloaded(object sender, RoutedEventArgs e)
+    {
+        _isGalleryPageLoaded = false;
+        _photoScrollViewerSubscription.Detach(
+            scrollViewer => scrollViewer.ViewChanged -= PhotoScrollViewer_OnViewChanged);
+    }
+
+    private void PhotoGrid_OnLoaded(object sender, RoutedEventArgs e) =>
+        EnsurePhotoScrollViewerAfterLayout();
+
+    private void EnsurePhotoScrollViewerAfterLayout()
+    {
+        if (EnsurePhotoScrollViewerAttached() || _photoScrollViewerAttachQueued)
         {
-            _photoScrollViewer.ViewChanged -= PhotoScrollViewer_OnViewChanged;
-            _photoScrollViewer.ViewChanged += PhotoScrollViewer_OnViewChanged;
+            return;
         }
+
+        _photoScrollViewerAttachQueued = true;
+        if (!DispatcherQueue.TryEnqueue(() =>
+            {
+                _photoScrollViewerAttachQueued = false;
+                if (_isGalleryPageLoaded)
+                {
+                    PhotoGrid.UpdateLayout();
+                    EnsurePhotoScrollViewerAttached();
+                }
+            }))
+        {
+            _photoScrollViewerAttachQueued = false;
+        }
+    }
+
+    private bool EnsurePhotoScrollViewerAttached()
+    {
+        var candidate = FindDescendant<ScrollViewer>(PhotoGrid);
+        return _photoScrollViewerSubscription.Attach(
+            candidate,
+            scrollViewer => scrollViewer.ViewChanged += PhotoScrollViewer_OnViewChanged,
+            scrollViewer => scrollViewer.ViewChanged -= PhotoScrollViewer_OnViewChanged);
     }
 
     private void RefreshBackNavigation()
@@ -139,14 +180,15 @@ public sealed partial class GalleryPage : Page
         AutomationProperties.SetName(BackNavigationButton, $"이전 화면: {label}");
     }
 
-    private void PhotoScrollViewer_OnViewChanged(object sender, ScrollViewerViewChangedEventArgs e)
+    private void PhotoScrollViewer_OnViewChanged(object? sender, ScrollViewerViewChangedEventArgs e)
     {
-        if (_photoScrollViewer is null || e.IsIntermediate || !ViewModel.CanLoadMore || ViewModel.IsBusy || ViewModel.IsMutating)
+        var scrollViewer = _photoScrollViewerSubscription.Current;
+        if (scrollViewer is null || e.IsIntermediate || !ViewModel.CanLoadMore || ViewModel.IsBusy || ViewModel.IsMutating)
         {
             return;
         }
 
-        if (_photoScrollViewer.ScrollableHeight - _photoScrollViewer.VerticalOffset <= 600)
+        if (scrollViewer.ScrollableHeight - scrollViewer.VerticalOffset <= 600)
         {
             ViewModel.LoadMoreCommand.Execute(null);
         }
@@ -163,6 +205,7 @@ public sealed partial class GalleryPage : Page
                 // SelectedItems synchronously here collides with WinUI's vector reset.
                 ViewModel.ResetSelectionForItemsReplacement();
                 UpdateSelectAllButtonContent();
+                EnsurePhotoScrollViewerAfterLayout();
             }
 
             UpdateEmptyState();
@@ -192,6 +235,7 @@ public sealed partial class GalleryPage : Page
     {
         UpdateEmptyState();
         UpdateSelectAllButtonContent();
+        EnsurePhotoScrollViewerAfterLayout();
     }
 
     private void UpdateEmptyState()

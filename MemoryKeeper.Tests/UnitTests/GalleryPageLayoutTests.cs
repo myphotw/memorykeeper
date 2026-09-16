@@ -212,6 +212,27 @@ public sealed class GalleryPageLayoutTests
     }
 
     [Fact]
+    public void GalleryScrollViewerAttachment_RetriesAfterVisualTreeAndItemsAreReady()
+    {
+        var page = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Views", "GalleryPage.xaml.cs"));
+        var helper = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Services", "SingleInstanceEventSubscription.cs"));
+
+        Assert.Contains("PhotoGrid.Loaded += PhotoGrid_OnLoaded", page, StringComparison.Ordinal);
+        Assert.Contains("Unloaded += GalleryPage_OnUnloaded", page, StringComparison.Ordinal);
+        Assert.Contains("EnsurePhotoScrollViewerAfterLayout();", page, StringComparison.Ordinal);
+        Assert.Contains("DispatcherQueue.TryEnqueue", page, StringComparison.Ordinal);
+        Assert.Contains("_photoScrollViewerSubscription.Detach", page, StringComparison.Ordinal);
+        Assert.Contains("ReferenceEquals(Current, candidate)", helper, StringComparison.Ordinal);
+
+        var ensureStart = page.IndexOf("private void EnsurePhotoScrollViewerAfterLayout", StringComparison.Ordinal);
+        var handlerStart = page.IndexOf("private void PhotoScrollViewer_OnViewChanged", ensureStart, StringComparison.Ordinal);
+        Assert.True(ensureStart >= 0 && handlerStart > ensureStart);
+        Assert.Contains("PhotoGrid.UpdateLayout();", page[ensureStart..handlerStart], StringComparison.Ordinal);
+        Assert.DoesNotContain("Task.Delay", page[ensureStart..handlerStart], StringComparison.Ordinal);
+        Assert.DoesNotContain("FAST_GALLERY_", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void GalleryUnclassifiedNode_UsesSingleAuthoritativeFastQueryAcrossPagination()
     {
         var dto = File.ReadAllText(FindSourceFile("MemoryKeeper.Application", "DTOs", "FastGalleryDtos.cs"));

@@ -22,6 +22,7 @@
     <Compile Include="..\MemoryKeeper.App\Services\GalleryBackendMapper.cs" Link="App\GalleryBackendMapper.cs" />
     <Compile Include="..\MemoryKeeper.App\Services\GalleryBackendBridge.cs" Link="App\GalleryBackendBridge.cs" />
     <Compile Include="..\MemoryKeeper.App\Services\IGalleryFocusState.cs" Link="App\IGalleryFocusState.cs" />
+    <Compile Include="..\MemoryKeeper.App\Services\SingleInstanceEventSubscription.cs" Link="App\SingleInstanceEventSubscription.cs" />
   </ItemGroup>
 
   <ItemGroup>
