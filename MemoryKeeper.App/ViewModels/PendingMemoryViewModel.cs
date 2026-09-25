@@ -254,6 +254,18 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
             }
 
             var basis = selected.Select(item => item.DateBasisText).Distinct().ToList();
+            var yearOnlyYears = selected
+                .Where(item => item.IsYearOnly)
+                .Select(item => item.Media.EffectiveCaptureYear)
+                .Distinct()
+                .ToList();
+            if (yearOnlyYears.Count == 1
+                && yearOnlyYears[0] is int year
+                && selected.All(item => item.IsYearOnly))
+            {
+                return $"{selected.Count:N0}장 · {year}년 · 연도만 확인됨";
+            }
+
             return basis.Count == 1
                 ? $"{selected.Count:N0}장 · {basis[0]}"
                 : $"{selected.Count:N0}장 · 여러 날짜 기준";

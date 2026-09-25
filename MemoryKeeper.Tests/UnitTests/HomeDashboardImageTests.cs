@@ -59,6 +59,42 @@ public sealed class HomeDashboardImageTests
     }
 
     [Fact]
+    public async Task FastGallery_YearOnlyPhotoKeepsYearWithoutInventingVisitDate()
+    {
+        var placeId = Guid.Parse("00000000-0000-0000-0000-000000000001");
+        var api = new FastGalleryStub(new FastGalleryPhotoPageDto
+        {
+            Items = [new FastGalleryPhotoDto
+            {
+                FileId = FileId,
+                Filename = "year-only.jpg",
+                MemorykeeperPlaceId = placeId,
+                PlaceDisplayName = "추억 장소",
+                EffectiveCaptureDatetime = null,
+                EffectiveCaptureDate = null,
+                EffectiveCaptureYear = 2018,
+                EffectiveCapturePrecision = "YEAR",
+                DateBasis = "SOURCE_YEAR",
+            }],
+        });
+
+        var dashboard = await GalleryBackendBridge.GetFastHomeDashboardAsync(api, Origin);
+
+        var photo = Assert.Single(dashboard.RecentImports);
+        Assert.Null(photo.CapturedAt);
+        Assert.Null(photo.EffectiveCaptureDate);
+        Assert.Equal(2018, photo.EffectiveCaptureYear);
+        Assert.Equal("YEAR", photo.EffectiveCapturePrecision);
+        var visit = Assert.Single(dashboard.RecentVisits);
+        Assert.Null(visit.LastVisitDate);
+        Assert.Equal(2018, visit.LastVisitYear);
+        Assert.Equal(0, visit.VisitRecordCount);
+        var hero = Assert.Single(dashboard.HeroMemories);
+        Assert.Equal(2018, hero.Year);
+        Assert.Equal("2018년", hero.DateText);
+    }
+
+    [Fact]
     public async Task FastGallery_UsesAuthoritativePlaceCleanupCountForHomeAction()
     {
         var api = new FastGalleryStub(

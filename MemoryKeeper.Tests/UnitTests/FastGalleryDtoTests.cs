@@ -49,6 +49,22 @@ public sealed class FastGalleryDtoTests
     }
 
     [Fact]
+    public void PhotosPage_DeserializesYearOnlyWithoutSynthesizingMonthOrDay()
+    {
+        const string json = """{"items":[{"file_id":"year-only","filename":"old.jpg","effective_capture_datetime":null,"effective_capture_date":null,"effective_capture_year":2018,"effective_capture_precision":"YEAR","date_basis":"SOURCE_YEAR","source_capture_year":2018,"source_capture_year_basis":"PATH"}]}""";
+
+        var photo = Assert.Single(JsonSerializer.Deserialize<FastGalleryPhotoPageDto>(json)!.Items);
+
+        Assert.Null(photo.EffectiveCaptureDatetime);
+        Assert.Null(photo.EffectiveCaptureDate);
+        Assert.Equal(2018, photo.EffectiveCaptureYear);
+        Assert.Equal("YEAR", photo.EffectiveCapturePrecision);
+        Assert.Equal(2018, photo.SourceCaptureYear);
+        Assert.Equal("PATH", photo.SourceCaptureYearBasis);
+        Assert.Equal("SOURCE_YEAR", photo.DateBasis);
+    }
+
+    [Fact]
     public void Hierarchy_AcceptsNamedNestedLevels()
     {
         const string json = """{"years":[{"year":2025,"count":1,"countries":[{"country":"Japan","count":1,"regions":[{"region":"Tokyo","count":1,"places":[{"memorykeeper_place_id":"00000000-0000-0000-0000-000000000001","location_key":"registered:v1:00000000-0000-0000-0000-000000000001","display_name":"Shibuya","count":1}]}]}]}]}""";
@@ -74,6 +90,32 @@ public sealed class FastGalleryDtoTests
         Assert.True(photo.HasPhotoCategoryRevision);
         Assert.Equal(0, photo.PhotoCategoryRevision);
         Assert.Equal(4, year.DailyCount);
+    }
+
+    [Fact]
+    public void Hierarchy_DeserializesDateUnclassifiedCount()
+    {
+        const string json = """{"year":2018,"count":500,"date_unclassified_count":431}""";
+
+        var year = JsonSerializer.Deserialize<FastGalleryHierarchyNodeDto>(json)!;
+
+        Assert.Equal(431, year.DateUnclassifiedCount);
+    }
+
+    [Fact]
+    public void CommonGalleryDetail_DeserializesYearOnlyContract()
+    {
+        const string json = """{"file_id":"year-only","filename":"old.jpg","effective_capture_datetime":null,"effective_capture_date":null,"effective_capture_year":2018,"effective_capture_precision":"YEAR","date_basis":"SOURCE_YEAR","source_capture_year":2018,"source_capture_year_basis":"PATH"}""";
+
+        var detail = JsonSerializer.Deserialize<MemoryKeeper.Application.DTOs.Gallery.PhotoDetailDto>(json)!;
+
+        Assert.Null(detail.EffectiveCaptureDatetime);
+        Assert.Null(detail.EffectiveCaptureDate);
+        Assert.Equal(2018, detail.EffectiveCaptureYear);
+        Assert.Equal("YEAR", detail.EffectiveCapturePrecision);
+        Assert.Equal(2018, detail.SourceCaptureYear);
+        Assert.Equal("PATH", detail.SourceCaptureYearBasis);
+        Assert.Equal("SOURCE_YEAR", detail.DateBasis);
     }
 
     [Fact]

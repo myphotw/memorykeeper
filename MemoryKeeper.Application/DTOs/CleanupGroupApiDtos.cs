@@ -61,6 +61,18 @@ public sealed class CaptureDateCleanupGroupDto
     [JsonPropertyName("effective_capture_date")]
     public string? EffectiveCaptureDate { get; init; }
 
+    [JsonPropertyName("effective_capture_year")]
+    public int? EffectiveCaptureYear { get; init; }
+
+    [JsonPropertyName("effective_capture_precision")]
+    public string? EffectiveCapturePrecision { get; init; }
+
+    [JsonPropertyName("source_capture_year")]
+    public int? SourceCaptureYear { get; init; }
+
+    [JsonPropertyName("source_capture_year_basis")]
+    public string? SourceCaptureYearBasis { get; init; }
+
     [JsonPropertyName("processing_status")]
     public string? ProcessingStatus { get; init; }
 
@@ -154,6 +166,15 @@ public sealed class MemoryKeeperCaptureDateMutationItemDto
 
     [JsonPropertyName("effective_capture_year")]
     public int? EffectiveCaptureYear { get; init; }
+
+    [JsonPropertyName("effective_capture_precision")]
+    public string? EffectiveCapturePrecision { get; init; }
+
+    [JsonPropertyName("source_capture_year")]
+    public int? SourceCaptureYear { get; init; }
+
+    [JsonPropertyName("source_capture_year_basis")]
+    public string? SourceCaptureYearBasis { get; init; }
 
     [JsonPropertyName("date_basis")]
     public string? DateBasis { get; init; }

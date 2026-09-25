@@ -16,6 +16,16 @@ public sealed class FastGalleryApiRepository : IFastGalleryApiRepository
     public async Task<FastGalleryPhotoPageDto> GetPhotosAsync(FastGalleryPhotoQuery query, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(query);
+        if (query.DateUnclassified == true && query.Year is null)
+        {
+            throw new ArgumentException("date_unclassified requires year.", nameof(query));
+        }
+
+        if (query.DateUnclassified == true && query.Unclassified == true)
+        {
+            throw new ArgumentException("date_unclassified and unclassified are separate filters.", nameof(query));
+        }
+
         var limit = Math.Clamp(query.Limit, 1, 100);
         var path = BuildPath($"{Root}/photos", new Dictionary<string, string?>
         {
@@ -29,6 +39,7 @@ public sealed class FastGalleryApiRepository : IFastGalleryApiRepository
                 ? query.PlaceId?.ToString("D")
                 : null,
             ["unclassified"] = query.Unclassified == true ? "true" : null,
+            ["date_unclassified"] = query.DateUnclassified == true ? "true" : null,
             ["favorite"] = query.Favorite?.ToString().ToLowerInvariant(),
             ["has_gps"] = query.HasGps?.ToString().ToLowerInvariant(),
             ["date_from"] = query.DateFrom?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),

@@ -33,6 +33,8 @@ public sealed class GalleryHierarchyQuery
 
     public bool UnclassifiedOnly { get; init; }
 
+    public bool DateUnclassifiedOnly { get; init; }
+
     public string? SearchText { get; init; }
 
     public bool FavoritesOnly { get; init; }

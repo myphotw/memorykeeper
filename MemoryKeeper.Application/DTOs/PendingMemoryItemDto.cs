@@ -25,6 +25,12 @@ public sealed class PendingMemoryItemDto
 
     public int? EffectiveCaptureYear { get; init; }
 
+    public string EffectiveCapturePrecision { get; init; } = string.Empty;
+
+    public int? SourceCaptureYear { get; init; }
+
+    public string SourceCaptureYearBasis { get; init; } = string.Empty;
+
     public string DateBasis { get; init; } = string.Empty;
 
     public bool DateCleanupRequired { get; init; }
@@ -90,6 +96,9 @@ public sealed class PendingMemoryItemDto
             UserCapturePrecision = UserCapturePrecision,
             EffectiveCaptureDate = EffectiveCaptureDate,
             EffectiveCaptureYear = EffectiveCaptureYear,
+            EffectiveCapturePrecision = EffectiveCapturePrecision,
+            SourceCaptureYear = SourceCaptureYear,
+            SourceCaptureYearBasis = SourceCaptureYearBasis,
             DateBasis = DateBasis,
             DateCleanupRequired = DateCleanupRequired,
             DateCleanupReason = DateCleanupReason,

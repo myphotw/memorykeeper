@@ -30,6 +30,24 @@ public sealed class PhotoDto
     [JsonPropertyName("capture_datetime")]
     public DateTimeOffset? CaptureDatetime { get; init; }
 
+    [JsonPropertyName("effective_capture_datetime")]
+    public DateTimeOffset? EffectiveCaptureDatetime { get; init; }
+
+    [JsonPropertyName("effective_capture_date")]
+    public string? EffectiveCaptureDate { get; init; }
+
+    [JsonPropertyName("effective_capture_year")]
+    public int? EffectiveCaptureYear { get; init; }
+
+    [JsonPropertyName("effective_capture_precision")]
+    public string? EffectiveCapturePrecision { get; init; }
+
+    [JsonPropertyName("source_capture_year")]
+    public int? SourceCaptureYear { get; init; }
+
+    [JsonPropertyName("source_capture_year_basis")]
+    public string? SourceCaptureYearBasis { get; init; }
+
     [JsonPropertyName("country")]
     public string? Country { get; init; }
 

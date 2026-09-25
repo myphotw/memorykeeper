@@ -619,6 +619,42 @@ public sealed class GalleryHierarchyServiceTests
             (second.Year, second.Country, second.Region, second.Place));
     }
 
+    [Fact]
+    public async Task Years_PreferEffectiveYearOverCaptureAndImportFallbacks()
+    {
+        var service = CreateService(new PhotoDto
+        {
+            FileId = Guid.NewGuid().ToString(),
+            Filename = "effective-year.jpg",
+            CaptureDatetime = new DateTimeOffset(2024, 5, 1, 0, 0, 0, TimeSpan.Zero),
+            ImportedAt = new DateTimeOffset(2025, 5, 1, 0, 0, 0, TimeSpan.Zero),
+            EffectiveCaptureYear = 2018,
+            SourceCaptureYear = 2017,
+        });
+
+        var year = Assert.Single(await service.GetYearsAsync());
+
+        Assert.Equal(2018, year.Year);
+    }
+
+    [Fact]
+    public async Task Years_UseSourceYearBeforeImportedOrCreatedFallback()
+    {
+        var service = CreateService(new PhotoDto
+        {
+            FileId = Guid.NewGuid().ToString(),
+            Filename = "source-year.jpg",
+            ImportedAt = new DateTimeOffset(2025, 5, 1, 0, 0, 0, TimeSpan.Zero),
+            CreatedAt = new DateTimeOffset(2026, 5, 1, 0, 0, 0, TimeSpan.Zero),
+            SourceCaptureYear = 2018,
+            EffectiveCapturePrecision = "YEAR",
+        });
+
+        var year = Assert.Single(await service.GetYearsAsync());
+
+        Assert.Equal(2018, year.Year);
+    }
+
     private static GalleryHierarchyService CreateService(params PhotoDto[] photos) =>
         new(
             new FixedCatalog(new GalleryPhotoCatalogSnapshot { Photos = photos }),

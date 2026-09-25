@@ -201,9 +201,14 @@ public partial class PhotoViewerViewModel : ObservableObject
             if (!IsVideo && slideDirection != 0)
                 NavigateSlideRequested?.Invoke(this, slideDirection);
 
-            CapturedAtText = string.Equals(detail.UserCapturePrecision, "DATE", StringComparison.OrdinalIgnoreCase)
-                ? FormatDateOnly(detail.EffectiveCaptureDate, detail.CapturedAt)
-                : detail.CapturedAt?.ToLocalTime().ToString("yyyy.MM.dd HH:mm", CultureInfo.InvariantCulture) ?? "-";
+            CapturedAtText = EffectiveCaptureDateFormatter.Format(
+                detail.EffectiveCapturePrecision,
+                detail.EffectiveCaptureYear,
+                EffectiveCaptureDateFormatter.ParseDate(detail.EffectiveCaptureDate),
+                detail.CapturedAt,
+                "yyyy.MM.dd",
+                "yyyy.MM.dd HH:mm",
+                "-");
             PlaceOverlayText = BuildPlaceOverlay(detail);
             PlaceId = detail.PlaceId;
             Country = detail.Country;
@@ -492,16 +497,6 @@ public partial class PhotoViewerViewModel : ObservableObject
             }
         }
     }
-
-    private static string FormatDateOnly(string effectiveCaptureDate, DateTimeOffset? fallback) =>
-        DateOnly.TryParseExact(
-            effectiveCaptureDate,
-            "yyyy-MM-dd",
-            CultureInfo.InvariantCulture,
-            DateTimeStyles.None,
-            out var date)
-            ? date.ToString("yyyy.MM.dd", CultureInfo.InvariantCulture)
-            : fallback?.ToLocalTime().ToString("yyyy.MM.dd", CultureInfo.InvariantCulture) ?? "-";
 
     private static string BuildPlaceOverlay(PhotoDetailDto detail)
     {

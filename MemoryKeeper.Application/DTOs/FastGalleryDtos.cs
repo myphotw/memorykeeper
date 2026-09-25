@@ -17,9 +17,12 @@ public sealed class FastGalleryPhotoDto
     [JsonPropertyName("thumbnail_url")] public string? ThumbnailUrl { get; init; }
     [JsonPropertyName("favorite")] public bool Favorite { get; init; }
     [JsonPropertyName("has_gps")] public bool HasGps { get; init; }
-    [JsonPropertyName("effective_capture_datetime")] public DateTimeOffset EffectiveCaptureDatetime { get; init; }
-    [JsonPropertyName("effective_capture_date")] public DateOnly EffectiveCaptureDate { get; init; }
+    [JsonPropertyName("effective_capture_datetime")] public DateTimeOffset? EffectiveCaptureDatetime { get; init; }
+    [JsonPropertyName("effective_capture_date")] public DateOnly? EffectiveCaptureDate { get; init; }
     [JsonPropertyName("effective_capture_year")] public int EffectiveCaptureYear { get; init; }
+    [JsonPropertyName("effective_capture_precision")] public string EffectiveCapturePrecision { get; init; } = string.Empty;
+    [JsonPropertyName("source_capture_year")] public int? SourceCaptureYear { get; init; }
+    [JsonPropertyName("source_capture_year_basis")] public string? SourceCaptureYearBasis { get; init; }
     [JsonPropertyName("date_basis")] public string DateBasis { get; init; } = string.Empty;
     [JsonPropertyName("memorykeeper_place_id")] public Guid? MemorykeeperPlaceId { get; init; }
     [JsonPropertyName("place_display_name")] public string? PlaceDisplayName { get; init; }
@@ -80,6 +83,7 @@ public sealed class FastGalleryHierarchyNodeDto
     [JsonPropertyName("display_name")] public string? DisplayName { get; init; }
     [JsonPropertyName("count")] public int Count { get; init; }
     [JsonPropertyName("daily_count")] public int DailyCount { get; init; }
+    [JsonPropertyName("date_unclassified_count")] public int DateUnclassifiedCount { get; init; }
     [JsonPropertyName("children")] public IReadOnlyList<FastGalleryHierarchyNodeDto> Children { get; init; } = [];
     [JsonPropertyName("countries")] public IReadOnlyList<FastGalleryHierarchyNodeDto> Countries { get; init; } = [];
     [JsonPropertyName("regions")] public IReadOnlyList<FastGalleryHierarchyNodeDto> Regions { get; init; } = [];
@@ -106,6 +110,7 @@ public sealed class FastGalleryPhotoQuery
     public string? LocationKey { get; init; }
     public Guid? PlaceId { get; init; }
     public bool? Unclassified { get; init; }
+    public bool? DateUnclassified { get; init; }
     public bool? Favorite { get; init; }
     public bool? HasGps { get; init; }
     public DateOnly? DateFrom { get; init; }

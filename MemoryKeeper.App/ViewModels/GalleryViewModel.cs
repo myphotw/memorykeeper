@@ -763,8 +763,23 @@ public partial class GalleryViewModel : ObservableObject
                     var yearNode = FindYearNode(year);
                     var countries = yearNode?.ChildNodes ?? [];
                     var daily = GalleryDailyHierarchyProjection.Build(yearNode);
+                    var dateUnclassified = GalleryDateUnclassifiedHierarchyProjection.Build(yearNode);
                     var domesticCountries = countries.Where(country => IsDomesticCountry(country.Country)).ToList();
                     var domesticAdded = false;
+                    if (dateUnclassified is not null)
+                    {
+                        node.Children.Add(new GalleryTreeNode
+                        {
+                            Kind = GalleryTreeNodeKind.DateUnclassified,
+                            Year = year,
+                            Title = "날짜 미분류",
+                            Count = dateUnclassified.PhotoCount,
+                            Depth = node.Depth + 1,
+                            CanExpand = false,
+                            ChildrenLoaded = true,
+                        });
+                    }
+
                     foreach (var country in countries)
                     {
                         var isDomestic = IsDomesticCountry(country.Country);
@@ -1344,7 +1359,9 @@ public partial class GalleryViewModel : ObservableObject
             .SelectMany(page => page.Items)
             .Where(item => !string.IsNullOrWhiteSpace(item.FileId))
             .DistinctBy(item => item.FileId, StringComparer.OrdinalIgnoreCase)
-            .OrderByDescending(item => item.EffectiveCaptureDatetime)
+            .OrderByDescending(item => item.EffectiveCaptureDatetime.HasValue)
+            .ThenByDescending(item => item.EffectiveCaptureDatetime)
+            .ThenByDescending(item => item.EffectiveCaptureYear)
             .ThenBy(item => item.FileId, StringComparer.OrdinalIgnoreCase)
             .ToList();
         var hasMore = paging.Any(state => state.HasMore);
@@ -1390,6 +1407,7 @@ public partial class GalleryViewModel : ObservableObject
             LocationKey = locationKey,
             PlaceId = isPlaceLeaf && locationKey is null ? node.PlaceId : null,
             Unclassified = node.Kind == GalleryTreeNodeKind.Unclassified ? true : null,
+            DateUnclassified = node.Kind == GalleryTreeNodeKind.DateUnclassified ? true : null,
             Favorite = node.Kind == GalleryTreeNodeKind.Favorites ? true : null,
             PhotoCategory = node.Kind == GalleryTreeNodeKind.Daily ? MemoryKeeperPhotoCategories.Daily : null,
         };
@@ -1442,6 +1460,11 @@ public partial class GalleryViewModel : ObservableObject
             FileName = photo.Filename,
             AbsoluteLibraryPath = preview ?? thumbnail ?? string.Empty,
             CapturedAt = photo.EffectiveCaptureDatetime,
+            EffectiveCaptureDate = photo.EffectiveCaptureDate,
+            EffectiveCaptureYear = photo.EffectiveCaptureYear,
+            EffectiveCapturePrecision = photo.EffectiveCapturePrecision,
+            SourceCaptureYear = photo.SourceCaptureYear,
+            SourceCaptureYearBasis = photo.SourceCaptureYearBasis ?? string.Empty,
             PlaceId = photo.MemorykeeperPlaceId,
             PhotoCategory = photo.PhotoCategory,
             PhotoCategoryRevision = photo.PhotoCategoryRevision,
@@ -1484,6 +1507,10 @@ public partial class GalleryViewModel : ObservableObject
             case GalleryTreeNodeKind.Unclassified:
                 parts.Add(node.Year?.ToString() ?? "");
                 parts.Add(LibraryConstants.UnclassifiedTitle);
+                break;
+            case GalleryTreeNodeKind.DateUnclassified:
+                parts.Add(node.Year?.ToString() ?? "");
+                parts.Add("날짜 미분류");
                 break;
             case GalleryTreeNodeKind.Country:
                 parts.Add(node.Year.HasValue ? node.Year.Value.ToString() : "장소");

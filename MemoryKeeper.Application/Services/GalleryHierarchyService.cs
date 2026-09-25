@@ -577,6 +577,16 @@ public sealed class GalleryHierarchyService
 
     private static int? ResolveYear(PhotoDto photo)
     {
+        if (photo.EffectiveCaptureYear is > 0)
+        {
+            return photo.EffectiveCaptureYear;
+        }
+
+        if (photo.SourceCaptureYear is > 0)
+        {
+            return photo.SourceCaptureYear;
+        }
+
         var date = photo.CaptureDatetime ?? ResolveImportedAt(photo);
         return date?.ToLocalTime().Year;
     }

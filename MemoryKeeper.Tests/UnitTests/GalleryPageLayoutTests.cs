@@ -258,6 +258,29 @@ public sealed class GalleryPageLayoutTests
     }
 
     [Fact]
+    public void GalleryDateUnclassifiedNode_UsesDistinctYearScopedFastQueryAcrossPagination()
+    {
+        var dto = File.ReadAllText(FindSourceFile("MemoryKeeper.Application", "DTOs", "FastGalleryDtos.cs"));
+        var repository = File.ReadAllText(FindSourceFile(
+            "MemoryKeeper.Infrastructure", "Repositories", "Api", "FastGalleryApiRepository.cs"));
+        var node = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Models", "GalleryTreeNode.cs"));
+        var viewModel = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "ViewModels", "GalleryViewModel.cs"));
+
+        Assert.Contains("public bool? DateUnclassified { get; init; }", dto, StringComparison.Ordinal);
+        Assert.Contains("GalleryTreeNodeKind.DateUnclassified", node, StringComparison.Ordinal);
+        Assert.Contains("DateUnclassifiedOnly = Kind == GalleryTreeNodeKind.DateUnclassified", node, StringComparison.Ordinal);
+        Assert.Contains("DateUnclassified = node.Kind == GalleryTreeNodeKind.DateUnclassified ? true : null", viewModel, StringComparison.Ordinal);
+        Assert.Contains("var dateUnclassified = GalleryDateUnclassifiedHierarchyProjection.Build(yearNode)", viewModel, StringComparison.Ordinal);
+        Assert.Contains("Kind = GalleryTreeNodeKind.DateUnclassified", viewModel, StringComparison.Ordinal);
+        Assert.Contains("Title = \"날짜 미분류\"", viewModel, StringComparison.Ordinal);
+        Assert.Contains("Count = dateUnclassified.PhotoCount", viewModel, StringComparison.Ordinal);
+        Assert.Contains("ToFastQuery(node, regionOverride: exactRegion)", viewModel, StringComparison.Ordinal);
+        Assert.Contains("ToFastQuery(_pagingNode, cursor, exactRegion)", viewModel, StringComparison.Ordinal);
+        Assert.Contains("[\"date_unclassified\"] = query.DateUnclassified == true ? \"true\" : null", repository, StringComparison.Ordinal);
+        Assert.Contains("query.DateUnclassified == true && query.Year is null", repository, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void GalleryPlaceChange_RefreshesTheCachedHierarchyThroughTheExistingDetailEvent()
     {
         var page = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Views", "GalleryPage.xaml.cs"));

@@ -7,6 +7,7 @@ public sealed class PendingMemoryPageLayoutTests
     [InlineData("EXIF", "사진 촬영정보")]
     [InlineData("IMPORTED", "가져온 날짜 기준")]
     [InlineData("CREATED", "파일 생성일 기준")]
+    [InlineData("SOURCE_YEAR", "연도만 확인됨")]
     [InlineData(null, "날짜 정보 없음")]
     public void CaptureDateBasis_UsesFriendlyText(string? value, string expected)
     {
@@ -22,11 +23,13 @@ public sealed class PendingMemoryPageLayoutTests
     public void DatePrecision_HidesSyntheticMidnight()
     {
         var model = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Models", "PendingMemoryGroupItem.cs"));
+        var formatter = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Services", "EffectiveCaptureDateFormatter.cs"));
 
-        Assert.Contains("string.Equals(Media.UserCapturePrecision, \"DATE\"", model, StringComparison.Ordinal);
-        Assert.Contains("? FormatDateOnly(Media.EffectiveCaptureDate, Media.CapturedAt)", model, StringComparison.Ordinal);
-        Assert.Contains("date.ToString(\"yyyy.MM.dd\"", model, StringComparison.Ordinal);
-        Assert.DoesNotContain("date.ToString(\"yyyy.MM.dd HH:mm\"", model, StringComparison.Ordinal);
+        Assert.Contains("EffectiveCaptureDateFormatter.Format(", model, StringComparison.Ordinal);
+        Assert.Contains("string.Equals(precision, \"DATE\"", formatter, StringComparison.Ordinal);
+        Assert.Contains("date.ToString(dateOnlyFormat", formatter, StringComparison.Ordinal);
+        Assert.Contains("string.Equals(precision, \"YEAR\"", formatter, StringComparison.Ordinal);
+        Assert.DoesNotContain("new DateTime(year", formatter, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -140,7 +143,8 @@ public sealed class PendingMemoryPageLayoutTests
         Assert.Contains("new Dictionary<Guid, int> { [MediaId] = _dateRevision }", viewModel, StringComparison.Ordinal);
         Assert.Contains("await ReloadBackendDetailAsync();", viewModel, StringComparison.Ordinal);
         Assert.Contains("HasUserCaptureOverride", viewModel, StringComparison.Ordinal);
-        Assert.Contains("UserCapturePrecision, \"DATE\"", viewModel, StringComparison.Ordinal);
+        Assert.Contains("detail.EffectiveCapturePrecision", viewModel, StringComparison.Ordinal);
+        Assert.Contains("EffectiveCaptureDateFormatter.Format(", viewModel, StringComparison.Ordinal);
     }
 
     [Fact]

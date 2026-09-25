@@ -20,6 +20,7 @@ public enum GalleryTreeNodeKind
     /// <summary>Virtual year-scoped DAILY category shown under 대한민국.</summary>
     Daily,
     Unclassified,
+    DateUnclassified,
     Favorites,
     Recent,
     Pending,
@@ -109,6 +110,7 @@ public partial class GalleryTreeNode : ObservableObject
         GalleryTreeNodeKind.Year => $"year:{Year}",
         GalleryTreeNodeKind.Daily => $"year:{Year}:daily",
         GalleryTreeNodeKind.Unclassified => $"year:{Year}:unclassified",
+        GalleryTreeNodeKind.DateUnclassified => $"year:{Year}:date-unclassified",
         GalleryTreeNodeKind.Country => $"year:{Year}:country:{Country}",
         GalleryTreeNodeKind.City => $"year:{Year}:country:{Country}:city:{CanonicalRegion ?? City}",
         GalleryTreeNodeKind.Place => $"year:{Year}:country:{Country}:city:{City}:place:{BuildPlaceIdentityKey()}",
@@ -162,6 +164,7 @@ public partial class GalleryTreeNode : ObservableObject
             ? PlaceId
             : null,
         UnclassifiedOnly = Kind == GalleryTreeNodeKind.Unclassified,
+        DateUnclassifiedOnly = Kind == GalleryTreeNodeKind.DateUnclassified,
         PhotoCategory = Kind == GalleryTreeNodeKind.Daily ? MemoryKeeperPhotoCategories.Daily : null,
     };
 

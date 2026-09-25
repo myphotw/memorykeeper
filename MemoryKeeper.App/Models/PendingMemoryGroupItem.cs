@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using MemoryKeeper.Application.DTOs;
+using MemoryKeeper.App.Services;
 using Microsoft.UI.Xaml.Media.Imaging;
 
 namespace MemoryKeeper.App.Models;
@@ -27,10 +28,18 @@ public partial class PendingMemoryMediaItem : ObservableObject
 
     public string FileName => Media.FileName;
 
-    public string CapturedAtText =>
-        string.Equals(Media.UserCapturePrecision, "DATE", StringComparison.OrdinalIgnoreCase)
-            ? FormatDateOnly(Media.EffectiveCaptureDate, Media.CapturedAt)
-            : Media.CapturedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "촬영일 정보 없음";
+    public string CapturedAtText => EffectiveCaptureDateFormatter.Format(
+        Media.EffectiveCapturePrecision,
+        Media.EffectiveCaptureYear,
+        EffectiveCaptureDateFormatter.ParseDate(Media.EffectiveCaptureDate),
+        Media.CapturedAt,
+        "yyyy.MM.dd",
+        "yyyy-MM-dd HH:mm",
+        "촬영일 정보 없음");
+
+    public bool IsYearOnly => EffectiveCaptureDateFormatter.IsYearOnly(
+        Media.EffectiveCapturePrecision,
+        Media.EffectiveCaptureYear);
 
     public string DateBasisText => CleanupDisplayText.DateBasis(Media.DateBasis);
 
@@ -66,15 +75,6 @@ public partial class PendingMemoryMediaItem : ObservableObject
     [ObservableProperty]
     private bool isThumbnailLoading;
 
-    private static string FormatDateOnly(string effectiveCaptureDate, DateTimeOffset? fallback) =>
-        DateOnly.TryParseExact(
-            effectiveCaptureDate,
-            "yyyy-MM-dd",
-            System.Globalization.CultureInfo.InvariantCulture,
-            System.Globalization.DateTimeStyles.None,
-            out var date)
-            ? date.ToString("yyyy.MM.dd", System.Globalization.CultureInfo.InvariantCulture)
-            : fallback?.ToLocalTime().ToString("yyyy.MM.dd") ?? "촬영일 정보 없음";
 }
 
 public enum CleanupMode
@@ -123,9 +123,13 @@ public sealed class CaptureDateCleanupGroupItem(CaptureDateCleanupGroupDto group
         Group.LastEffectiveCaptureDatetime);
     public string ReasonText => CleanupDisplayText.Reason(Group.CleanupReason);
     public string DateBasisText => CleanupDisplayText.DateBasis(Group.DateBasis);
-    public string DateSummaryText => string.IsNullOrWhiteSpace(Group.EffectiveCaptureDate)
-        ? DateBasisText
-        : $"{Group.EffectiveCaptureDate} · {DateBasisText}";
+    public string DateSummaryText => EffectiveCaptureDateFormatter.IsYearOnly(
+        Group.EffectiveCapturePrecision,
+        Group.EffectiveCaptureYear)
+        ? $"{Group.EffectiveCaptureYear}년 · {DateBasisText}"
+        : string.IsNullOrWhiteSpace(Group.EffectiveCaptureDate)
+            ? DateBasisText
+            : $"{Group.EffectiveCaptureDate} · {DateBasisText}";
 }
 
 public static class CleanupDisplayText
@@ -136,6 +140,7 @@ public static class CleanupDisplayText
         "EXIF" => "사진 촬영정보",
         "IMPORTED" => "가져온 날짜 기준",
         "CREATED" => "파일 생성일 기준",
+        "SOURCE_YEAR" => "연도만 확인됨",
         _ => "날짜 정보 없음",
     };
 

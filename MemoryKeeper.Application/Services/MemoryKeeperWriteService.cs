@@ -603,6 +603,11 @@ public sealed class MemoryKeeperWriteService
         UserCapturePrecision = item.UserCapturePrecision ?? string.Empty,
         EffectiveCaptureDate = item.EffectiveCaptureDate ?? string.Empty,
         EffectiveCaptureYear = item.EffectiveCaptureYear,
+        EffectiveCapturePrecision = item.EffectiveCapturePrecision
+                                    ?? item.UserCapturePrecision
+                                    ?? string.Empty,
+        SourceCaptureYear = item.SourceCaptureYear,
+        SourceCaptureYearBasis = item.SourceCaptureYearBasis ?? string.Empty,
         DateBasis = item.DateBasis ?? string.Empty,
         DateCleanupRequired = item.DateCleanupRequired,
         DateCleanupReason = item.DateCleanupReason ?? string.Empty,

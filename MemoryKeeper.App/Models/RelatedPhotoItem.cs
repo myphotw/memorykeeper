@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using MemoryKeeper.App.Services;
 using MemoryKeeper.Application.DTOs;
 using Microsoft.UI.Xaml.Media.Imaging;
 
@@ -21,7 +22,14 @@ public partial class RelatedPhotoItem : ObservableObject
 
     public bool IsFavorite => Photo.IsFavorite;
 
-    public string CapturedAtText => Photo.CapturedAt?.ToLocalTime().ToString("yyyy-MM-dd") ?? "-";
+    public string CapturedAtText => EffectiveCaptureDateFormatter.Format(
+        Photo.EffectiveCapturePrecision,
+        Photo.EffectiveCaptureYear,
+        EffectiveCaptureDateFormatter.ParseDate(Photo.EffectiveCaptureDate),
+        Photo.CapturedAt,
+        "yyyy-MM-dd",
+        "yyyy-MM-dd",
+        "-");
 
     [ObservableProperty]
     private BitmapImage? thumbnailImage;

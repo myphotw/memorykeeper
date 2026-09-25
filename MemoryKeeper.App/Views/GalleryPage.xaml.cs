@@ -977,11 +977,14 @@ public sealed partial class GalleryPage : Page
         }
 
         var firstCapturedAt = selected[0].Media.CapturedAt;
+        var currentStatus = selected[0].IsYearOnly
+            ? $"현재 촬영일: {selected[0].CapturedAtText} · 연도만 확인됨. 월과 일을 직접 선택해 주세요."
+            : "선택한 사진에 같은 촬영일을 적용합니다.";
         var selectedDate = await CaptureDateDialog.ShowChangeAsync(
             XamlRoot,
             selected.Count,
             selected[0].ThumbnailImage,
-            "선택한 사진에 같은 촬영일을 적용합니다.",
+            currentStatus,
             firstCapturedAt is DateTimeOffset capturedAt
                 ? DateOnly.FromDateTime(capturedAt.LocalDateTime)
                 : null);

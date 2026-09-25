@@ -93,6 +93,8 @@ public sealed class RecentVisitDto
 
     public DateTimeOffset? LastVisitDate { get; init; }
 
+    public int? LastVisitYear { get; init; }
+
     public IReadOnlyList<string> TopTags { get; init; } = [];
 }
 
@@ -114,6 +116,12 @@ public sealed class DashboardPhotoDto
     public string? Country { get; init; }
 
     public DateTimeOffset? CapturedAt { get; init; }
+
+    public DateOnly? EffectiveCaptureDate { get; init; }
+
+    public int? EffectiveCaptureYear { get; init; }
+
+    public string EffectiveCapturePrecision { get; init; } = string.Empty;
 }
 
 public sealed class PendingSummaryDto

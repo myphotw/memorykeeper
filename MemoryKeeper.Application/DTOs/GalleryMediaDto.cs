@@ -15,6 +15,16 @@ public sealed class GalleryMediaDto
 
     public DateTimeOffset? CapturedAt { get; init; }
 
+    public DateOnly? EffectiveCaptureDate { get; init; }
+
+    public int? EffectiveCaptureYear { get; init; }
+
+    public string EffectiveCapturePrecision { get; init; } = string.Empty;
+
+    public int? SourceCaptureYear { get; init; }
+
+    public string SourceCaptureYearBasis { get; init; } = string.Empty;
+
     public Guid? PlaceId { get; init; }
 
     public string PhotoCategory { get; init; } = MemoryKeeperPhotoCategories.Normal;

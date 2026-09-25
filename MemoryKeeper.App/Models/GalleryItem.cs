@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using MemoryKeeper.Application.DTOs;
+using MemoryKeeper.App.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media.Imaging;
 
@@ -24,7 +25,18 @@ public partial class GalleryItem : ObservableObject
 
     public string FileName => Media.FileName;
 
-    public string CapturedAtText => Media.CapturedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "-";
+    public string CapturedAtText => EffectiveCaptureDateFormatter.Format(
+        Media.EffectiveCapturePrecision,
+        Media.EffectiveCaptureYear,
+        Media.EffectiveCaptureDate,
+        Media.CapturedAt,
+        "yyyy-MM-dd",
+        "yyyy-MM-dd HH:mm",
+        "-");
+
+    public bool IsYearOnly => EffectiveCaptureDateFormatter.IsYearOnly(
+        Media.EffectiveCapturePrecision,
+        Media.EffectiveCaptureYear);
 
     public string AbsoluteLibraryPath => Media.AbsoluteLibraryPath;
 

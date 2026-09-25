@@ -20,6 +20,12 @@ public sealed class RelatedPhotoDto
 
     public int? EffectiveCaptureYear { get; init; }
 
+    public string EffectiveCapturePrecision { get; init; } = string.Empty;
+
+    public int? SourceCaptureYear { get; init; }
+
+    public string SourceCaptureYearBasis { get; init; } = string.Empty;
+
     public string DateBasis { get; init; } = string.Empty;
 
     public int DateRevision { get; init; }
@@ -69,6 +75,12 @@ public sealed class PhotoDetailDto
     public string EffectiveCaptureDate { get; init; } = string.Empty;
 
     public int? EffectiveCaptureYear { get; init; }
+
+    public string EffectiveCapturePrecision { get; init; } = string.Empty;
+
+    public int? SourceCaptureYear { get; init; }
+
+    public string SourceCaptureYearBasis { get; init; } = string.Empty;
 
     public string DateBasis { get; init; } = string.Empty;
 

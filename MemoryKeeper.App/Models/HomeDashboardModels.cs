@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using MemoryKeeper.App.Services;
 using MemoryKeeper.Application.DTOs;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
@@ -173,7 +174,18 @@ public partial class HomePhotoItem : ObservableObject
     {
         get
         {
-            var date = Dto.CapturedAt?.ToLocalTime().ToString("yyyy.MM.dd");
+            string? date = EffectiveCaptureDateFormatter.Format(
+                Dto.EffectiveCapturePrecision,
+                Dto.EffectiveCaptureYear,
+                Dto.EffectiveCaptureDate,
+                Dto.CapturedAt,
+                "yyyy.MM.dd",
+                "yyyy.MM.dd",
+                string.Empty);
+            if (string.IsNullOrWhiteSpace(date))
+            {
+                date = null;
+            }
             var place = string.Join(
                 ", ",
                 new[] { Dto.PlaceName, Dto.Country }.Where(s => !string.IsNullOrWhiteSpace(s)));

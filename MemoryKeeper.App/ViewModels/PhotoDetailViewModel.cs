@@ -1750,19 +1750,22 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
         IsBackendOnlyMedia = detail.IsBackendOnly;
         MediaId = detail.MediaId;
         FileName = detail.FileName;
-        CapturedAtText = string.Equals(detail.UserCapturePrecision, "DATE", StringComparison.OrdinalIgnoreCase)
-            ? FormatDateOnly(detail.EffectiveCaptureDate, detail.CapturedAt)
-            : detail.CapturedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "촬영일 정보 없음";
-        CurrentEffectiveCaptureDate = DateOnly.TryParseExact(
-            detail.EffectiveCaptureDate,
-            "yyyy-MM-dd",
-            CultureInfo.InvariantCulture,
-            DateTimeStyles.None,
-            out var effectiveDate)
-                ? effectiveDate
-                : detail.CapturedAt is DateTimeOffset capturedAt
-                    ? DateOnly.FromDateTime(capturedAt.ToLocalTime().Date)
-                    : null;
+        CapturedAtText = EffectiveCaptureDateFormatter.Format(
+            detail.EffectiveCapturePrecision,
+            detail.EffectiveCaptureYear,
+            EffectiveCaptureDateFormatter.ParseDate(detail.EffectiveCaptureDate),
+            detail.CapturedAt,
+            "yyyy.MM.dd",
+            "yyyy-MM-dd HH:mm",
+            "촬영일 정보 없음");
+        CurrentEffectiveCaptureDate = EffectiveCaptureDateFormatter.IsYearOnly(
+            detail.EffectiveCapturePrecision,
+            detail.EffectiveCaptureYear)
+            ? null
+            : EffectiveCaptureDateFormatter.ParseDate(detail.EffectiveCaptureDate)
+              ?? (detail.CapturedAt is DateTimeOffset capturedAt
+                  ? DateOnly.FromDateTime(capturedAt.ToLocalTime().Date)
+                  : null);
         CaptureDateBasisText = CleanupDisplayText.DateBasis(detail.DateBasis);
         HasUserCaptureOverride = string.Equals(detail.DateBasis, "USER", StringComparison.OrdinalIgnoreCase);
         IsDailyPhotoCategory = string.Equals(
@@ -1913,7 +1916,12 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
                                               _apiClient.ApiBaseUrl,
                                               photo.ThumbnailUrl ?? photo.PreviewUrl)
                                           ?? string.Empty,
-                    CapturedAt = photo.CaptureDatetime,
+                    CapturedAt = photo.EffectiveCaptureDatetime ?? photo.CaptureDatetime,
+                    EffectiveCaptureDate = photo.EffectiveCaptureDate ?? string.Empty,
+                    EffectiveCaptureYear = photo.EffectiveCaptureYear ?? photo.SourceCaptureYear,
+                    EffectiveCapturePrecision = photo.EffectiveCapturePrecision ?? string.Empty,
+                    SourceCaptureYear = photo.SourceCaptureYear,
+                    SourceCaptureYearBasis = photo.SourceCaptureYearBasis ?? string.Empty,
                     IsFavorite = photo.Favorite,
                 })
                 .Where(photo => photo.MediaId != Guid.Empty)
@@ -2034,17 +2042,6 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
 
         return $"{bytes / (1024.0 * 1024.0):0.##} MB";
     }
-
-    private static string FormatDateOnly(string effectiveCaptureDate, DateTimeOffset? fallback) =>
-        DateOnly.TryParseExact(
-            effectiveCaptureDate,
-            "yyyy-MM-dd",
-            CultureInfo.InvariantCulture,
-            DateTimeStyles.None,
-            out var date)
-            ? date.ToString("yyyy.MM.dd", CultureInfo.InvariantCulture)
-            : fallback?.ToLocalTime().ToString("yyyy.MM.dd", CultureInfo.InvariantCulture)
-              ?? "촬영일 정보 없음";
 
     private async Task RunBusyAsync(Func<Task> action)
     {

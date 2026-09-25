@@ -55,6 +55,9 @@ public static class GalleryBackendBridge
                 PlaceName = photo.PlaceDisplayName,
                 Country = photo.Country,
                 CapturedAt = photo.EffectiveCaptureDatetime,
+                EffectiveCaptureDate = photo.EffectiveCaptureDate,
+                EffectiveCaptureYear = photo.EffectiveCaptureYear,
+                EffectiveCapturePrecision = photo.EffectiveCapturePrecision,
                 AbsoluteLibraryPath = thumbnail ?? preview ?? string.Empty,
                 FallbackAbsoluteLibraryPath = preview,
             };
@@ -70,8 +73,12 @@ public static class GalleryBackendBridge
                         PlaceName = rep.PlaceDisplayName ?? "장소",
                         Country = rep.Country ?? string.Empty,
                         PhotoCount = group.Count(),
-                        VisitRecordCount = group.Select(item => item.EffectiveCaptureDate).Distinct().Count(),
+                        VisitRecordCount = group.Select(item => item.EffectiveCaptureDate)
+                            .Where(date => date.HasValue)
+                            .Distinct()
+                            .Count(),
                         LastVisitDate = group.Max(item => item.EffectiveCaptureDatetime),
+                        LastVisitYear = group.Max(item => (int?)item.EffectiveCaptureYear),
                         RepresentativeMediaId = GalleryBackendMapper.ParseFileId(rep.FileId),
                         AbsoluteLibraryPath = ResolveThumbnailUrl(apiBaseUrl, rep.FileId, rep.ThumbnailUrl)
                                                ?? GalleryBackendMapper.ToAbsoluteUrl(apiBaseUrl, rep.PreviewUrl),
@@ -81,11 +88,12 @@ public static class GalleryBackendBridge
         var heroes = recentVisits.Take(3).Select(visit => new HeroMemoryDto
         {
             PlaceId = visit.PlaceId, PlaceName = visit.PlaceName,
-            Year = visit.LastVisitDate?.Year ?? 0, PhotoCount = visit.PhotoCount,
+            Year = visit.LastVisitDate?.Year ?? visit.LastVisitYear ?? 0, PhotoCount = visit.PhotoCount,
             VisitRecordCount = visit.VisitRecordCount, RepresentativeMediaId = visit.RepresentativeMediaId,
             AbsoluteLibraryPath = visit.AbsoluteLibraryPath, KindLabel = "최근 방문",
             FallbackAbsoluteLibraryPath = visit.FallbackAbsoluteLibraryPath,
-            DateText = visit.LastVisitDate?.ToLocalTime().ToString("yyyy.MM.dd") ?? string.Empty,
+            DateText = visit.LastVisitDate?.ToLocalTime().ToString("yyyy.MM.dd")
+                       ?? (visit.LastVisitYear is > 0 ? $"{visit.LastVisitYear}년" : string.Empty),
         }).ToList();
         return new HomeDashboardDto
         {
@@ -492,7 +500,10 @@ public static class GalleryBackendBridge
             IsFavorite = photo.Favorite,
             PlaceName = FirstNonEmpty(photo.PlaceDisplayName, photo.PlaceName),
             Country = photo.Country,
-            CapturedAt = photo.CaptureDatetime,
+            CapturedAt = photo.EffectiveCaptureDatetime ?? photo.CaptureDatetime,
+            EffectiveCaptureDate = EffectiveCaptureDateFormatter.ParseDate(photo.EffectiveCaptureDate),
+            EffectiveCaptureYear = photo.EffectiveCaptureYear ?? photo.SourceCaptureYear,
+            EffectiveCapturePrecision = photo.EffectiveCapturePrecision ?? string.Empty,
         };
     }
 
@@ -960,8 +971,11 @@ public static class GalleryBackendBridge
             ThumbnailUrl = thumb ?? string.Empty,
             AbsoluteLibraryPath = thumb ?? string.Empty,
             IsFavorite = photo.Favorite,
-            CapturedAt = photo.CaptureDatetime,
-            CaptureYear = photo.CaptureDatetime?.Year ?? 0,
+            CapturedAt = photo.EffectiveCaptureDatetime ?? photo.CaptureDatetime,
+            CaptureYear = photo.EffectiveCaptureYear
+                          ?? photo.SourceCaptureYear
+                          ?? photo.CaptureDatetime?.Year
+                          ?? 0,
         };
     }
 

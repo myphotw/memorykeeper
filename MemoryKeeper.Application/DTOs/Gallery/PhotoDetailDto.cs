@@ -60,6 +60,15 @@ public sealed class PhotoDetailDto
     [JsonPropertyName("effective_capture_year")]
     public int? EffectiveCaptureYear { get; init; }
 
+    [JsonPropertyName("effective_capture_precision")]
+    public string? EffectiveCapturePrecision { get; init; }
+
+    [JsonPropertyName("source_capture_year")]
+    public int? SourceCaptureYear { get; init; }
+
+    [JsonPropertyName("source_capture_year_basis")]
+    public string? SourceCaptureYearBasis { get; init; }
+
     [JsonPropertyName("date_basis")]
     public string? DateBasis { get; init; }
 
