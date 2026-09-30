@@ -841,6 +841,29 @@ public sealed class GalleryPageLayoutTests
         Assert.Contains("CloseButtonText = \"취소\"", dialog, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void GallerySearch_UsesDedicatedLoadingNoResultAndErrorSurfaces()
+    {
+        var xaml = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Views", "GalleryPage.xaml"));
+        var page = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Views", "GalleryPage.xaml.cs"));
+        var viewModel = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "ViewModels", "GalleryViewModel.cs"));
+
+        Assert.Contains("x:Name=\"GalleryLoadingState\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("<ProgressRing", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"GallerySearchEmptyState\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Text=\"검색 결과가 없습니다.\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"GalleryEmptyState\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Text=\"아직 사진이 없습니다.\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"GalleryErrorState\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("GalleryContentState.SearchLoading", page, StringComparison.Ordinal);
+        Assert.Contains("GalleryContentState.SearchNoResults", page, StringComparison.Ordinal);
+        Assert.Contains("GalleryContentState.GalleryEmpty", page, StringComparison.Ordinal);
+        Assert.Contains("GalleryContentState.Error", page, StringComparison.Ordinal);
+        Assert.Contains("IsSearchLoading = true;", viewModel, StringComparison.Ordinal);
+        Assert.Contains("GalleryHierarchySearchPlanner.Resolve", viewModel, StringComparison.Ordinal);
+        Assert.Contains("node.BuildQuery(SearchText)", viewModel, StringComparison.Ordinal);
+    }
+
     private static int CountOccurrences(string source, string value)
     {
         var count = 0;

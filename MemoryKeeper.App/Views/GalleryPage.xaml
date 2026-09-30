@@ -425,6 +425,38 @@
                     </GridView.ItemTemplate>
                 </GridView>
 
+                <StackPanel
+                    x:Name="GalleryLoadingState"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Spacing="12"
+                    Visibility="Collapsed">
+                    <ProgressRing
+                        Width="36"
+                        Height="36"
+                        IsActive="True" />
+                    <TextBlock
+                        Text="사진을 찾고 있습니다…"
+                        Style="{StaticResource MkEmptyStateMessageStyle}" />
+                </StackPanel>
+
+                <Border
+                    x:Name="GallerySearchEmptyState"
+                    Style="{StaticResource MkEmptyStateCardStyle}"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    MaxWidth="400"
+                    Visibility="Collapsed">
+                    <StackPanel Spacing="12" HorizontalAlignment="Center">
+                        <TextBlock
+                            Text="검색 결과가 없습니다."
+                            Style="{StaticResource MkEmptyStateTitleStyle}" />
+                        <TextBlock
+                            Text="다른 장소, 국가, 지역 또는 파일명으로 검색해 보세요."
+                            Style="{StaticResource MkEmptyStateMessageStyle}" />
+                    </StackPanel>
+                </Border>
+
                 <Border
                     x:Name="GalleryEmptyState"
                     Style="{StaticResource MkEmptyStateCardStyle}"
@@ -445,6 +477,23 @@
                             MinWidth="180"
                             HorizontalAlignment="Center"
                             Click="ImportPhotos_OnClick" />
+                    </StackPanel>
+                </Border>
+
+                <Border
+                    x:Name="GalleryErrorState"
+                    Style="{StaticResource MkEmptyStateCardStyle}"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    MaxWidth="400"
+                    Visibility="Collapsed">
+                    <StackPanel Spacing="12" HorizontalAlignment="Center">
+                        <TextBlock
+                            Text="사진을 불러오지 못했습니다."
+                            Style="{StaticResource MkEmptyStateTitleStyle}" />
+                        <TextBlock
+                            Text="잠시 후 다시 시도해 주세요."
+                            Style="{StaticResource MkEmptyStateMessageStyle}" />
                     </StackPanel>
                 </Border>
             </Grid>

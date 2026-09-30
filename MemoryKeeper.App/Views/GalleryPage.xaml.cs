@@ -196,7 +196,11 @@ public sealed partial class GalleryPage : Page
 
     private void ViewModel_OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(GalleryViewModel.Items) or nameof(GalleryViewModel.IsBusy))
+        if (e.PropertyName is nameof(GalleryViewModel.Items)
+            or nameof(GalleryViewModel.IsBusy)
+            or nameof(GalleryViewModel.IsSearchLoading)
+            or nameof(GalleryViewModel.HasLoadError)
+            or nameof(GalleryViewModel.ContentState))
         {
             if (e.PropertyName is nameof(GalleryViewModel.Items))
             {
@@ -240,11 +244,22 @@ public sealed partial class GalleryPage : Page
 
     private void UpdateEmptyState()
     {
-        var empty = !ViewModel.IsBusy
-                    && ViewModel.SelectedNode is not null
-                    && ViewModel.Items.Count == 0;
-        GalleryEmptyState.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
-        PhotoGrid.Visibility = ViewModel.Items.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        var state = ViewModel.ContentState;
+        GalleryLoadingState.Visibility = state is GalleryContentState.Loading or GalleryContentState.SearchLoading
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        GallerySearchEmptyState.Visibility = state == GalleryContentState.SearchNoResults
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        GalleryEmptyState.Visibility = state == GalleryContentState.GalleryEmpty
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        GalleryErrorState.Visibility = state == GalleryContentState.Error
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        PhotoGrid.Visibility = state == GalleryContentState.Results
+            ? Visibility.Visible
+            : Visibility.Collapsed;
     }
 
     private void Gallery_OnItemClick(object sender, ItemClickEventArgs e)
