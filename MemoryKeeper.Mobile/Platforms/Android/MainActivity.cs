@@ -1,5 +1,7 @@
 using Android.App;
 using Android.Content.PM;
+using Android.OS;
+using MemoryKeeper.Mobile.Diagnostics;
 
 namespace MemoryKeeper.Mobile;
 
@@ -15,4 +17,33 @@ namespace MemoryKeeper.Mobile;
                            | ConfigChanges.Density)]
 public sealed class MainActivity : MauiAppCompatActivity
 {
+    protected override void OnCreate(Bundle? savedInstanceState)
+    {
+#if DEBUG
+        MobileStartupCheckpoint.Record("ANDROID-ACTIVITY");
+#endif
+
+        try
+        {
+            base.OnCreate(savedInstanceState);
+#if DEBUG
+            MobileStartupCheckpoint.Record("ANDROID-ACTIVITY-DONE");
+#endif
+        }
+        catch (Exception exception)
+        {
+#if DEBUG
+            MobileStartupCheckpoint.Fail(exception);
+#endif
+            throw;
+        }
+    }
+
+    protected override void OnPostResume()
+    {
+        base.OnPostResume();
+#if DEBUG
+        MobileStartupCheckpoint.Complete("STARTUP-COMPLETE");
+#endif
+    }
 }

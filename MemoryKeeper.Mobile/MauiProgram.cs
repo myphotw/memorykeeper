@@ -1,6 +1,9 @@
+using MemoryKeeper.Application.Interfaces;
+using MemoryKeeper.Application.Services;
 using MemoryKeeper.Mobile.Configuration;
+using MemoryKeeper.Mobile.Diagnostics;
 using MemoryKeeper.Mobile.Http;
-using MemoryKeeper.Mobile.Security;
+using MemoryKeeper.Mobile.Images;
 using MemoryKeeper.Mobile.ViewModels;
 using MemoryKeeper.Mobile.Views;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,11 +15,14 @@ public static class MauiProgram
 {
     public static MauiApp CreateMauiApp()
     {
+        MobileStartupCheckpoint.Record("MAUI-CREATE-START");
         var builder = MauiApp.CreateBuilder();
+        MobileStartupCheckpoint.Record("MAUI-BUILDER-CREATED");
         builder.UseMauiApp<App>();
+        MobileStartupCheckpoint.Record("MAUI-APP-REGISTERED");
 
         builder.Services.AddSingleton<IMobileBackendConfiguration, MobileBackendConfiguration>();
-        builder.Services.AddSingleton<ISecureTokenStore, MauiSecureTokenStore>();
+        MobileStartupCheckpoint.Record("MAUI-CONFIG-REGISTERED");
         builder.Services.AddTransient<MobileBackendAuthenticationHandler>();
         builder.Services
             .AddHttpClient(MobileHttpClientNames.Backend)
@@ -26,11 +32,21 @@ public static class MauiProgram
                 client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
             })
             .AddHttpMessageHandler<MobileBackendAuthenticationHandler>();
+        MobileStartupCheckpoint.Record("MAUI-HTTP-REGISTERED");
 
+        builder.Services.AddSingleton<IFastGalleryApiRepository, MobileFastGalleryApiRepository>();
+        builder.Services.AddSingleton<FastGalleryPagingService>();
+        builder.Services.AddSingleton<BoundedThumbnailMemoryCache>();
+        builder.Services.AddSingleton<IMobileThumbnailSourceFactory, MobileThumbnailSourceFactory>();
+        MobileStartupCheckpoint.Record("MAUI-GALLERY-REGISTERED");
         builder.Services.AddSingleton<HomeViewModel>();
         builder.Services.AddSingleton<HomePage>();
         builder.Services.AddSingleton<AppShell>();
+        MobileStartupCheckpoint.Record("MAUI-UI-REGISTERED");
 
-        return builder.Build();
+        MobileStartupCheckpoint.Record("MAUI-BUILD-START");
+        var app = builder.Build();
+        MobileStartupCheckpoint.Record("MAUI-BUILD-DONE");
+        return app;
     }
 }

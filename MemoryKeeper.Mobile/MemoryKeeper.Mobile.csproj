@@ -1,5 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <Import Project="..\config\mobile.local.props"
+          Condition="Exists('..\config\mobile.local.props')" />
+
   <PropertyGroup>
     <TargetFramework>net8.0-android</TargetFramework>
     <OutputType>Exe</OutputType>
@@ -14,6 +17,14 @@
     <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
     <ApplicationVersion>1</ApplicationVersion>
     <SupportedOSPlatformVersion>23.0</SupportedOSPlatformVersion>
+
+    <MemoryKeeperMobileBackendUrl Condition="'$(MemoryKeeperMobileBackendUrl)' == ''">$(MEMORYKEEPER_MOBILE_BACKEND_URL)</MemoryKeeperMobileBackendUrl>
+    <MemoryKeeperMobileBackendToken Condition="'$(MemoryKeeperMobileBackendToken)' == ''">$(MEMORYKEEPER_MOBILE_BACKEND_TOKEN)</MemoryKeeperMobileBackendToken>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <!-- Debug APKs are installed manually on physical devices, so they must not depend on fast deployment. -->
+    <EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,6 +32,18 @@
   </ItemGroup>
 
   <ItemGroup>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>MemoryKeeper.Mobile.BackendUrl</_Parameter1>
+      <_Parameter2>$(MemoryKeeperMobileBackendUrl)</_Parameter2>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>MemoryKeeper.Mobile.BackendToken</_Parameter1>
+      <_Parameter2>$(MemoryKeeperMobileBackendToken)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.1" />
   </ItemGroup>

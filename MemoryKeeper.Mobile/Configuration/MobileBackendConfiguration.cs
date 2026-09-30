@@ -1,32 +1,45 @@
-using Microsoft.Maui.Storage;
+using System.Reflection;
 
 namespace MemoryKeeper.Mobile.Configuration;
 
 public sealed class MobileBackendConfiguration : IMobileBackendConfiguration
 {
-    private const string BaseUriPreferenceKey = "memorykeeper.backend.base_uri";
+    private const string BackendUrlMetadataKey = "MemoryKeeper.Mobile.BackendUrl";
+    private const string BackendTokenMetadataKey = "MemoryKeeper.Mobile.BackendToken";
 
-    public Uri? GetBaseUri()
+    public MobileBackendConfiguration()
+        : this(ReadBuildValue(BackendUrlMetadataKey), ReadBuildValue(BackendTokenMetadataKey))
     {
-        var value = Preferences.Default.Get(BaseUriPreferenceKey, string.Empty);
-        return Uri.TryCreate(value, UriKind.Absolute, out var baseUri)
-            && baseUri.Scheme == Uri.UriSchemeHttps
-                ? baseUri
-                : null;
     }
 
-    public void SaveBaseUri(Uri baseUri)
+    internal MobileBackendConfiguration(string? backendUrl, string? bearerToken)
     {
-        ArgumentNullException.ThrowIfNull(baseUri);
-        if (!baseUri.IsAbsoluteUri
-            || baseUri.Scheme != Uri.UriSchemeHttps
-            || !string.IsNullOrEmpty(baseUri.UserInfo))
+        BaseUri = ParseBaseUri(backendUrl);
+        BearerToken = string.IsNullOrWhiteSpace(bearerToken) ? null : bearerToken.Trim();
+    }
+
+    public Uri? BaseUri { get; }
+
+    public string? BearerToken { get; }
+
+    public bool IsConfigured => BaseUri is not null && !string.IsNullOrWhiteSpace(BearerToken);
+
+    private static Uri? ParseBaseUri(string? value)
+    {
+        if (!Uri.TryCreate(value?.Trim(), UriKind.Absolute, out var uri)
+            || uri.Scheme != Uri.UriSchemeHttps
+            || !string.IsNullOrEmpty(uri.UserInfo)
+            || (uri.AbsolutePath != "/" && !string.IsNullOrEmpty(uri.AbsolutePath.Trim('/'))))
         {
-            throw new ArgumentException("Backend 주소는 자격 증명이 없는 HTTPS 주소여야 합니다.", nameof(baseUri));
+            return null;
         }
 
-        Preferences.Default.Set(BaseUriPreferenceKey, baseUri.ToString().TrimEnd('/'));
+        return new Uri(uri.GetLeftPart(UriPartial.Authority) + "/", UriKind.Absolute);
     }
 
-    public void ClearBaseUri() => Preferences.Default.Remove(BaseUriPreferenceKey);
+    private static string? ReadBuildValue(string key) =>
+        typeof(MobileBackendConfiguration).Assembly
+            .GetCustomAttributes<AssemblyMetadataAttribute>()
+            .FirstOrDefault(attribute => string.Equals(attribute.Key, key, StringComparison.Ordinal))
+            ?.Value;
 }

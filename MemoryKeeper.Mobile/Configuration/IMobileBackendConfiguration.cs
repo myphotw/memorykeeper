@@ -2,9 +2,9 @@ namespace MemoryKeeper.Mobile.Configuration;
 
 public interface IMobileBackendConfiguration
 {
-    Uri? GetBaseUri();
+    Uri? BaseUri { get; }
 
-    void SaveBaseUri(Uri baseUri);
+    string? BearerToken { get; }
 
-    void ClearBaseUri();
+    bool IsConfigured { get; }
 }

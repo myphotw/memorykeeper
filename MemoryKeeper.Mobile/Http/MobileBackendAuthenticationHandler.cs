@@ -1,32 +1,27 @@
 using System.Net.Http.Headers;
 using MemoryKeeper.Mobile.Configuration;
-using MemoryKeeper.Mobile.Security;
 
 namespace MemoryKeeper.Mobile.Http;
 
 public sealed class MobileBackendAuthenticationHandler : DelegatingHandler
 {
     private readonly IMobileBackendConfiguration _configuration;
-    private readonly ISecureTokenStore _tokenStore;
 
-    public MobileBackendAuthenticationHandler(
-        IMobileBackendConfiguration configuration,
-        ISecureTokenStore tokenStore)
+    public MobileBackendAuthenticationHandler(IMobileBackendConfiguration configuration)
     {
         _configuration = configuration;
-        _tokenStore = tokenStore;
     }
 
     protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
         CancellationToken cancellationToken)
     {
-        if (RequiresBearer(request.RequestUri, _configuration.GetBaseUri()))
+        if (RequiresBearer(request.RequestUri, _configuration.BaseUri))
         {
-            var token = await _tokenStore.ReadAsync(cancellationToken).ConfigureAwait(false);
+            var token = _configuration.BearerToken;
             if (string.IsNullOrWhiteSpace(token))
             {
-                throw new InvalidOperationException("Backend 인증 정보가 준비되지 않았습니다.");
+                throw new MobileBackendConfigurationException();
             }
 
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);

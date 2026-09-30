@@ -24,6 +24,13 @@
     <Compile Include="..\MemoryKeeper.App\Services\GalleryBackendBridge.cs" Link="App\GalleryBackendBridge.cs" />
     <Compile Include="..\MemoryKeeper.App\Services\IGalleryFocusState.cs" Link="App\IGalleryFocusState.cs" />
     <Compile Include="..\MemoryKeeper.App\Services\SingleInstanceEventSubscription.cs" Link="App\SingleInstanceEventSubscription.cs" />
+    <!-- Mobile HTTP foundation is platform-neutral and remains testable without a MAUI target. -->
+    <Compile Include="..\MemoryKeeper.Mobile\Configuration\IMobileBackendConfiguration.cs" Link="Mobile\Configuration\IMobileBackendConfiguration.cs" />
+    <Compile Include="..\MemoryKeeper.Mobile\Configuration\MobileBackendConfiguration.cs" Link="Mobile\Configuration\MobileBackendConfiguration.cs" />
+    <Compile Include="..\MemoryKeeper.Mobile\Http\MobileBackendAuthenticationHandler.cs" Link="Mobile\Http\MobileBackendAuthenticationHandler.cs" />
+    <Compile Include="..\MemoryKeeper.Mobile\Http\MobileBackendExceptions.cs" Link="Mobile\Http\MobileBackendExceptions.cs" />
+    <Compile Include="..\MemoryKeeper.Mobile\Http\MobileFastGalleryApiRepository.cs" Link="Mobile\Http\MobileFastGalleryApiRepository.cs" />
+    <Compile Include="..\MemoryKeeper.Mobile\Http\MobileHttpClientNames.cs" Link="Mobile\Http\MobileHttpClientNames.cs" />
   </ItemGroup>
 
   <ItemGroup>

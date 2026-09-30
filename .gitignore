@@ -74,6 +74,7 @@ MemoryKeeper_V1.0.0_Release/
 MemoryKeeper.maps.key
 config/deployment.env
 config/local.env
+config/mobile.local.props
 
 Release/
 Debug/

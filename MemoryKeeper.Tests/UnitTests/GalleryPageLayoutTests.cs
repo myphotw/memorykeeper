@@ -184,7 +184,7 @@ public sealed class GalleryPageLayoutTests
         var dto = File.ReadAllText(FindSourceFile("MemoryKeeper.Application", "DTOs", "FastGalleryDtos.cs"));
         var treeNode = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Models", "GalleryTreeNode.cs"));
         var gallery = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "ViewModels", "GalleryViewModel.cs"));
-        var repository = File.ReadAllText(FindSourceFile("MemoryKeeper.Infrastructure", "Repositories", "Api", "FastGalleryApiRepository.cs"));
+        var requestPathBuilder = File.ReadAllText(FindSourceFile("MemoryKeeper.Application", "FastGalleryRequestPathBuilder.cs"));
 
         Assert.Contains("[JsonPropertyName(\"location_key\")] public string? LocationKey", dto, StringComparison.Ordinal);
         Assert.Contains("public string? LocationKey { get; init; }", treeNode, StringComparison.Ordinal);
@@ -193,8 +193,8 @@ public sealed class GalleryPageLayoutTests
         Assert.True(CountOccurrences(gallery, "LocationKey = place.LocationKey") >= 2);
         Assert.Contains("LocationKey = locationKey", gallery, StringComparison.Ordinal);
         Assert.Contains("PlaceId = isPlaceLeaf && locationKey is null ? node.PlaceId : null", gallery, StringComparison.Ordinal);
-        Assert.Contains("[\"location_key\"] = query.LocationKey", repository, StringComparison.Ordinal);
-        Assert.Contains("string.IsNullOrWhiteSpace(query.LocationKey)", repository, StringComparison.Ordinal);
+        Assert.Contains("[\"location_key\"] = query.LocationKey", requestPathBuilder, StringComparison.Ordinal);
+        Assert.Contains("string.IsNullOrWhiteSpace(query.LocationKey)", requestPathBuilder, StringComparison.Ordinal);
         Assert.DoesNotContain("registered:v1:", gallery, StringComparison.Ordinal);
         Assert.DoesNotContain("raw:v1:", gallery, StringComparison.Ordinal);
     }
@@ -237,7 +237,7 @@ public sealed class GalleryPageLayoutTests
     {
         var dto = File.ReadAllText(FindSourceFile("MemoryKeeper.Application", "DTOs", "FastGalleryDtos.cs"));
         var viewModel = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "ViewModels", "GalleryViewModel.cs"));
-        var repository = File.ReadAllText(FindSourceFile("MemoryKeeper.Infrastructure", "Repositories", "Api", "FastGalleryApiRepository.cs"));
+        var requestPathBuilder = File.ReadAllText(FindSourceFile("MemoryKeeper.Application", "FastGalleryRequestPathBuilder.cs"));
         var loadInitialStart = viewModel.IndexOf("private async Task<FastPageLoadResult> LoadInitialFastPageAsync", StringComparison.Ordinal);
         var loadMoreStart = viewModel.IndexOf("private async Task LoadMoreAsync()", StringComparison.Ordinal);
         var toFastQueryStart = viewModel.IndexOf("private FastGalleryPhotoQuery ToFastQuery", StringComparison.Ordinal);
@@ -249,7 +249,7 @@ public sealed class GalleryPageLayoutTests
         Assert.Contains("Unclassified = node.Kind == GalleryTreeNodeKind.Unclassified ? true : null", toFastQuery, StringComparison.Ordinal);
         Assert.Contains("Year = node.Year", toFastQuery, StringComparison.Ordinal);
         Assert.Contains("PlaceId = isPlaceLeaf && locationKey is null ? node.PlaceId : null", toFastQuery, StringComparison.Ordinal);
-        Assert.Contains("[\"unclassified\"] = query.Unclassified == true ? \"true\" : null", repository, StringComparison.Ordinal);
+        Assert.Contains("[\"unclassified\"] = query.Unclassified == true ? \"true\" : null", requestPathBuilder, StringComparison.Ordinal);
         Assert.Contains("ToFastQuery(node, regionOverride: exactRegion)", viewModel[loadInitialStart..toFastQueryStart], StringComparison.Ordinal);
         Assert.Contains("ToFastQuery(_pagingNode, cursor, exactRegion)", viewModel[loadMoreStart..loadInitialStart], StringComparison.Ordinal);
         Assert.Contains("node.Kind != GalleryTreeNodeKind.City || node.RegionFilters.Count <= 1", viewModel[loadInitialStart..toFastQueryStart], StringComparison.Ordinal);
@@ -261,8 +261,8 @@ public sealed class GalleryPageLayoutTests
     public void GalleryDateUnclassifiedNode_UsesDistinctYearScopedFastQueryAcrossPagination()
     {
         var dto = File.ReadAllText(FindSourceFile("MemoryKeeper.Application", "DTOs", "FastGalleryDtos.cs"));
-        var repository = File.ReadAllText(FindSourceFile(
-            "MemoryKeeper.Infrastructure", "Repositories", "Api", "FastGalleryApiRepository.cs"));
+        var requestPathBuilder = File.ReadAllText(FindSourceFile(
+            "MemoryKeeper.Application", "FastGalleryRequestPathBuilder.cs"));
         var node = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Models", "GalleryTreeNode.cs"));
         var viewModel = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "ViewModels", "GalleryViewModel.cs"));
 
@@ -276,8 +276,8 @@ public sealed class GalleryPageLayoutTests
         Assert.Contains("Count = dateUnclassified.PhotoCount", viewModel, StringComparison.Ordinal);
         Assert.Contains("ToFastQuery(node, regionOverride: exactRegion)", viewModel, StringComparison.Ordinal);
         Assert.Contains("ToFastQuery(_pagingNode, cursor, exactRegion)", viewModel, StringComparison.Ordinal);
-        Assert.Contains("[\"date_unclassified\"] = query.DateUnclassified == true ? \"true\" : null", repository, StringComparison.Ordinal);
-        Assert.Contains("query.DateUnclassified == true && query.Year is null", repository, StringComparison.Ordinal);
+        Assert.Contains("[\"date_unclassified\"] = query.DateUnclassified == true ? \"true\" : null", requestPathBuilder, StringComparison.Ordinal);
+        Assert.Contains("query.DateUnclassified == true && query.Year is null", requestPathBuilder, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -449,7 +449,7 @@ public sealed class GalleryPageLayoutTests
         var page = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Views", "GalleryPage.xaml.cs"));
         var viewModel = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "ViewModels", "GalleryViewModel.cs"));
         var tree = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Models", "GalleryTreeNode.cs"));
-        var repository = File.ReadAllText(FindSourceFile("MemoryKeeper.Infrastructure", "Repositories", "Api", "FastGalleryApiRepository.cs"));
+        var requestPathBuilder = File.ReadAllText(FindSourceFile("MemoryKeeper.Application", "FastGalleryRequestPathBuilder.cs"));
 
         Assert.Contains("Content=\"{Binding PhotoCategoryActionText}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Content=\"장소 직접 지정\"", xaml, StringComparison.Ordinal);
@@ -464,7 +464,7 @@ public sealed class GalleryPageLayoutTests
         Assert.DoesNotContain("PlaceId =", viewModel[dailyNodeStart..dailyNodeEnd], StringComparison.Ordinal);
         Assert.Contains("PhotoCategory = Kind == GalleryTreeNodeKind.Daily ? MemoryKeeperPhotoCategories.Daily : null", tree, StringComparison.Ordinal);
         Assert.Contains("PhotoCategory = node.Kind == GalleryTreeNodeKind.Daily ? MemoryKeeperPhotoCategories.Daily : null", viewModel, StringComparison.Ordinal);
-        Assert.Contains("[\"photo_category\"] = query.PhotoCategory", repository, StringComparison.Ordinal);
+        Assert.Contains("[\"photo_category\"] = query.PhotoCategory", requestPathBuilder, StringComparison.Ordinal);
         Assert.Contains("await _writeService.SetPhotoCategoryAsync(revisions, targetCategory)", page, StringComparison.Ordinal);
         Assert.Contains("item.Media.HasPhotoCategoryRevision", page, StringComparison.Ordinal);
         Assert.Contains("detail.HasPhotoCategoryRevision", page, StringComparison.Ordinal);
@@ -679,7 +679,7 @@ public sealed class GalleryPageLayoutTests
     {
         var viewModel = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "ViewModels", "GalleryViewModel.cs"));
         var treeNode = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Models", "GalleryTreeNode.cs"));
-        var repository = File.ReadAllText(FindSourceFile("MemoryKeeper.Infrastructure", "Repositories", "Api", "FastGalleryApiRepository.cs"));
+        var requestPathBuilder = File.ReadAllText(FindSourceFile("MemoryKeeper.Application", "FastGalleryRequestPathBuilder.cs"));
 
         Assert.Contains("GalleryRegionHierarchyProjection.Build(cities)", viewModel, StringComparison.Ordinal);
         Assert.Contains("CanonicalRegion = city.CanonicalIdentity", viewModel, StringComparison.Ordinal);
@@ -696,8 +696,8 @@ public sealed class GalleryPageLayoutTests
         Assert.Contains("LocationKey = place.LocationKey", viewModel, StringComparison.Ordinal);
         Assert.Contains("CanonicalRegion ?? City", treeNode, StringComparison.Ordinal);
         Assert.Contains("RegionFilters", treeNode, StringComparison.Ordinal);
-        Assert.Contains("[\"region\"] = query.Region", repository, StringComparison.Ordinal);
-        Assert.Contains("[\"location_key\"] = query.LocationKey", repository, StringComparison.Ordinal);
+        Assert.Contains("[\"region\"] = query.Region", requestPathBuilder, StringComparison.Ordinal);
+        Assert.Contains("[\"location_key\"] = query.LocationKey", requestPathBuilder, StringComparison.Ordinal);
         Assert.DoesNotContain("PatchMetadataAsync", viewModel, StringComparison.Ordinal);
         Assert.DoesNotContain("if (city == \"Osaka\")", viewModel, StringComparison.Ordinal);
     }

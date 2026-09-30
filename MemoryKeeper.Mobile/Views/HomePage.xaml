@@ -3,39 +3,122 @@
     x:Class="MemoryKeeper.Mobile.Views.HomePage"
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:models="clr-namespace:MemoryKeeper.Mobile.Models"
     xmlns:viewModels="clr-namespace:MemoryKeeper.Mobile.ViewModels"
     x:DataType="viewModels:HomeViewModel"
     BackgroundColor="{StaticResource MemoryKeeperSurface}"
-    Title="홈">
-    <Grid Padding="32" RowDefinitions="*,Auto,*">
-        <VerticalStackLayout
+    Shell.NavBarIsVisible="False">
+    <Grid RowDefinitions="Auto,Auto,*">
+        <Label
+            Grid.Row="0"
+            Margin="16,14,16,10"
+            FontAttributes="Bold"
+            FontSize="26"
+            Text="MemoryKeeper"
+            TextColor="{StaticResource MemoryKeeperText}" />
+
+        <Border
             Grid.Row="1"
-            MaximumWidthRequest="480"
-            Spacing="18"
-            VerticalOptions="Center">
+            Margin="12,0,12,8"
+            Padding="12,8"
+            BackgroundColor="#FFF4E5"
+            IsVisible="{Binding IsInlineErrorVisible}"
+            Stroke="#FFD59A"
+            StrokeShape="RoundRectangle 10">
             <Label
-                FontAttributes="Bold"
-                FontSize="34"
-                HorizontalTextAlignment="Center"
-                Text="{Binding Title}"
-                TextColor="{StaticResource MemoryKeeperText}" />
-            <Label
-                FontSize="20"
-                HorizontalTextAlignment="Center"
-                Text="{Binding StatusMessage}"
-                TextColor="{StaticResource MemoryKeeperPrimary}" />
-            <Border
-                Margin="0,12,0,0"
-                Padding="20"
-                BackgroundColor="White"
-                Stroke="#D9E4F2"
-                StrokeShape="RoundRectangle 16">
+                FontSize="13"
+                Text="{Binding ErrorMessage}"
+                TextColor="#7A4B00" />
+        </Border>
+
+        <Grid Grid.Row="2">
+            <RefreshView
+                Command="{Binding RefreshCommand}"
+                IsRefreshing="{Binding IsRefreshing}">
+                <CollectionView
+                    ItemsSource="{Binding Items}"
+                    RemainingItemsThreshold="8"
+                    RemainingItemsThresholdReached="OnRemainingItemsThresholdReached"
+                    SelectionMode="None">
+                    <CollectionView.ItemsLayout>
+                        <GridItemsLayout
+                            x:Name="GalleryItemsLayout"
+                            HorizontalItemSpacing="2"
+                            Orientation="Vertical"
+                            Span="3"
+                            VerticalItemSpacing="2" />
+                    </CollectionView.ItemsLayout>
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="models:MobileGalleryItem">
+                            <Grid
+                                HeightRequest="{Binding TileSize}"
+                                BackgroundColor="#DDE5EE"
+                                IsClippedToBounds="True">
+                                <Label
+                                    FontSize="24"
+                                    HorizontalOptions="Center"
+                                    Text="&#x1F5BC;"
+                                    TextColor="#8391A2"
+                                    VerticalOptions="Center" />
+                                <Image
+                                    Aspect="AspectFill"
+                                    Source="{Binding ThumbnailSource}" />
+                            </Grid>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                    <CollectionView.Footer>
+                        <Grid HeightRequest="52">
+                            <ActivityIndicator
+                                HorizontalOptions="Center"
+                                IsRunning="{Binding IsLoadingMore}"
+                                IsVisible="{Binding IsLoadingMore}"
+                                VerticalOptions="Center" />
+                        </Grid>
+                    </CollectionView.Footer>
+                </CollectionView>
+            </RefreshView>
+
+            <ActivityIndicator
+                HeightRequest="44"
+                HorizontalOptions="Center"
+                IsRunning="{Binding IsInitialLoading}"
+                IsVisible="{Binding IsInitialLoading}"
+                VerticalOptions="Center"
+                WidthRequest="44" />
+
+            <VerticalStackLayout
+                Margin="32"
+                IsVisible="{Binding IsEmptyStateVisible}"
+                Spacing="8"
+                VerticalOptions="Center">
                 <Label
-                    FontSize="15"
+                    FontAttributes="Bold"
+                    FontSize="20"
                     HorizontalTextAlignment="Center"
-                    Text="{Binding NextStepMessage}"
+                    Text="아직 표시할 사진이 없습니다."
+                    TextColor="{StaticResource MemoryKeeperText}" />
+                <Label
+                    FontSize="14"
+                    HorizontalTextAlignment="Center"
+                    Text="아래로 당겨 새로 고칠 수 있습니다."
                     TextColor="{StaticResource MemoryKeeperSecondaryText}" />
-            </Border>
-        </VerticalStackLayout>
+            </VerticalStackLayout>
+
+            <VerticalStackLayout
+                Margin="32"
+                IsVisible="{Binding IsErrorStateVisible}"
+                Spacing="16"
+                VerticalOptions="Center">
+                <Label
+                    FontSize="16"
+                    HorizontalTextAlignment="Center"
+                    Text="{Binding ErrorMessage}"
+                    TextColor="{StaticResource MemoryKeeperSecondaryText}" />
+                <Button
+                    Command="{Binding RefreshCommand}"
+                    HorizontalOptions="Center"
+                    Text="다시 시도" />
+            </VerticalStackLayout>
+        </Grid>
     </Grid>
 </ContentPage>

@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup>
+    <!-- Copy to mobile.local.props (gitignored) and provide local build values. -->
+    <MemoryKeeperMobileBackendUrl></MemoryKeeperMobileBackendUrl>
+    <MemoryKeeperMobileBackendToken></MemoryKeeperMobileBackendToken>
+  </PropertyGroup>
+</Project>
