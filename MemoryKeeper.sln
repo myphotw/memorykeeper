@@ -13,6 +13,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MemoryKeeper.App", "MemoryK
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MemoryKeeper.Tests", "MemoryKeeper.Tests\MemoryKeeper.Tests.csproj", "{41E68371-9EBF-422F-B6E2-A90097BE1867}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MemoryKeeper.Mobile", "MemoryKeeper.Mobile\MemoryKeeper.Mobile.csproj", "{95DB197D-574F-48C9-984D-C40D632CB6A9}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -61,6 +63,12 @@ Global
 		{41E68371-9EBF-422F-B6E2-A90097BE1867}.Release|Any CPU.Build.0 = Release|Any CPU
 		{41E68371-9EBF-422F-B6E2-A90097BE1867}.Release|x64.ActiveCfg = Release|Any CPU
 		{41E68371-9EBF-422F-B6E2-A90097BE1867}.Release|x64.Build.0 = Release|Any CPU
+		{95DB197D-574F-48C9-984D-C40D632CB6A9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{95DB197D-574F-48C9-984D-C40D632CB6A9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{95DB197D-574F-48C9-984D-C40D632CB6A9}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{95DB197D-574F-48C9-984D-C40D632CB6A9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{95DB197D-574F-48C9-984D-C40D632CB6A9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{95DB197D-574F-48C9-984D-C40D632CB6A9}.Release|x64.ActiveCfg = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

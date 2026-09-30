@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="MemoryKeeper.Mobile.Views.HomePage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:viewModels="clr-namespace:MemoryKeeper.Mobile.ViewModels"
+    x:DataType="viewModels:HomeViewModel"
+    BackgroundColor="{StaticResource MemoryKeeperSurface}"
+    Title="홈">
+    <Grid Padding="32" RowDefinitions="*,Auto,*">
+        <VerticalStackLayout
+            Grid.Row="1"
+            MaximumWidthRequest="480"
+            Spacing="18"
+            VerticalOptions="Center">
+            <Label
+                FontAttributes="Bold"
+                FontSize="34"
+                HorizontalTextAlignment="Center"
+                Text="{Binding Title}"
+                TextColor="{StaticResource MemoryKeeperText}" />
+            <Label
+                FontSize="20"
+                HorizontalTextAlignment="Center"
+                Text="{Binding StatusMessage}"
+                TextColor="{StaticResource MemoryKeeperPrimary}" />
+            <Border
+                Margin="0,12,0,0"
+                Padding="20"
+                BackgroundColor="White"
+                Stroke="#D9E4F2"
+                StrokeShape="RoundRectangle 16">
+                <Label
+                    FontSize="15"
+                    HorizontalTextAlignment="Center"
+                    Text="{Binding NextStepMessage}"
+                    TextColor="{StaticResource MemoryKeeperSecondaryText}" />
+            </Border>
+        </VerticalStackLayout>
+    </Grid>
+</ContentPage>
