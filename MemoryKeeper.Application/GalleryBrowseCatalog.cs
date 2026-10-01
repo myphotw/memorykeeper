@@ -82,7 +82,7 @@ public static class GalleryBrowseCatalog
         }
 
         var candidates = hierarchy.Roots
-            .Where(node => node.Year.HasValue)
+            .Where(node => node.Year is >= 1 and <= 9999)
             .SelectMany(BuildHierarchyFacets)
             .Where(candidate => MatchesAll(candidate, tokens))
             .ToList();
@@ -98,6 +98,7 @@ public static class GalleryBrowseCatalog
             .GroupBy(candidate => candidate.Scope)
             .Select(group => group.First() with { PhotoCount = group.Sum(item => item.PhotoCount) })
             .OrderBy(candidate => candidate.Depth)
+            .ThenByDescending(candidate => GetYear(candidate.Scope))
             .ThenByDescending(candidate => candidate.PhotoCount)
             .ThenBy(candidate => candidate.DisplayName, StringComparer.CurrentCultureIgnoreCase)
             .Take(maxResults)
@@ -210,6 +211,14 @@ public static class GalleryBrowseCatalog
         var searchable = $"{candidate.DisplayName} {candidate.Context}";
         return tokens.All(token => searchable.Contains(token, StringComparison.CurrentCultureIgnoreCase));
     }
+
+    private static int GetYear(GalleryBrowseScope scope) => scope switch
+    {
+        GalleryBrowseScope.YearScope year => year.Year,
+        GalleryBrowseScope.HierarchyScope { Year: int year } => year,
+        GalleryBrowseScope.CanonicalRegionScope region => region.Year,
+        _ => int.MinValue,
+    };
 
     private static bool IsUnclassifiedCountry(FastGalleryHierarchyNodeDto node)
     {

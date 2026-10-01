@@ -58,7 +58,7 @@ public static class GalleryPlaceYearCatalog
         var currentYear = (currentScope as GalleryBrowseScope.HierarchyScope)?.Year;
 
         return hierarchy.Roots
-            .Where(yearNode => yearNode.Year.HasValue)
+            .Where(yearNode => yearNode.Year is >= 1 and <= 9999)
             .SelectMany(yearNode => EnumeratePlaces(yearNode, currentYear))
             .Where(candidate => currentIdentity.Matches(candidate.Identity))
             .GroupBy(candidate => candidate.Facet.Year)

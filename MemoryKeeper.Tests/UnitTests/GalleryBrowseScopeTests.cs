@@ -102,6 +102,7 @@ public sealed class GalleryBrowseScopeTests
                 new FastGalleryHierarchyNodeDto { Year = 2026, Count = 1 },
                 new FastGalleryHierarchyNodeDto { Year = 2025, Count = 0 },
                 new FastGalleryHierarchyNodeDto { Year = 2024, Count = 3 },
+                new FastGalleryHierarchyNodeDto { Year = 0, Count = 9 },
                 new FastGalleryHierarchyNodeDto { Count = 10 },
             ],
         };
@@ -109,5 +110,27 @@ public sealed class GalleryBrowseScopeTests
         var years = FastGalleryYearCatalog.FromHierarchy(hierarchy);
 
         Assert.Equal(new[] { 2026, 2024 }, years);
+    }
+
+    [Fact]
+    public void YearCatalog_HandlesAlreadyDescendingSingleAndEmptyInputs()
+    {
+        var descending = new FastGalleryHierarchyDto
+        {
+            Items =
+            [
+                new FastGalleryHierarchyNodeDto { Year = 2026, Count = 1 },
+                new FastGalleryHierarchyNodeDto { Year = 2025, Count = 1 },
+                new FastGalleryHierarchyNodeDto { Year = 2024, Count = 1 },
+            ],
+        };
+        var single = new FastGalleryHierarchyDto
+        {
+            Items = [new FastGalleryHierarchyNodeDto { Year = 2022, Count = 1 }],
+        };
+
+        Assert.Equal([2026, 2025, 2024], FastGalleryYearCatalog.FromHierarchy(descending));
+        Assert.Equal([2022], FastGalleryYearCatalog.FromHierarchy(single));
+        Assert.Empty(FastGalleryYearCatalog.FromHierarchy(new FastGalleryHierarchyDto()));
     }
 }

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
+using MemoryKeeper.Application;
 using MemoryKeeper.Application.DTOs;
 using MemoryKeeper.Mobile.Configuration;
 using MemoryKeeper.Mobile.Http;
@@ -72,11 +73,11 @@ public sealed class MobileGalleryHttpFoundationTests
     }
 
     [Fact]
-    public async Task Repository_RequestsHierarchyAndParsesYearNodes()
+    public async Task Repository_ParsesApiOrderAndYearCatalogAppliesDescendingUiContract()
     {
         var terminal = new RecordingHandler
         {
-            ResponseBody = """{"items":[{"year":2026,"count":12},{"year":2025,"count":8}]}""",
+            ResponseBody = """{"items":[{"year":2023,"count":4},{"year":2026,"count":12},{"year":2024,"count":6},{"year":2025,"count":8}]}""",
         };
         var configuration = new StubConfiguration(BackendUri, "credential-value");
         using var authentication = new MobileBackendAuthenticationHandler(configuration)
@@ -95,8 +96,11 @@ public sealed class MobileGalleryHttpFoundationTests
             terminal.RequestUris.Single().AbsolutePath,
             StringComparison.Ordinal);
         Assert.Equal(
-            new[] { 2026, 2025 },
+            new[] { 2023, 2026, 2024, 2025 },
             hierarchy.Roots.Select(node => node.Year.GetValueOrDefault()));
+        Assert.Equal(
+            new[] { 2026, 2025, 2024, 2023 },
+            FastGalleryYearCatalog.FromHierarchy(hierarchy));
     }
 
     [Fact]

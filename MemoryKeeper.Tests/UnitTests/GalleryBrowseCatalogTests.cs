@@ -48,6 +48,62 @@ public sealed class GalleryBrowseCatalogTests
         Assert.Empty(GalleryBrowseCatalog.Search(Hierarchy(), "  "));
     }
 
+    [Fact]
+    public void Search_SamePlaceAcrossYears_UsesNumericYearDescendingInsteadOfApiOrCountOrder()
+    {
+        var hierarchy = new FastGalleryHierarchyDto
+        {
+            Items =
+            [
+                PlaceYear(2023, 400),
+                PlaceYear(2026, 1),
+                PlaceYear(2024, 300),
+                PlaceYear(2025, 2),
+                PlaceYear(2025, 3),
+            ],
+        };
+
+        var results = GalleryBrowseCatalog.Search(hierarchy, "원대리 자작나무숲");
+
+        Assert.Equal([2026, 2025, 2024, 2023], results.Select(result => ScopeYear(result.Scope)));
+        Assert.Equal([1, 5, 300, 400], results.Select(result => result.PhotoCount));
+    }
+
+    private static int ScopeYear(GalleryBrowseScope scope) =>
+        Assert.IsType<GalleryBrowseScope.HierarchyScope>(scope).Year!.Value;
+
+    private static FastGalleryHierarchyNodeDto PlaceYear(int year, int count) => new()
+    {
+        Year = year,
+        Count = count,
+        Children =
+        [
+            new FastGalleryHierarchyNodeDto
+            {
+                Country = "대한민국",
+                Count = count,
+                Children =
+                [
+                    new FastGalleryHierarchyNodeDto
+                    {
+                        Region = "인제",
+                        Count = count,
+                        Children =
+                        [
+                            new FastGalleryHierarchyNodeDto
+                            {
+                                DisplayName = "원대리 자작나무숲",
+                                Count = count,
+                                MemorykeeperPlaceId = Guid.Parse("11111111-1111-1111-1111-111111111111"),
+                                LocationKey = "registered:one",
+                            },
+                        ],
+                    },
+                ],
+            },
+        ],
+    };
+
     private static FastGalleryHierarchyDto Hierarchy() => new()
     {
         Items =

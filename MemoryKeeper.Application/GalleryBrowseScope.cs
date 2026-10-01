@@ -233,7 +233,7 @@ public static class FastGalleryYearCatalog
         ArgumentNullException.ThrowIfNull(hierarchy);
 
         return hierarchy.Roots
-            .Where(node => node.Year.HasValue && node.Count > 0)
+            .Where(node => node.Year is >= 1 and <= 9999 && node.Count > 0)
             .Select(node => node.Year!.Value)
             .Distinct()
             .OrderByDescending(year => year)

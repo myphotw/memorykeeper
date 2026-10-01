@@ -152,6 +152,22 @@ public sealed class MobileGalleryBrowseRegressionTests
         Assert.Contains("SelectedSearchOptionChanged", source, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void YearOptions_AreValueSelectedAndIndependentFromPhotoRefreshOrLoadMore()
+    {
+        var source = File.ReadAllText(FindSourceFile("MemoryKeeper.Mobile", "ViewModels", "HomeViewModel.cs"));
+        var xaml = File.ReadAllText(FindSourceFile("MemoryKeeper.Mobile", "Views", "HomePage.xaml"));
+        var refreshStart = source.IndexOf("public Task RefreshAsync()", StringComparison.Ordinal);
+        var loadMoreStart = source.IndexOf("public async Task LoadMoreAsync()", refreshStart, StringComparison.Ordinal);
+        var retryStart = source.IndexOf("public Task RetryAsync()", loadMoreStart, StringComparison.Ordinal);
+        Assert.True(refreshStart >= 0 && loadMoreStart > refreshStart && retryStart > loadMoreStart);
+
+        Assert.Contains("SelectedItem=\"{Binding SelectedBrowseOption, Mode=TwoWay}\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("SelectedIndex", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("BrowseOptions", source[refreshStart..loadMoreStart], StringComparison.Ordinal);
+        Assert.DoesNotContain("BrowseOptions", source[loadMoreStart..retryStart], StringComparison.Ordinal);
+    }
+
     private static string FindSourceFile(params string[] parts)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
