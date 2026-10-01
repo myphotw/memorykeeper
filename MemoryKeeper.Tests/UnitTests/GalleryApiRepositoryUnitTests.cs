@@ -138,6 +138,25 @@ public sealed class GalleryApiRepositoryUnitTests
     }
 
     [Fact]
+    public async Task FastGallery_YearAndPlaceQueryUsesExistingHierarchyParameters()
+    {
+        var handler = new StubHandler();
+        handler.Map["GET /api/memorykeeper/gallery/photos?limit=50&year=2025&country=%EC%9D%BC%EB%B3%B8&region=%EA%B5%90%ED%86%A0&location_key=registered%3Aplace"] = "{}";
+        using var provider = BuildProvider(handler);
+        var repo = provider.GetRequiredService<IFastGalleryApiRepository>();
+
+        await repo.GetPhotosAsync(new MemoryKeeper.Application.DTOs.FastGalleryPhotoQuery
+        {
+            Year = 2025,
+            Country = "일본",
+            Region = "교토",
+            LocationKey = "registered:place",
+        });
+
+        Assert.Single(handler.RequestPaths);
+    }
+
+    [Fact]
     public async Task FastGallery_MissingLocationKeyUsesLegacyPlaceId()
     {
         var handler = new StubHandler();

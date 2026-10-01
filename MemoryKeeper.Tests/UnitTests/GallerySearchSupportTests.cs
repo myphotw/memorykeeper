@@ -81,6 +81,73 @@ public sealed class GallerySearchSupportTests
         Assert.Equal(39, scopes.Sum(scope => scope.Count));
         Assert.Contains(scopes, scope => scope.Region == "Osaka");
         Assert.Contains(scopes, scope => scope.Region == "오사카");
+
+        var projection = GallerySearchHierarchyProjection.Create(hierarchy, scopes);
+        Assert.Equal(39, projection.TotalCount);
+        Assert.Equal(39, projection.Hierarchy.Roots.Single().Count);
+        Assert.Equal(2, projection.Hierarchy.Roots.Single().ChildNodes.Single().ChildNodes.Count);
+    }
+
+    [Fact]
+    public void SearchHierarchyProjection_KeepsOnlyMatchingBranchAndRecountsAncestors()
+    {
+        var hierarchy = KyotoHierarchy();
+        var scopes = GalleryHierarchySearchPlanner.Resolve(hierarchy, "교토");
+
+        var result = GallerySearchHierarchyProjection.Create(hierarchy, scopes);
+
+        Assert.Equal(39, result.TotalCount);
+        var year = Assert.Single(result.Hierarchy.Roots);
+        Assert.Equal(2025, year.Year);
+        Assert.Equal(39, year.Count);
+        var country = Assert.Single(year.ChildNodes);
+        Assert.Equal("일본", country.Country);
+        Assert.Equal(39, country.Count);
+        var region = Assert.Single(country.ChildNodes);
+        Assert.Equal("교토", region.Region);
+        Assert.Equal(39, region.Count);
+        Assert.Equal(
+            new[] { "금각사", "기요미즈데라", "료안지", "유즈야 료칸" },
+            region.ChildNodes.Select(place => place.DisplayName));
+        Assert.Empty(result.Hierarchy.Roots
+            .SelectMany(node => node.ChildNodes)
+            .Where(node => node.Country == "대한민국"));
+        Assert.Empty(country.ChildNodes.Where(node => node.Region == "오사카"));
+
+        var placeBrowse = GalleryPlaceHierarchyProjection.Build(result.Hierarchy);
+        var placeCountry = Assert.Single(placeBrowse);
+        Assert.Equal("일본", placeCountry.CountryFilter);
+        Assert.Equal(39, placeCountry.PhotoCount);
+        Assert.Equal(4, placeCountry.Places.Count);
+    }
+
+    [Fact]
+    public void SearchHierarchyProjection_PlaceMatchKeepsAncestorChainAndOnlyMatchingLeaf()
+    {
+        var hierarchy = KyotoHierarchy();
+        var scopes = GalleryHierarchySearchPlanner.Resolve(hierarchy, "금각사");
+
+        var result = GallerySearchHierarchyProjection.Create(hierarchy, scopes);
+
+        Assert.Equal(17, result.TotalCount);
+        var year = Assert.Single(result.Hierarchy.Roots);
+        Assert.Equal(17, year.Count);
+        var country = Assert.Single(year.ChildNodes);
+        Assert.Equal(17, country.Count);
+        var region = Assert.Single(country.ChildNodes);
+        Assert.Equal(17, region.Count);
+        var place = Assert.Single(region.ChildNodes);
+        Assert.Equal("금각사", place.DisplayName);
+        Assert.Equal(17, place.Count);
+    }
+
+    [Fact]
+    public void SearchHierarchyProjection_NoScopesDoesNotExposeFullHierarchy()
+    {
+        var result = GallerySearchHierarchyProjection.Create(KyotoHierarchy(), []);
+
+        Assert.Equal(0, result.TotalCount);
+        Assert.Empty(result.Hierarchy.Roots);
     }
 
     [Fact]
@@ -192,11 +259,64 @@ public sealed class GallerySearchSupportTests
                                             MemorykeeperPlaceId = placeId,
                                             LocationKey = "registered:11111111-1111-1111-1111-111111111111",
                                         },
-                                        new FastGalleryHierarchyNodeDto { DisplayName = "기요미즈데라", Count = 10 },
-                                        new FastGalleryHierarchyNodeDto { DisplayName = "료안지", Count = 10 },
-                                        new FastGalleryHierarchyNodeDto { DisplayName = "유즈야 료칸", Count = 2 },
+                                        new FastGalleryHierarchyNodeDto
+                                        {
+                                            DisplayName = "기요미즈데라",
+                                            Count = 10,
+                                            MemorykeeperPlaceId = Guid.Parse("22222222-2222-2222-2222-222222222222"),
+                                            LocationKey = "registered:22222222-2222-2222-2222-222222222222",
+                                        },
+                                        new FastGalleryHierarchyNodeDto
+                                        {
+                                            DisplayName = "료안지",
+                                            Count = 10,
+                                            MemorykeeperPlaceId = Guid.Parse("33333333-3333-3333-3333-333333333333"),
+                                            LocationKey = "registered:33333333-3333-3333-3333-333333333333",
+                                        },
+                                        new FastGalleryHierarchyNodeDto
+                                        {
+                                            DisplayName = "유즈야 료칸",
+                                            Count = 2,
+                                            MemorykeeperPlaceId = Guid.Parse("44444444-4444-4444-4444-444444444444"),
+                                            LocationKey = "registered:44444444-4444-4444-4444-444444444444",
+                                        },
                                     ],
                                 },
+                                new FastGalleryHierarchyNodeDto
+                                {
+                                    Region = "오사카",
+                                    Count = 25,
+                                    Children =
+                                    [
+                                        new FastGalleryHierarchyNodeDto { DisplayName = "오사카성", Count = 25 },
+                                    ],
+                                },
+                            ],
+                        },
+                        new FastGalleryHierarchyNodeDto
+                        {
+                            Country = "대한민국",
+                            Count = 806,
+                            Children =
+                            [
+                                new FastGalleryHierarchyNodeDto { Region = "서울", Count = 806 },
+                            ],
+                        },
+                    ],
+                },
+                new FastGalleryHierarchyNodeDto
+                {
+                    Year = 2024,
+                    Count = 100,
+                    Children =
+                    [
+                        new FastGalleryHierarchyNodeDto
+                        {
+                            Country = "대한민국",
+                            Count = 100,
+                            Children =
+                            [
+                                new FastGalleryHierarchyNodeDto { Region = "부산", Count = 100 },
                             ],
                         },
                     ],

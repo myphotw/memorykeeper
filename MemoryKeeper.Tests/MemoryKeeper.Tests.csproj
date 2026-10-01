@@ -31,6 +31,9 @@
     <Compile Include="..\MemoryKeeper.Mobile\Http\MobileBackendExceptions.cs" Link="Mobile\Http\MobileBackendExceptions.cs" />
     <Compile Include="..\MemoryKeeper.Mobile\Http\MobileFastGalleryApiRepository.cs" Link="Mobile\Http\MobileFastGalleryApiRepository.cs" />
     <Compile Include="..\MemoryKeeper.Mobile\Http\MobileHttpClientNames.cs" Link="Mobile\Http\MobileHttpClientNames.cs" />
+    <Compile Include="..\MemoryKeeper.Mobile\Models\MobileGalleryBrowseOption.cs" Link="Mobile\Models\MobileGalleryBrowseOption.cs" />
+    <Compile Include="..\MemoryKeeper.Mobile\Models\MobileGalleryContext.cs" Link="Mobile\Models\MobileGalleryContext.cs" />
+    <Compile Include="..\MemoryKeeper.Mobile\Models\MobileGalleryNavigationHistory.cs" Link="Mobile\Models\MobileGalleryNavigationHistory.cs" />
   </ItemGroup>
 
   <ItemGroup>

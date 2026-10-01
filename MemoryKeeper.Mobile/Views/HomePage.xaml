@@ -8,117 +8,594 @@
     x:DataType="viewModels:HomeViewModel"
     BackgroundColor="{StaticResource MemoryKeeperSurface}"
     Shell.NavBarIsVisible="False">
-    <Grid RowDefinitions="Auto,Auto,*">
-        <Label
-            Grid.Row="0"
-            Margin="16,14,16,10"
-            FontAttributes="Bold"
-            FontSize="26"
-            Text="MemoryKeeper"
-            TextColor="{StaticResource MemoryKeeperText}" />
+    <Grid>
+        <!-- The gallery surface shows only the context represented by the current query. -->
+        <Grid
+            IsVisible="{Binding IsGalleryMode}"
+            RowDefinitions="Auto,Auto,Auto,*">
+            <Grid
+                Grid.Row="0"
+                Margin="8,8,8,4"
+                ColumnDefinitions="88,*,88"
+                HeightRequest="52">
+                <Button
+                    Command="{Binding AddPhotosCommand}"
+                    FontSize="14"
+                    IsVisible="{Binding IsRecentContext}"
+                    Padding="10,8"
+                    SemanticProperties.Description="사진 추가"
+                    Text="+ 추가"
+                    TextColor="{StaticResource MemoryKeeperText}"
+                    BackgroundColor="Transparent" />
+                <Button
+                    Command="{Binding NavigateBackCommand}"
+                    FontSize="28"
+                    IsVisible="{Binding CanNavigateBack}"
+                    Padding="0"
+                    SemanticProperties.Description="뒤로"
+                    Text="&#x2039;"
+                    TextColor="{StaticResource MemoryKeeperText}"
+                    BackgroundColor="Transparent" />
+                <Grid
+                    Grid.Column="1"
+                    MinimumHeightRequest="44">
+                    <Label
+                        FontAttributes="Bold"
+                        FontSize="22"
+                        HorizontalTextAlignment="Center"
+                        LineBreakMode="TailTruncation"
+                        Text="{Binding CurrentContext.Title}"
+                        TextColor="{StaticResource MemoryKeeperText}"
+                        VerticalTextAlignment="Center" />
+                </Grid>
+                <Button
+                    Grid.Column="2"
+                    Command="{Binding OpenSearchCommand}"
+                    FontSize="20"
+                    Padding="0"
+                    SemanticProperties.Description="사진 검색"
+                    Text="&#x1F50D;"
+                    TextColor="{StaticResource MemoryKeeperText}"
+                    BackgroundColor="Transparent" />
+            </Grid>
 
-        <Border
-            Grid.Row="1"
-            Margin="12,0,12,8"
-            Padding="12,8"
-            BackgroundColor="#FFF4E5"
-            IsVisible="{Binding IsInlineErrorVisible}"
-            Stroke="#FFD59A"
-            StrokeShape="RoundRectangle 10">
-            <Label
-                FontSize="13"
-                Text="{Binding ErrorMessage}"
-                TextColor="#7A4B00" />
-        </Border>
+            <Grid
+                Grid.Row="1"
+                Margin="16,0,16,10"
+                ColumnDefinitions="Auto,*,Auto,Auto"
+                ColumnSpacing="10">
+                <Button
+                    Command="{Binding OpenPlaceYearSelectionCommand}"
+                    FontSize="14"
+                    IsVisible="{Binding CanOpenSiblingYearSelection}"
+                    MinimumHeightRequest="44"
+                    Padding="4,0"
+                    SemanticProperties.Description="같은 장소의 다른 연도 선택"
+                    Text="{Binding CurrentContext.YearSelectorText}"
+                    TextColor="{StaticResource MemoryKeeperText}"
+                    BackgroundColor="Transparent" />
+                <Label
+                    FontSize="14"
+                    IsVisible="{Binding IsStaticGalleryYearVisible}"
+                    MinimumHeightRequest="44"
+                    Text="{Binding CurrentContext.YearText}"
+                    TextColor="{StaticResource MemoryKeeperSecondaryText}"
+                    VerticalTextAlignment="Center" />
+                <Label
+                    Grid.Column="1"
+                    MinimumHeightRequest="44"
+                    FontSize="14"
+                    LineBreakMode="TailTruncation"
+                    Text="{Binding CurrentContext.HierarchyBreadcrumbText}"
+                    TextColor="{StaticResource MemoryKeeperSecondaryText}"
+                    VerticalTextAlignment="Center">
+                    <Label.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding OpenHierarchyNavigatorCommand}" />
+                    </Label.GestureRecognizers>
+                </Label>
+                <Label
+                    Grid.Column="2"
+                    FontSize="14"
+                    Text="{Binding CurrentContext.PhotoCountText}"
+                    TextColor="{StaticResource MemoryKeeperSecondaryText}"
+                    VerticalTextAlignment="Center" />
+                <Button
+                    Grid.Column="3"
+                    Command="{Binding OpenYearSelectionCommand}"
+                    FontSize="13"
+                    IsVisible="{Binding IsRecentContext}"
+                    Padding="8,4"
+                    Text="연도별 탐색"
+                    TextColor="{StaticResource MemoryKeeperText}"
+                    BackgroundColor="Transparent" />
+            </Grid>
 
-        <Grid Grid.Row="2">
-            <RefreshView
-                Command="{Binding RefreshCommand}"
-                IsRefreshing="{Binding IsRefreshing}">
-                <CollectionView
-                    ItemsSource="{Binding Items}"
-                    RemainingItemsThreshold="8"
-                    RemainingItemsThresholdReached="OnRemainingItemsThresholdReached"
-                    SelectionMode="None">
-                    <CollectionView.ItemsLayout>
-                        <GridItemsLayout
-                            x:Name="GalleryItemsLayout"
-                            HorizontalItemSpacing="2"
-                            Orientation="Vertical"
-                            Span="3"
-                            VerticalItemSpacing="2" />
-                    </CollectionView.ItemsLayout>
-                    <CollectionView.ItemTemplate>
-                        <DataTemplate x:DataType="models:MobileGalleryItem">
-                            <Grid
-                                HeightRequest="{Binding TileSize}"
-                                BackgroundColor="#DDE5EE"
-                                IsClippedToBounds="True">
-                                <Label
-                                    FontSize="24"
+            <Border
+                Grid.Row="2"
+                Margin="12,0,12,8"
+                Padding="12,8"
+                BackgroundColor="#FFF4E5"
+                IsVisible="{Binding IsInlineErrorVisible}"
+                Stroke="#FFD59A"
+                StrokeShape="RoundRectangle 10">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                    <Label
+                        FontSize="13"
+                        Text="{Binding ErrorMessage}"
+                        TextColor="#7A4B00"
+                        VerticalOptions="Center" />
+                    <Button
+                        Grid.Column="1"
+                        Command="{Binding RetryCommand}"
+                        FontSize="12"
+                        Padding="8,2"
+                        Text="다시 시도" />
+                </Grid>
+            </Border>
+
+            <Grid Grid.Row="3">
+                <RefreshView
+                    Command="{Binding RefreshCommand}"
+                    IsRefreshing="{Binding IsRefreshing}"
+                    IsVisible="{Binding IsGalleryVisible}">
+                    <CollectionView
+                        ItemsSource="{Binding Items}"
+                        RemainingItemsThreshold="8"
+                        RemainingItemsThresholdReached="OnRemainingItemsThresholdReached"
+                        SelectionMode="None">
+                        <CollectionView.ItemsLayout>
+                            <GridItemsLayout
+                                x:Name="GalleryItemsLayout"
+                                HorizontalItemSpacing="2"
+                                Orientation="Vertical"
+                                Span="3"
+                                VerticalItemSpacing="2" />
+                        </CollectionView.ItemsLayout>
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:MobileGalleryItem">
+                                <Grid
+                                    HeightRequest="{Binding TileSize}"
+                                    BackgroundColor="#DDE5EE"
+                                    IsClippedToBounds="True">
+                                    <Label
+                                        FontSize="24"
+                                        HorizontalOptions="Center"
+                                        Text="&#x1F5BC;"
+                                        TextColor="#8391A2"
+                                        VerticalOptions="Center" />
+                                    <Image
+                                        Aspect="AspectFill"
+                                        Source="{Binding ThumbnailSource}" />
+                                </Grid>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                        <CollectionView.Footer>
+                            <Grid HeightRequest="52">
+                                <ActivityIndicator
                                     HorizontalOptions="Center"
-                                    Text="&#x1F5BC;"
-                                    TextColor="#8391A2"
+                                    IsRunning="{Binding IsLoadingMore}"
+                                    IsVisible="{Binding IsLoadingMore}"
                                     VerticalOptions="Center" />
-                                <Image
-                                    Aspect="AspectFill"
-                                    Source="{Binding ThumbnailSource}" />
+                            </Grid>
+                        </CollectionView.Footer>
+                    </CollectionView>
+                </RefreshView>
+
+                <ActivityIndicator
+                    HeightRequest="44"
+                    HorizontalOptions="Center"
+                    IsRunning="{Binding IsInitialLoading}"
+                    IsVisible="{Binding IsInitialLoading}"
+                    VerticalOptions="Center"
+                    WidthRequest="44" />
+
+                <VerticalStackLayout
+                    Margin="32"
+                    IsVisible="{Binding IsEmptyStateVisible}"
+                    Spacing="8"
+                    VerticalOptions="Center">
+                    <Label
+                        FontAttributes="Bold"
+                        FontSize="20"
+                        HorizontalTextAlignment="Center"
+                        Text="아직 표시할 사진이 없습니다."
+                        TextColor="{StaticResource MemoryKeeperText}" />
+                    <Label
+                        FontSize="14"
+                        HorizontalTextAlignment="Center"
+                        Text="아래로 당겨 새로 고칠 수 있습니다."
+                        TextColor="{StaticResource MemoryKeeperSecondaryText}" />
+                </VerticalStackLayout>
+
+                <VerticalStackLayout
+                    Margin="32"
+                    IsVisible="{Binding IsErrorStateVisible}"
+                    Spacing="16"
+                    VerticalOptions="Center">
+                    <Label
+                        FontSize="16"
+                        HorizontalTextAlignment="Center"
+                        Text="{Binding ErrorMessage}"
+                        TextColor="{StaticResource MemoryKeeperSecondaryText}" />
+                    <Button
+                        Command="{Binding RetryCommand}"
+                        HorizontalOptions="Center"
+                        Text="다시 시도" />
+                </VerticalStackLayout>
+            </Grid>
+        </Grid>
+
+        <!-- Year selection replaces the gallery instead of stacking controls above it. -->
+        <Grid
+            IsVisible="{Binding IsYearSelectionMode}"
+            RowDefinitions="Auto,Auto,*">
+            <Grid
+                Grid.Row="0"
+                Margin="8,8,8,4"
+                ColumnDefinitions="56,*"
+                HeightRequest="48">
+                <Button
+                    Command="{Binding NavigateBackCommand}"
+                    FontSize="28"
+                    Padding="0"
+                    SemanticProperties.Description="뒤로"
+                    Text="&#x2039;"
+                    TextColor="{StaticResource MemoryKeeperText}"
+                    BackgroundColor="Transparent" />
+                <Label
+                    Grid.Column="1"
+                    Margin="0,0,56,0"
+                    FontAttributes="Bold"
+                    FontSize="22"
+                    HorizontalTextAlignment="Center"
+                    Text="연도 선택"
+                    TextColor="{StaticResource MemoryKeeperText}"
+                    VerticalTextAlignment="Center" />
+            </Grid>
+            <HorizontalStackLayout
+                Grid.Row="1"
+                Margin="16,0,16,8"
+                IsVisible="{Binding IsBrowseOptionsErrorVisible}"
+                Spacing="8">
+                <Label
+                    FontSize="12"
+                    Text="{Binding BrowseOptionsErrorMessage}"
+                    TextColor="{StaticResource MemoryKeeperSecondaryText}"
+                    VerticalOptions="Center" />
+                <Button
+                    Command="{Binding RetryBrowseOptionsCommand}"
+                    FontSize="12"
+                    Padding="8,2"
+                    Text="다시 시도" />
+            </HorizontalStackLayout>
+            <Grid Grid.Row="2">
+                <CollectionView
+                    ItemsSource="{Binding BrowseOptions}"
+                    SelectedItem="{Binding SelectedBrowseOption, Mode=TwoWay}"
+                    SelectionMode="Single">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="models:MobileGalleryBrowseOption">
+                            <Grid
+                                Padding="18,14"
+                                ColumnDefinitions="*,Auto"
+                                RowDefinitions="Auto,1">
+                                <Label
+                                    FontSize="17"
+                                    LineBreakMode="TailTruncation"
+                                    Text="{Binding DisplayName}"
+                                    TextColor="{StaticResource MemoryKeeperText}"
+                                    VerticalTextAlignment="Center" />
+                                <Label
+                                    Grid.Column="1"
+                                    FontSize="14"
+                                    Text="{Binding CountText}"
+                                    TextColor="{StaticResource MemoryKeeperSecondaryText}"
+                                    VerticalTextAlignment="Center" />
+                                <BoxView
+                                    Grid.Row="1"
+                                    Grid.ColumnSpan="2"
+                                    Margin="0,13,0,0"
+                                    BackgroundColor="#E6EBF1"
+                                    HeightRequest="1" />
                             </Grid>
                         </DataTemplate>
                     </CollectionView.ItemTemplate>
-                    <CollectionView.Footer>
-                        <Grid HeightRequest="52">
-                            <ActivityIndicator
-                                HorizontalOptions="Center"
-                                IsRunning="{Binding IsLoadingMore}"
-                                IsVisible="{Binding IsLoadingMore}"
-                                VerticalOptions="Center" />
-                        </Grid>
-                    </CollectionView.Footer>
                 </CollectionView>
-            </RefreshView>
+                <ActivityIndicator
+                    HorizontalOptions="Center"
+                    IsRunning="{Binding IsBrowseOptionsLoading}"
+                    IsVisible="{Binding IsBrowseOptionsLoading}"
+                    VerticalOptions="Center" />
+            </Grid>
+        </Grid>
 
-            <ActivityIndicator
-                HeightRequest="44"
-                HorizontalOptions="Center"
-                IsRunning="{Binding IsInitialLoading}"
-                IsVisible="{Binding IsInitialLoading}"
-                VerticalOptions="Center"
-                WidthRequest="44" />
-
-            <VerticalStackLayout
-                Margin="32"
-                IsVisible="{Binding IsEmptyStateVisible}"
-                Spacing="8"
-                VerticalOptions="Center">
+        <!-- A Place title opens only authoritative sibling years from the cached hierarchy. -->
+        <Grid
+            IsVisible="{Binding IsPlaceYearSelectionMode}"
+            RowDefinitions="Auto,*">
+            <Grid
+                Grid.Row="0"
+                Margin="8,8,8,4"
+                ColumnDefinitions="56,*"
+                HeightRequest="48">
+                <Button
+                    Command="{Binding NavigateBackCommand}"
+                    FontSize="28"
+                    Padding="0"
+                    SemanticProperties.Description="뒤로"
+                    Text="&#x2039;"
+                    TextColor="{StaticResource MemoryKeeperText}"
+                    BackgroundColor="Transparent" />
                 <Label
+                    Grid.Column="1"
+                    Margin="0,0,56,0"
                     FontAttributes="Bold"
-                    FontSize="20"
+                    FontSize="22"
                     HorizontalTextAlignment="Center"
-                    Text="아직 표시할 사진이 없습니다."
-                    TextColor="{StaticResource MemoryKeeperText}" />
-                <Label
-                    FontSize="14"
-                    HorizontalTextAlignment="Center"
-                    Text="아래로 당겨 새로 고칠 수 있습니다."
-                    TextColor="{StaticResource MemoryKeeperSecondaryText}" />
-            </VerticalStackLayout>
+                    Text="다른 연도"
+                    TextColor="{StaticResource MemoryKeeperText}"
+                    VerticalTextAlignment="Center" />
+            </Grid>
+            <CollectionView
+                Grid.Row="1"
+                ItemsSource="{Binding SiblingYearOptions}"
+                SelectedItem="{Binding SelectedSiblingYearOption, Mode=TwoWay}"
+                SelectionMode="Single">
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="models:MobileGalleryBrowseOption">
+                        <Grid
+                            Padding="18,14"
+                            ColumnDefinitions="*,Auto,52"
+                            ColumnSpacing="10"
+                            RowDefinitions="Auto,1">
+                            <Grid.Triggers>
+                                <DataTrigger
+                                    Binding="{Binding IsCurrent}"
+                                    TargetType="Grid"
+                                    Value="True">
+                                    <Setter Property="BackgroundColor" Value="#EEF5FF" />
+                                </DataTrigger>
+                            </Grid.Triggers>
+                            <Label
+                                FontSize="17"
+                                Text="{Binding DisplayName}"
+                                TextColor="{StaticResource MemoryKeeperText}"
+                                VerticalTextAlignment="Center" />
+                            <Label
+                                Grid.Column="1"
+                                FontSize="14"
+                                Text="{Binding CountText}"
+                                TextColor="{StaticResource MemoryKeeperSecondaryText}"
+                                VerticalTextAlignment="Center" />
+                            <Label
+                                Grid.Column="2"
+                                FontAttributes="Bold"
+                                FontSize="12"
+                                HorizontalTextAlignment="End"
+                                Text="{Binding CurrentText}"
+                                TextColor="#2563EB"
+                                VerticalTextAlignment="Center" />
+                            <BoxView
+                                Grid.Row="1"
+                                Grid.ColumnSpan="3"
+                                Margin="0,13,0,0"
+                                BackgroundColor="#E6EBF1"
+                                HeightRequest="1" />
+                        </Grid>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+        </Grid>
 
-            <VerticalStackLayout
-                Margin="32"
-                IsVisible="{Binding IsErrorStateVisible}"
-                Spacing="16"
-                VerticalOptions="Center">
+        <!-- Place selection preserves the Backend year/country/region/place hierarchy. -->
+        <Grid
+            IsVisible="{Binding IsPlaceSelectionMode}"
+            RowDefinitions="Auto,*">
+            <Grid
+                Grid.Row="0"
+                Margin="8,8,8,4"
+                ColumnDefinitions="56,*"
+                HeightRequest="48">
+                <Button
+                    Command="{Binding NavigateBackCommand}"
+                    FontSize="28"
+                    Padding="0"
+                    SemanticProperties.Description="뒤로"
+                    Text="&#x2039;"
+                    TextColor="{StaticResource MemoryKeeperText}"
+                    BackgroundColor="Transparent" />
                 <Label
-                    FontSize="16"
+                    Grid.Column="1"
+                    Margin="0,0,56,0"
+                    FontAttributes="Bold"
+                    FontSize="22"
                     HorizontalTextAlignment="Center"
+                    Text="{Binding PlaceSelectionTitle}"
+                    TextColor="{StaticResource MemoryKeeperText}"
+                    VerticalTextAlignment="Center" />
+            </Grid>
+            <CollectionView
+                x:Name="PlaceTreeCollection"
+                Grid.Row="1"
+                ItemsSource="{Binding VisiblePlaceTreeNodes}"
+                SelectionMode="None">
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="models:MobileGalleryTreeNode">
+                        <Grid
+                            ColumnDefinitions="Auto,44,*,Auto"
+                            MinimumHeightRequest="52"
+                            RowDefinitions="*,1">
+                            <Grid.Triggers>
+                                <DataTrigger
+                                    Binding="{Binding IsCurrent}"
+                                    TargetType="Grid"
+                                    Value="True">
+                                    <Setter Property="BackgroundColor" Value="#EEF5FF" />
+                                </DataTrigger>
+                            </Grid.Triggers>
+                            <BoxView
+                                WidthRequest="{Binding IndentWidth}"
+                                BackgroundColor="Transparent" />
+                            <Button
+                                Grid.Column="1"
+                                Command="{Binding Source={RelativeSource AncestorType={x:Type viewModels:HomeViewModel}}, Path=TogglePlaceTreeNodeCommand}"
+                                CommandParameter="{Binding .}"
+                                FontSize="18"
+                                IsVisible="{Binding HasChildren}"
+                                Padding="0"
+                                SemanticProperties.Description="하위 장소 펼치기 또는 접기"
+                                Text="{Binding ExpandGlyph}"
+                                TextColor="{StaticResource MemoryKeeperSecondaryText}"
+                                BackgroundColor="Transparent" />
+                            <Grid
+                                Grid.Column="2"
+                                Grid.ColumnSpan="2"
+                                Padding="4,8,18,8"
+                                ColumnDefinitions="*,Auto"
+                                ColumnSpacing="12">
+                                <Grid.GestureRecognizers>
+                                    <TapGestureRecognizer
+                                        Command="{Binding Source={RelativeSource AncestorType={x:Type viewModels:HomeViewModel}}, Path=SelectPlaceTreeNodeCommand}"
+                                        CommandParameter="{Binding .}" />
+                                </Grid.GestureRecognizers>
+                                <Label
+                                    FontSize="16"
+                                    LineBreakMode="WordWrap"
+                                    MaxLines="2"
+                                    Text="{Binding DisplayName}"
+                                    TextColor="{StaticResource MemoryKeeperText}"
+                                    VerticalTextAlignment="Center" />
+                                <Label
+                                    Grid.Column="1"
+                                    FontSize="14"
+                                    Text="{Binding CountText}"
+                                    TextColor="{StaticResource MemoryKeeperSecondaryText}"
+                                    VerticalTextAlignment="Center" />
+                            </Grid>
+                            <BoxView
+                                Grid.Row="1"
+                                Grid.Column="1"
+                                Grid.ColumnSpan="3"
+                                BackgroundColor="#E6EBF1"
+                                HeightRequest="1" />
+                        </Grid>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+        </Grid>
+
+        <!-- Search is a temporary tool; selecting a result returns to the gallery. -->
+        <Grid
+            IsVisible="{Binding IsSearchMode}"
+            RowDefinitions="Auto,Auto,*">
+            <Grid
+                Grid.Row="0"
+                Margin="8,8,8,8"
+                ColumnDefinitions="48,*,Auto,Auto"
+                ColumnSpacing="4"
+                HeightRequest="48">
+                <Button
+                    Command="{Binding NavigateBackCommand}"
+                    FontSize="28"
+                    Padding="0"
+                    SemanticProperties.Description="뒤로"
+                    Text="&#x2039;"
+                    TextColor="{StaticResource MemoryKeeperText}"
+                    BackgroundColor="Transparent" />
+                <Border
+                    Grid.Column="1"
+                    Padding="10,0"
+                    BackgroundColor="White"
+                    Stroke="#D8E0EA"
+                    StrokeShape="RoundRectangle 10">
+                    <Entry
+                        ClearButtonVisibility="WhileEditing"
+                        Placeholder="연도 또는 장소 검색"
+                        ReturnCommand="{Binding SearchCommand}"
+                        ReturnType="Search"
+                        Text="{Binding SearchText, Mode=TwoWay}"
+                        TextColor="{StaticResource MemoryKeeperText}" />
+                </Border>
+                <Button
+                    Grid.Column="2"
+                    Command="{Binding CancelSearchCommand}"
+                    FontSize="18"
+                    Padding="6,0"
+                    Text="&#x2715;"
+                    TextColor="{StaticResource MemoryKeeperSecondaryText}"
+                    BackgroundColor="Transparent" />
+                <Button
+                    Grid.Column="3"
+                    Command="{Binding SearchCommand}"
+                    FontSize="14"
+                    Padding="8,0"
+                    Text="검색"
+                    TextColor="{StaticResource MemoryKeeperText}"
+                    BackgroundColor="Transparent" />
+            </Grid>
+            <Grid Grid.Row="1" MinimumHeightRequest="32">
+                <ActivityIndicator
+                    HorizontalOptions="Center"
+                    IsRunning="{Binding IsSearchRunning}"
+                    IsVisible="{Binding IsSearchRunning}"
+                    VerticalOptions="Center" />
+                <Label
+                    Margin="16,4"
+                    FontSize="13"
+                    HorizontalTextAlignment="Center"
+                    IsVisible="{Binding IsSearchNoResultsVisible}"
+                    Text="일치하는 연도 또는 장소가 없습니다."
+                    TextColor="{StaticResource MemoryKeeperSecondaryText}" />
+                <Label
+                    Margin="16,4"
+                    FontSize="13"
+                    HorizontalTextAlignment="Center"
+                    IsVisible="{Binding IsSearchErrorVisible}"
                     Text="{Binding ErrorMessage}"
                     TextColor="{StaticResource MemoryKeeperSecondaryText}" />
-                <Button
-                    Command="{Binding RefreshCommand}"
-                    HorizontalOptions="Center"
-                    Text="다시 시도" />
-            </VerticalStackLayout>
+            </Grid>
+            <CollectionView
+                Grid.Row="2"
+                ItemsSource="{Binding SearchResults}"
+                SelectedItem="{Binding SelectedSearchOption, Mode=TwoWay}"
+                SelectionMode="Single">
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="models:MobileGalleryBrowseOption">
+                        <Grid
+                            Padding="18,12"
+                            ColumnDefinitions="*,Auto"
+                            RowDefinitions="Auto,Auto,1">
+                            <Label
+                                FontSize="16"
+                                LineBreakMode="WordWrap"
+                                MaxLines="2"
+                                Text="{Binding DisplayName}"
+                                TextColor="{StaticResource MemoryKeeperText}" />
+                            <Label
+                                Grid.Column="1"
+                                Grid.RowSpan="2"
+                                Margin="12,0,0,0"
+                                FontSize="14"
+                                Text="{Binding CountText}"
+                                TextColor="{StaticResource MemoryKeeperSecondaryText}"
+                                VerticalTextAlignment="Center" />
+                            <Label
+                                Grid.Row="1"
+                                Margin="0,3,0,0"
+                                FontSize="13"
+                                LineBreakMode="TailTruncation"
+                                Text="{Binding Context}"
+                                TextColor="{StaticResource MemoryKeeperSecondaryText}" />
+                            <BoxView
+                                Grid.Row="2"
+                                Grid.ColumnSpan="2"
+                                Margin="0,11,0,0"
+                                BackgroundColor="#E6EBF1"
+                                HeightRequest="1" />
+                        </Grid>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
         </Grid>
     </Grid>
 </ContentPage>

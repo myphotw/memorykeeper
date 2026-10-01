@@ -105,6 +105,197 @@ public sealed record GalleryHierarchySearchScope(
     };
 }
 
+public sealed record GallerySearchHierarchyProjectionResult(
+    FastGalleryHierarchyDto Hierarchy,
+    int TotalCount);
+
+/// <summary>
+/// Prunes the authoritative Fast Gallery hierarchy to the branches represented
+/// by hierarchy-search scopes. Counts are rebuilt from the retained hierarchy,
+/// never inferred from a partially loaded photo page.
+/// </summary>
+public static class GallerySearchHierarchyProjection
+{
+    public static GallerySearchHierarchyProjectionResult Create(
+        FastGalleryHierarchyDto hierarchy,
+        IReadOnlyList<GalleryHierarchySearchScope> scopes)
+    {
+        ArgumentNullException.ThrowIfNull(hierarchy);
+        ArgumentNullException.ThrowIfNull(scopes);
+
+        if (scopes.Count == 0)
+        {
+            return new GallerySearchHierarchyProjectionResult(new FastGalleryHierarchyDto(), 0);
+        }
+
+        var years = hierarchy.Roots
+            .Select(year => PruneYear(year, scopes))
+            .Where(year => year is not null)
+            .Cast<FastGalleryHierarchyNodeDto>()
+            .OrderByDescending(year => year.Year)
+            .ToArray();
+        var totalCount = years.Sum(year => Math.Max(0, year.Count));
+        return new GallerySearchHierarchyProjectionResult(
+            new FastGalleryHierarchyDto { Items = years },
+            totalCount);
+    }
+
+    private static FastGalleryHierarchyNodeDto? PruneYear(
+        FastGalleryHierarchyNodeDto year,
+        IReadOnlyList<GalleryHierarchySearchScope> scopes)
+    {
+        var matching = scopes.Where(scope => Compatible(scope.Year, year.Year)).ToArray();
+        if (matching.Length == 0)
+        {
+            return null;
+        }
+
+        if (matching.Any(IsYearWide))
+        {
+            return CloneWhole(year);
+        }
+
+        var countries = year.ChildNodes
+            .Select(country => PruneCountry(country, matching))
+            .Where(country => country is not null)
+            .Cast<FastGalleryHierarchyNodeDto>()
+            .ToArray();
+        if (countries.Length == 0)
+        {
+            return null;
+        }
+
+        return ClonePartial(year, countries, countries.Sum(country => Math.Max(0, country.Count)));
+    }
+
+    private static FastGalleryHierarchyNodeDto? PruneCountry(
+        FastGalleryHierarchyNodeDto country,
+        IReadOnlyList<GalleryHierarchySearchScope> scopes)
+    {
+        var matching = scopes.Where(scope => CountryMatches(scope.Country, country.Country)).ToArray();
+        if (matching.Length == 0)
+        {
+            return null;
+        }
+
+        if (matching.Any(IsCountryWide))
+        {
+            return CloneWhole(country);
+        }
+
+        var regions = country.ChildNodes
+            .Select(region => PruneRegion(region, matching))
+            .Where(region => region is not null)
+            .Cast<FastGalleryHierarchyNodeDto>()
+            .ToArray();
+        if (regions.Length == 0)
+        {
+            return null;
+        }
+
+        return ClonePartial(country, regions, regions.Sum(region => Math.Max(0, region.Count)));
+    }
+
+    private static FastGalleryHierarchyNodeDto? PruneRegion(
+        FastGalleryHierarchyNodeDto region,
+        IReadOnlyList<GalleryHierarchySearchScope> scopes)
+    {
+        var matching = scopes
+            .Where(scope => string.Equals(scope.Region, region.Region, StringComparison.Ordinal))
+            .ToArray();
+        if (matching.Length == 0)
+        {
+            return null;
+        }
+
+        if (matching.Any(IsRegionWide))
+        {
+            return CloneWhole(region);
+        }
+
+        var places = region.ChildNodes
+            .Where(place => matching.Any(scope => PlaceMatches(scope, place)))
+            .Select(CloneWhole)
+            .ToArray();
+        if (places.Length == 0)
+        {
+            return null;
+        }
+
+        return ClonePartial(region, places, places.Sum(place => Math.Max(0, place.Count)));
+    }
+
+    private static bool IsYearWide(GalleryHierarchySearchScope scope) =>
+        string.IsNullOrWhiteSpace(scope.Country)
+        && string.IsNullOrWhiteSpace(scope.Region)
+        && string.IsNullOrWhiteSpace(scope.LocationKey)
+        && scope.PlaceId is null;
+
+    private static bool IsCountryWide(GalleryHierarchySearchScope scope) =>
+        !string.IsNullOrWhiteSpace(scope.Country)
+        && string.IsNullOrWhiteSpace(scope.Region)
+        && string.IsNullOrWhiteSpace(scope.LocationKey)
+        && scope.PlaceId is null;
+
+    private static bool IsRegionWide(GalleryHierarchySearchScope scope) =>
+        !string.IsNullOrWhiteSpace(scope.Region)
+        && string.IsNullOrWhiteSpace(scope.LocationKey)
+        && scope.PlaceId is null;
+
+    private static bool PlaceMatches(
+        GalleryHierarchySearchScope scope,
+        FastGalleryHierarchyNodeDto place)
+    {
+        if (!string.IsNullOrWhiteSpace(scope.LocationKey))
+        {
+            return string.Equals(scope.LocationKey, place.LocationKey, StringComparison.Ordinal);
+        }
+
+        return scope.PlaceId is Guid placeId
+               && placeId == (place.MemorykeeperPlaceId ?? place.PlaceId);
+    }
+
+    private static bool Compatible(int? left, int? right) =>
+        !left.HasValue || !right.HasValue || left.Value == right.Value;
+
+    private static bool CountryMatches(string? scopeCountry, string? nodeCountry) =>
+        !string.IsNullOrWhiteSpace(scopeCountry)
+        && (string.Equals(scopeCountry, nodeCountry, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                PlaceNormalizer.NormalizeCountry(scopeCountry),
+                PlaceNormalizer.NormalizeCountry(nodeCountry),
+                StringComparison.OrdinalIgnoreCase));
+
+    private static FastGalleryHierarchyNodeDto CloneWhole(FastGalleryHierarchyNodeDto node) =>
+        Clone(node, node.ChildNodes.Select(CloneWhole).ToArray(), node.Count, node.DailyCount, node.DateUnclassifiedCount);
+
+    private static FastGalleryHierarchyNodeDto ClonePartial(
+        FastGalleryHierarchyNodeDto node,
+        IReadOnlyList<FastGalleryHierarchyNodeDto> children,
+        int count) =>
+        Clone(node, children, count, dailyCount: 0, dateUnclassifiedCount: 0);
+
+    private static FastGalleryHierarchyNodeDto Clone(
+        FastGalleryHierarchyNodeDto node,
+        IReadOnlyList<FastGalleryHierarchyNodeDto> children,
+        int count,
+        int dailyCount,
+        int dateUnclassifiedCount) => new()
+    {
+        Year = node.Year,
+        Country = node.Country,
+        Region = node.Region,
+        PlaceId = node.PlaceId,
+        MemorykeeperPlaceId = node.MemorykeeperPlaceId,
+        LocationKey = node.LocationKey,
+        DisplayName = node.DisplayName,
+        Count = count,
+        DailyCount = dailyCount,
+        DateUnclassifiedCount = dateUnclassifiedCount,
+        Children = children,
+    };
+}
+
 /// <summary>
 /// Resolves a hierarchy label search to the same Fast Gallery scopes that produced the tree counts.
 /// This keeps a region such as "교토" on the hierarchy/photo endpoint instead of treating it as a

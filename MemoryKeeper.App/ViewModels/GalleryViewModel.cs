@@ -44,7 +44,10 @@ public partial class GalleryViewModel : ObservableObject
     private int _queryGeneration;
     private int _thumbnailBatchSequence;
     private int _fastMediaDiagnosticsRemaining;
+    private FastGallerySummaryDto? _fastSummary;
     private FastGalleryHierarchyDto? _fastHierarchy;
+    private FastGalleryHierarchyDto? _searchHierarchy;
+    private int _searchTreeTotalCount;
     private GalleryPlaceScope _placeScope;
     private bool _suppressSearchRefresh;
 
@@ -178,7 +181,9 @@ public partial class GalleryViewModel : ObservableObject
         GalleryDiagnostics.WriteStep("GalleryViewModel.LoadAsync start");
         // LoadAsync is invoked after catalog invalidation as well as first navigation.
         // Never reuse a place hierarchy that may predate an assignment/remap.
+        _fastSummary = null;
         _fastHierarchy = null;
+        _searchHierarchy = null;
         var restore = _galleryFocusState.ConsumeRestore();
         if (restore is not null)
         {
@@ -274,9 +279,6 @@ public partial class GalleryViewModel : ObservableObject
     partial void OnItemsChanged(ObservableCollection<GalleryItem> value) =>
         OnPropertyChanged(nameof(ContentState));
 
-    partial void OnSelectedNodeChanged(GalleryTreeNode? value) =>
-        OnPropertyChanged(nameof(ContentState));
-
     partial void OnIsEditingChanged(bool value)
     {
         OnPropertyChanged(nameof(CanManageCurrentPlace));
@@ -307,6 +309,7 @@ public partial class GalleryViewModel : ObservableObject
 
     partial void OnSelectedNodeChanged(GalleryTreeNode? value)
     {
+        OnPropertyChanged(nameof(ContentState));
         OnPropertyChanged(nameof(CanManageCurrentPlace));
         OnPropertyChanged(nameof(IsDailySource));
         OnPropertyChanged(nameof(ShowStandardPlaceChange));
@@ -497,7 +500,9 @@ public partial class GalleryViewModel : ObservableObject
 
     public async Task<bool> ReloadAndSelectRegisteredPlaceAsync(Guid placeId)
     {
+        _fastSummary = null;
         _fastHierarchy = null;
+        _searchHierarchy = null;
         _placeScope = GalleryPlaceScope.All;
         BrowseModeIndex = 1;
         _suppressSearchRefresh = true;
@@ -537,11 +542,36 @@ public partial class GalleryViewModel : ObservableObject
         try
         {
             await Task.Delay(250, token);
-            var node = SelectedNode
+            var generation = _queryGeneration;
+            var selectedNodeKey = SelectedNode?.BuildNodeKey();
+            GalleryTreeNode? node;
+            if (string.IsNullOrWhiteSpace(SearchText))
+            {
+                _searchHierarchy = null;
+                _searchTreeTotalCount = 0;
+                await RebuildTreeRootsAsync(reuseCachedData: true);
+                token.ThrowIfCancellationRequested();
+                if (generation != _queryGeneration)
+                {
+                    return;
+                }
+
+                node = FindNodeByKey(selectedNodeKey)
+                       ?? TreeRoots.FirstOrDefault(item => item.Kind == GalleryTreeNodeKind.All)
                        ?? TreeRoots.FirstOrDefault(item => item.Kind != GalleryTreeNodeKind.Separator);
+            }
+            else
+            {
+                node = await RebuildSearchTreeAsync(
+                    SearchText.Trim(),
+                    selectedNodeKey,
+                    token,
+                    generation);
+            }
+
             if (node is not null)
             {
-                await QueryForNodeAsync(node);
+                await SelectNodeAsync(node);
             }
         }
         catch (OperationCanceledException)
@@ -564,37 +594,55 @@ public partial class GalleryViewModel : ObservableObject
         }
     }
 
-    private async Task RebuildTreeRootsAsync()
+    private async Task RebuildTreeRootsAsync(bool reuseCachedData = false)
     {
+        if (!string.IsNullOrWhiteSpace(SearchText) && _searchHierarchy is not null)
+        {
+            await RebuildSearchTreeRootsAsync();
+            return;
+        }
+
         if (IsPlaceBrowseMode)
         {
             await RebuildPlaceTreeRootsAsync();
             return;
         }
 
-        await RebuildYearTreeRootsAsync();
+        await RebuildYearTreeRootsAsync(reuseCachedData);
     }
 
-    private async Task RebuildYearTreeRootsAsync()
+    private async Task RebuildYearTreeRootsAsync(bool reuseCachedData = false)
     {
         FastGallerySummaryDto summary;
-        try
+        if (reuseCachedData && _fastSummary is not null)
         {
-            summary = await _fastGallery.GetSummaryAsync();
+            summary = _fastSummary;
         }
-        catch (Exception ex)
+        else
         {
-            _logger.LogWarning(ex, "Fast Gallery summary failed; Gallery photos remain available.");
-            summary = new FastGallerySummaryDto();
+            try
+            {
+                summary = await _fastGallery.GetSummaryAsync();
+                _fastSummary = summary;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Fast Gallery summary failed; Gallery photos remain available.");
+                summary = new FastGallerySummaryDto();
+            }
         }
-        try
+
+        if (!reuseCachedData || _fastHierarchy is null)
         {
-            _fastHierarchy = await _fastGallery.GetHierarchyAsync();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Fast Gallery hierarchy failed; Gallery photos remain available.");
-            _fastHierarchy = new FastGalleryHierarchyDto();
+            try
+            {
+                _fastHierarchy = await _fastGallery.GetHierarchyAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Fast Gallery hierarchy failed; Gallery photos remain available.");
+                _fastHierarchy = new FastGalleryHierarchyDto();
+            }
         }
 
         var roots = new List<GalleryTreeNode>
@@ -656,7 +704,12 @@ public partial class GalleryViewModel : ObservableObject
     private async Task RebuildPlaceTreeRootsAsync()
     {
         _fastHierarchy ??= await _fastGallery.GetHierarchyAsync();
-        var roots = GalleryPlaceHierarchyProjection.Build(_fastHierarchy)
+        TreeRoots = new ObservableCollection<GalleryTreeNode>(BuildPlaceTreeRoots(_fastHierarchy));
+        RebuildVisibleTree();
+    }
+
+    private List<GalleryTreeNode> BuildPlaceTreeRoots(FastGalleryHierarchyDto hierarchy) =>
+        GalleryPlaceHierarchyProjection.Build(hierarchy)
             .Where(country => _placeScope switch
             {
                 GalleryPlaceScope.Domestic => country.IsDomestic,
@@ -696,8 +749,122 @@ public partial class GalleryViewModel : ObservableObject
             })
             .ToList();
 
+    private async Task<GalleryTreeNode?> RebuildSearchTreeAsync(
+        string searchText,
+        string? selectedNodeKey,
+        CancellationToken token,
+        int generation)
+    {
+        _fastHierarchy ??= await _fastGallery.GetHierarchyAsync(token);
+        var searchScopes = GalleryHierarchySearchPlanner.Resolve(_fastHierarchy, searchText);
+        var projection = GallerySearchHierarchyProjection.Create(_fastHierarchy, searchScopes);
+        token.ThrowIfCancellationRequested();
+        if (generation != _queryGeneration)
+        {
+            return null;
+        }
+
+        _searchHierarchy = projection.Hierarchy;
+        _searchTreeTotalCount = projection.TotalCount;
+        await RebuildSearchTreeRootsAsync();
+        token.ThrowIfCancellationRequested();
+        if (generation != _queryGeneration)
+        {
+            return null;
+        }
+
+        return FindNodeByKey(selectedNodeKey)
+               ?? TreeRoots.FirstOrDefault(node => node.Kind == GalleryTreeNodeKind.All);
+    }
+
+    private async Task RebuildSearchTreeRootsAsync()
+    {
+        var hierarchy = _searchHierarchy ?? new FastGalleryHierarchyDto();
+        var roots = new List<GalleryTreeNode>
+        {
+            new()
+            {
+                Kind = GalleryTreeNodeKind.All,
+                Title = "전체",
+                Count = _searchTreeTotalCount,
+                Depth = 0,
+                CanExpand = false,
+            },
+        };
+
+        if (IsPlaceBrowseMode)
+        {
+            var placeRoots = BuildPlaceTreeRoots(hierarchy);
+            foreach (var root in placeRoots)
+            {
+                root.IsExpanded = root.CanExpand;
+                roots.Add(root);
+            }
+        }
+        else
+        {
+            foreach (var year in hierarchy.Roots.OrderByDescending(node => node.Year))
+            {
+                if (year.Year is not int yearValue || year.Count <= 0)
+                {
+                    continue;
+                }
+
+                var root = new GalleryTreeNode
+                {
+                    Kind = GalleryTreeNodeKind.Year,
+                    Year = yearValue,
+                    Title = yearValue.ToString(),
+                    Count = year.Count,
+                    Depth = 0,
+                    CanExpand = year.ChildNodes.Count > 0
+                                || year.DailyCount > 0
+                                || year.DateUnclassifiedCount > 0,
+                };
+                roots.Add(root);
+            }
+        }
+
         TreeRoots = new ObservableCollection<GalleryTreeNode>(roots);
+        if (IsYearBrowseMode)
+        {
+            foreach (var root in roots.Where(node => node.Kind == GalleryTreeNodeKind.Year))
+            {
+                await ExpandSearchTreeNodeAsync(root);
+            }
+        }
+
         RebuildVisibleTree();
+    }
+
+    private async Task ExpandSearchTreeNodeAsync(GalleryTreeNode node)
+    {
+        if (!node.CanExpand)
+        {
+            return;
+        }
+
+        await EnsureChildrenAsync(node);
+        node.IsExpanded = true;
+        foreach (var child in node.Children)
+        {
+            await ExpandSearchTreeNodeAsync(child);
+        }
+    }
+
+    private void UpdateSearchTreeTotalCount(int totalCount)
+    {
+        if (string.IsNullOrWhiteSpace(SearchText) || _searchHierarchy is null)
+        {
+            return;
+        }
+
+        _searchTreeTotalCount = Math.Max(0, totalCount);
+        var allNode = TreeRoots.FirstOrDefault(node => node.Kind == GalleryTreeNodeKind.All);
+        if (allNode is not null)
+        {
+            allNode.Count = _searchTreeTotalCount;
+        }
     }
 
     private async Task ApplyPlaceNavigationAsync(
@@ -787,7 +954,11 @@ public partial class GalleryViewModel : ObservableObject
             {
                 case GalleryTreeNodeKind.Year when node.Year is int year:
                 {
-                    _fastHierarchy ??= await _fastGallery.GetHierarchyAsync();
+                    if (_searchHierarchy is null)
+                    {
+                        _fastHierarchy ??= await _fastGallery.GetHierarchyAsync();
+                    }
+
                     var yearNode = FindYearNode(year);
                     var countries = yearNode?.ChildNodes ?? [];
                     var daily = GalleryDailyHierarchyProjection.Build(yearNode);
@@ -949,7 +1120,7 @@ public partial class GalleryViewModel : ObservableObject
     }
 
     private FastGalleryHierarchyNodeDto? FindYearNode(int year) =>
-        _fastHierarchy?.Roots.FirstOrDefault(node => node.Year == year);
+        (_searchHierarchy ?? _fastHierarchy)?.Roots.FirstOrDefault(node => node.Year == year);
 
     private static bool IsDomesticCountry(string? country) =>
         string.Equals(
@@ -1389,6 +1560,7 @@ public partial class GalleryViewModel : ObservableObject
             token.ThrowIfCancellationRequested();
             if (generation != _queryGeneration) return;
             _totalCount = _matchedPhotos.Count;
+            UpdateSearchTreeTotalCount(_totalCount);
             var firstPage = GalleryInMemoryPagination.TakeNextPage(
                 _matchedPhotos,
                 consumedCount: 0,
@@ -1475,19 +1647,19 @@ public partial class GalleryViewModel : ObservableObject
                     return;
                 }
 
-                var seen = Items.Select(item => item.BackendFileId).ToHashSet(StringComparer.OrdinalIgnoreCase);
-                var appended = sourcePage
+                var legacySearchSeen = Items.Select(item => item.BackendFileId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var legacySearchAppended = sourcePage
                     .Select(photo => new GalleryItem(GalleryBackendMapper.ToGalleryMedia(photo, _apiClient.ApiBaseUrl)))
-                    .Where(item => item.MediaId != Guid.Empty && seen.Add(item.BackendFileId))
+                    .Where(item => item.MediaId != Guid.Empty && legacySearchSeen.Add(item.BackendFileId))
                     .ToList();
-                foreach (var item in appended) Items.Add(item);
+                foreach (var item in legacySearchAppended) Items.Add(item);
                 _currentPage++;
                 _hasMore = GalleryInMemoryPagination.HasMore(_matchedPhotos.Count, _legacyLoadedCount);
                 _nextCursor = _hasMore ? "legacy-search" : null;
                 OnPropertyChanged(nameof(CanLoadMore));
                 StatusMessage = $"{_pagingNode.Title} · {Items.Count}/{_totalCount}장";
                 _photoNavigationState.SetPlaylist(Items.Select(item => item.MediaId).ToList());
-                _ = LoadThumbnailsAsync(appended);
+                _ = LoadThumbnailsAsync(legacySearchAppended);
                 return;
             }
 
@@ -1513,19 +1685,19 @@ public partial class GalleryViewModel : ObservableObject
                             result.Page.HasMore && !string.IsNullOrWhiteSpace(result.Page.NextCursor))
                         : state)
                     .ToList();
-                var seen = Items.Select(item => item.BackendFileId).ToHashSet(StringComparer.OrdinalIgnoreCase);
-                var appended = MergeSearchPhotos(pages.Select(result => result.Page))
+                var hierarchySearchSeen = Items.Select(item => item.BackendFileId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var hierarchySearchAppended = MergeSearchPhotos(pages.Select(result => result.Page))
                     .Select(ToGalleryItem)
-                    .Where(item => item.MediaId != Guid.Empty && seen.Add(item.BackendFileId))
+                    .Where(item => item.MediaId != Guid.Empty && hierarchySearchSeen.Add(item.BackendFileId))
                     .ToList();
-                foreach (var item in appended) Items.Add(item);
+                foreach (var item in hierarchySearchAppended) Items.Add(item);
                 _currentPage++;
                 _hasMore = _searchPagingState.Any(state => state.HasMore);
                 _nextCursor = _hasMore ? "hierarchy-search" : null;
                 OnPropertyChanged(nameof(CanLoadMore));
                 StatusMessage = $"검색 '{SearchText.Trim()}' · {Items.Count}/{_totalCount}장";
                 _photoNavigationState.SetPlaylist(Items.Select(item => item.MediaId).ToList());
-                _ = LoadThumbnailsAsync(appended);
+                _ = LoadThumbnailsAsync(hierarchySearchAppended);
                 return;
             }
 

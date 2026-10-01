@@ -72,6 +72,34 @@ public sealed class MobileGalleryHttpFoundationTests
     }
 
     [Fact]
+    public async Task Repository_RequestsHierarchyAndParsesYearNodes()
+    {
+        var terminal = new RecordingHandler
+        {
+            ResponseBody = """{"items":[{"year":2026,"count":12},{"year":2025,"count":8}]}""",
+        };
+        var configuration = new StubConfiguration(BackendUri, "credential-value");
+        using var authentication = new MobileBackendAuthenticationHandler(configuration)
+        {
+            InnerHandler = terminal,
+        };
+        using var client = new HttpClient(authentication);
+        var repository = new MobileFastGalleryApiRepository(
+            new SingleClientFactory(client),
+            configuration);
+
+        var hierarchy = await repository.GetHierarchyAsync();
+
+        Assert.EndsWith(
+            "/api/memorykeeper/gallery/hierarchy",
+            terminal.RequestUris.Single().AbsolutePath,
+            StringComparison.Ordinal);
+        Assert.Equal(
+            new[] { 2026, 2025 },
+            hierarchy.Roots.Select(node => node.Year.GetValueOrDefault()));
+    }
+
+    [Fact]
     public async Task Repository_MissingConfigurationFailsWithoutNetworkCall()
     {
         var terminal = new RecordingHandler();

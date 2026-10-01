@@ -1,3 +1,4 @@
+using MemoryKeeper.Application;
 using MemoryKeeper.Application.DTOs;
 using MemoryKeeper.Application.Interfaces;
 using MemoryKeeper.Application.Services;
@@ -43,6 +44,132 @@ public sealed class FastGalleryPagingServiceTests
         Assert.Equal("c", Assert.Single(update.AddedItems).FileId);
         Assert.False(update.HasMore);
         Assert.Null(update.NextCursor);
+    }
+
+    [Fact]
+    public async Task YearScope_PreservesYearFilterOnLoadMore()
+    {
+        var responses = new Queue<FastGalleryPhotoPageDto>(
+        [
+            Page([Photo("year-first")], "year-next", true),
+            Page([Photo("year-second")], null, false),
+        ]);
+        var repository = new StubRepository((_, _) => Task.FromResult(responses.Dequeue()));
+        var service = new FastGalleryPagingService(repository);
+
+        await service.LoadFirstPageAsync(new FastGalleryPhotoQuery { Year = 2026 });
+        await service.LoadNextPageAsync();
+
+        Assert.Collection(
+            repository.Queries,
+            query =>
+            {
+                Assert.Equal(2026, query.Year);
+                Assert.Null(query.Cursor);
+                Assert.Equal(FastGalleryPagingService.PageSize, query.Limit);
+            },
+            query =>
+            {
+                Assert.Equal(2026, query.Year);
+                Assert.Equal("year-next", query.Cursor);
+                Assert.Equal(FastGalleryPagingService.PageSize, query.Limit);
+            });
+    }
+
+    [Fact]
+    public async Task YearPlaceScope_PreservesEveryFilterOnLoadMore()
+    {
+        var responses = new Queue<FastGalleryPhotoPageDto>(
+        [
+            Page([Photo("place-first")], "place-next", true),
+            Page([Photo("place-second")], null, false),
+        ]);
+        var repository = new StubRepository((_, _) => Task.FromResult(responses.Dequeue()));
+        var service = new FastGalleryPagingService(repository);
+        var query = GalleryBrowseScopeQueryMapper.ToQuery(GalleryBrowseScope.ForHierarchy(
+            year: 2025,
+            country: "일본",
+            region: "교토",
+            locationKey: "registered:place"));
+
+        await service.LoadFirstPageAsync(query);
+        await service.LoadNextPageAsync();
+
+        Assert.All(repository.Queries, request =>
+        {
+            Assert.Equal(2025, request.Year);
+            Assert.Equal("일본", request.Country);
+            Assert.Equal("교토", request.Region);
+            Assert.Equal("registered:place", request.LocationKey);
+        });
+        Assert.Null(repository.Queries[0].Cursor);
+        Assert.Equal("place-next", repository.Queries[1].Cursor);
+    }
+
+    [Fact]
+    public async Task SwitchingScope_ResetsCursorAndDoesNotMixItems()
+    {
+        var responses = new Queue<FastGalleryPhotoPageDto>(
+        [
+            Page([Photo("default")], "default-next", true),
+            Page([Photo("year")], "year-next", true),
+            Page([Photo("year-more")], null, false),
+            Page([Photo("default-again")], null, false),
+        ]);
+        var repository = new StubRepository((_, _) => Task.FromResult(responses.Dequeue()));
+        var service = new FastGalleryPagingService(repository);
+
+        await service.LoadFirstPageAsync();
+        var year = await service.LoadFirstPageAsync(new FastGalleryPhotoQuery { Year = 2026 });
+        var yearWithMore = await service.LoadNextPageAsync();
+        var defaultFeed = await service.LoadFirstPageAsync(new FastGalleryPhotoQuery());
+
+        Assert.Equal("year", Assert.Single(year.Items).FileId);
+        Assert.Equal(new[] { "year", "year-more" }, yearWithMore.Items.Select(item => item.FileId));
+        Assert.Equal("default-again", Assert.Single(defaultFeed.Items).FileId);
+        Assert.Null(repository.Queries[1].Cursor);
+        Assert.Equal(2026, repository.Queries[1].Year);
+        Assert.Equal("year-next", repository.Queries[2].Cursor);
+        Assert.Equal(2026, repository.Queries[2].Year);
+        Assert.Null(repository.Queries[3].Cursor);
+        Assert.Null(repository.Queries[3].Year);
+    }
+
+    [Fact]
+    public async Task CanonicalRegion_MergesExactAliasQueriesIntoFiftyItemPages()
+    {
+        var repository = new StubRepository((query, _) => Task.FromResult(query.Region switch
+        {
+            "Osaka" => Page(PhotosWithPrefix("english", 30), null, false),
+            "오사카" => Page(PhotosWithPrefix("korean", 30), null, false),
+            _ => throw new InvalidOperationException("Unexpected region query."),
+        }));
+        var service = new FastGalleryPagingService(repository);
+        var scope = GalleryBrowseScope.ForCanonicalRegion(
+            2025,
+            "Japan",
+            "오사카",
+            ["Osaka", "오사카"]);
+
+        var first = await service.LoadFirstPageAsync(
+            GalleryBrowseScopeQueryMapper.ToQueries(scope));
+        var second = await service.LoadNextPageAsync();
+
+        Assert.Equal(50, first.Items.Count);
+        Assert.True(first.HasMore);
+        Assert.Equal(10, second.AddedItems.Count);
+        Assert.Equal(60, second.Items.Count);
+        Assert.False(second.HasMore);
+        Assert.Equal(2, repository.Queries.Count);
+        Assert.Equal(
+            ["Osaka", "오사카"],
+            repository.Queries.Select(query => query.Region).OrderBy(region => region, StringComparer.Ordinal));
+        Assert.All(repository.Queries, query =>
+        {
+            Assert.Equal(2025, query.Year);
+            Assert.Equal("Japan", query.Country);
+            Assert.Equal(FastGalleryPagingService.PageSize, query.Limit);
+        });
     }
 
     [Fact]
@@ -157,6 +284,9 @@ public sealed class FastGalleryPagingServiceTests
 
     private static FastGalleryPhotoDto[] Photos(int count) =>
         Enumerable.Range(0, count).Select(index => Photo($"file-{index}")).ToArray();
+
+    private static FastGalleryPhotoDto[] PhotosWithPrefix(string prefix, int count) =>
+        Enumerable.Range(0, count).Select(index => Photo($"{prefix}-{index:D2}")).ToArray();
 
     private static FastGalleryPhotoDto Photo(string fileId) => new()
     {
