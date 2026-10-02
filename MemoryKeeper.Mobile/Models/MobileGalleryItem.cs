@@ -11,4 +11,8 @@ public partial class MobileGalleryItem : ObservableObject
     public required string FileId { get; init; }
 
     public ImageSource? ThumbnailSource { get; init; }
+
+    public string? PreviewUrl { get; init; }
+
+    public bool IsVideo { get; init; }
 }

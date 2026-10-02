@@ -199,6 +199,19 @@ public sealed class FastGalleryDtoTests
     }
 
     [Fact]
+    public void MediaUrlResolver_UsesFileIdWhenPreviewFieldIsMissing()
+    {
+        var resolved = BackendMediaUrlResolver.ResolvePreviewUrl(
+            "http://memorykeeper.local:8000",
+            "abc/123",
+            null);
+
+        Assert.Equal(
+            "http://memorykeeper.local:8000/api/common/gallery/abc%2F123/preview",
+            resolved);
+    }
+
+    [Fact]
     public void MediaUrlResolver_PrefersExplicitPreviewBeforeSynthesizedThumbnail()
     {
         var resolved = BackendMediaUrlResolver.ResolveDisplayUrl(

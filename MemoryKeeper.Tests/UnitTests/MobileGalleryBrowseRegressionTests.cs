@@ -9,6 +9,7 @@ public sealed class MobileGalleryBrowseRegressionTests
         var codeBehind = File.ReadAllText(FindSourceFile("MemoryKeeper.Mobile", "Views", "HomePage.xaml.cs"));
 
         Assert.Contains("IsVisible=\"{Binding IsGalleryMode}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("IsVisible=\"{Binding IsViewerMode}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("IsVisible=\"{Binding IsYearSelectionMode}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("IsVisible=\"{Binding IsPlaceSelectionMode}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("IsVisible=\"{Binding IsPlaceYearSelectionMode}\"", xaml, StringComparison.Ordinal);

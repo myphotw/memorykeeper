@@ -94,6 +94,29 @@ public static class BackendMediaUrlResolver
             $"/api/common/gallery/{Uri.EscapeDataString(fileId.Trim())}/thumbnail");
     }
 
+    public static string? ResolvePreviewUrl(
+        string apiBaseUrl,
+        string? fileId,
+        string? previewField)
+    {
+        var fromField = ToAbsoluteUrl(apiBaseUrl, previewField);
+        if (!string.IsNullOrWhiteSpace(fromField)
+            && (fromField.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+                || fromField.StartsWith("https://", StringComparison.OrdinalIgnoreCase)))
+        {
+            return fromField;
+        }
+
+        if (string.IsNullOrWhiteSpace(fileId))
+        {
+            return fromField;
+        }
+
+        return ToAbsoluteUrl(
+            apiBaseUrl,
+            $"/api/common/gallery/{Uri.EscapeDataString(fileId.Trim())}/preview");
+    }
+
     /// <summary>
     /// Chooses an explicit thumbnail, then an explicit preview, and only then synthesizes
     /// the common thumbnail route. This is useful for aggregate DTOs that retain one URL.

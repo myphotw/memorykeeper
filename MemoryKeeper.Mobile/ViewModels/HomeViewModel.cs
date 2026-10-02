@@ -7,6 +7,8 @@ using MemoryKeeper.Application;
 using MemoryKeeper.Application.DTOs;
 using MemoryKeeper.Application.Interfaces;
 using MemoryKeeper.Application.Services;
+using MemoryKeeper.Domain.Enums;
+using MemoryKeeper.Mobile.Controls;
 using MemoryKeeper.Mobile.Http;
 using MemoryKeeper.Mobile.Images;
 using MemoryKeeper.Mobile.Models;
@@ -18,11 +20,14 @@ public partial class HomeViewModel : ObservableObject
     private readonly FastGalleryPagingService _paging;
     private readonly IFastGalleryApiRepository _repository;
     private readonly IMobileThumbnailSourceFactory _thumbnailSourceFactory;
+    private readonly IMobilePreviewSourceFactory _previewSourceFactory;
     private readonly object _requestLock = new();
     private readonly SemaphoreSlim _hierarchyGate = new(1, 1);
     private CancellationTokenSource? _requestCancellation;
+    private CancellationTokenSource? _viewerLoadCancellation;
     private FastGalleryHierarchyDto? _hierarchy;
     private readonly MobileGalleryNavigationHistory _contextHistory = new();
+    private readonly MobileViewerPosition _viewerPosition = new();
     private readonly List<MobileGalleryTreeNode> _placeTreeRoots = [];
     private readonly Dictionary<int, PlaceTreeState> _placeTreesByYear = [];
     private GalleryYearBrowseTree? _placeTreeSource;
@@ -30,6 +35,7 @@ public partial class HomeViewModel : ObservableObject
     private int? _placeTreeYear;
     private GalleryRetryOperation _retryOperation;
     private long _scopeGeneration;
+    private long _viewerLoadGeneration;
     private bool _browseOptionsLoaded;
     private bool _initialized;
     private bool _suppressBrowseSelection;
@@ -83,14 +89,34 @@ public partial class HomeViewModel : ObservableObject
     [ObservableProperty]
     private bool isSearchNoResultsVisible;
 
+    [ObservableProperty]
+    private byte[]? viewerPreviewBytes;
+
+    [ObservableProperty]
+    private string? viewerPreviewFileId;
+
+    [ObservableProperty]
+    private string viewerPreviewRequestDescription = "missing";
+
+    [ObservableProperty]
+    private bool isPreviewLoading;
+
+    [ObservableProperty]
+    private string? viewerErrorMessage;
+
+    [ObservableProperty]
+    private bool isViewerVideo;
+
     public HomeViewModel(
         FastGalleryPagingService paging,
         IFastGalleryApiRepository repository,
-        IMobileThumbnailSourceFactory thumbnailSourceFactory)
+        IMobileThumbnailSourceFactory thumbnailSourceFactory,
+        IMobilePreviewSourceFactory previewSourceFactory)
     {
         _paging = paging;
         _repository = repository;
         _thumbnailSourceFactory = thumbnailSourceFactory;
+        _previewSourceFactory = previewSourceFactory;
 
         var defaultFeed = new MobileGalleryBrowseOption("최근 사진", GalleryBrowseScope.DefaultFeed);
         BrowseOptions.Add(defaultFeed);
@@ -118,6 +144,19 @@ public partial class HomeViewModel : ObservableObject
     public bool HasItems => Items.Count > 0;
 
     public bool IsGalleryMode => ViewMode == MobileGalleryViewMode.Gallery;
+
+    public bool IsViewerMode => ViewMode == MobileGalleryViewMode.Viewer;
+
+    public bool IsViewerPreviewVisible => ViewerPreviewBytes is not null;
+
+    public bool IsViewerErrorVisible => !IsPreviewLoading
+                                        && ViewerPreviewBytes is null
+                                        && !IsViewerVideo
+                                        && !string.IsNullOrWhiteSpace(ViewerErrorMessage);
+
+    public bool IsViewerVideoStateVisible => IsViewerMode && IsViewerVideo;
+
+    public string ViewerTitle => IsViewerVideo ? "동영상" : "사진 보기";
 
     public bool IsYearSelectionMode => ViewMode == MobileGalleryViewMode.YearSelection;
 
@@ -257,6 +296,108 @@ public partial class HomeViewModel : ObservableObject
 
     [RelayCommand]
     private void AddPhotos() => AddPhotosRequested?.Invoke(this, EventArgs.Empty);
+
+    [RelayCommand]
+    private async Task OpenViewerAsync(MobileGalleryItem? item)
+    {
+        if (item is null || !_viewerPosition.TryOpen(Items.IndexOf(item), Items.Count))
+        {
+            return;
+        }
+
+        ViewMode = MobileGalleryViewMode.Viewer;
+        await LoadViewerItemAsync(item);
+    }
+
+    public Task ShowPreviousViewerItemAsync() => MoveViewerAsync(-1);
+
+    public Task ShowNextViewerItemAsync() => MoveViewerAsync(1);
+
+    private Task MoveViewerAsync(int offset)
+    {
+        if (!IsViewerMode || !_viewerPosition.TryMove(offset, Items.Count, out var targetIndex))
+        {
+            return Task.CompletedTask;
+        }
+
+        return LoadViewerItemAsync(Items[targetIndex]);
+    }
+
+    private async Task LoadViewerItemAsync(MobileGalleryItem item)
+    {
+        ClearViewerMediaPresentation();
+        IsViewerVideo = item.IsVideo;
+        if (item.IsVideo)
+        {
+            return;
+        }
+
+        var generation = Interlocked.Increment(ref _viewerLoadGeneration);
+        var cancellation = new CancellationTokenSource();
+        _viewerLoadCancellation = cancellation;
+        IsPreviewLoading = true;
+        try
+        {
+            var preview = await _previewSourceFactory
+                .LoadAsync(item.FileId, item.PreviewUrl, cancellation.Token);
+            if (!IsCurrentViewerRequest(cancellation, generation))
+            {
+                return;
+            }
+
+            if (!preview.IsSuccess)
+            {
+                ViewerErrorMessage = "이미지를 불러올 수 없습니다.";
+                IsPreviewLoading = false;
+                return;
+            }
+
+            ViewerPreviewFileId = item.FileId;
+            ViewerPreviewRequestDescription = preview.RequestDescription;
+            ViewerPreviewBytes = preview.Bytes;
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+        }
+        catch
+        {
+            if (IsCurrentViewerRequest(cancellation, generation))
+            {
+                ViewerErrorMessage = "이미지를 불러올 수 없습니다.";
+                IsPreviewLoading = false;
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(_viewerLoadCancellation, cancellation))
+            {
+                _viewerLoadCancellation = null;
+            }
+
+            cancellation.Dispose();
+        }
+    }
+
+    public void MarkViewerPreviewReady()
+    {
+        if (IsViewerMode && ViewerPreviewBytes is not null)
+        {
+            IsPreviewLoading = false;
+            ViewerErrorMessage = null;
+        }
+    }
+
+    public void MarkViewerPreviewFailed()
+    {
+        if (!IsViewerMode || ViewerPreviewBytes is null)
+        {
+            return;
+        }
+
+        ViewerPreviewBytes = null;
+        IsPreviewLoading = false;
+        ViewerErrorMessage = "이미지를 불러올 수 없습니다.";
+    }
 
     [RelayCommand]
     private void OpenYearSelection()
@@ -681,6 +822,7 @@ public partial class HomeViewModel : ObservableObject
             SelectedBrowseOption = null;
             SelectedSearchOption = null;
             SelectedSiblingYearOption = null;
+            ClearViewerPresentation();
             ClearSearchPresentation();
         }
         finally
@@ -688,6 +830,32 @@ public partial class HomeViewModel : ObservableObject
             _suppressBrowseSelection = wasSuppressed;
         }
     }
+
+    private void ClearViewerPresentation()
+    {
+        ClearViewerMediaPresentation();
+        _viewerPosition.Clear();
+    }
+
+    private void ClearViewerMediaPresentation()
+    {
+        Interlocked.Increment(ref _viewerLoadGeneration);
+        _viewerLoadCancellation?.Cancel();
+        ViewerPreviewBytes = null;
+        ViewerPreviewFileId = null;
+        ViewerPreviewRequestDescription = "missing";
+        IsPreviewLoading = false;
+        ViewerErrorMessage = null;
+        IsViewerVideo = false;
+    }
+
+    private bool IsCurrentViewerRequest(
+        CancellationTokenSource cancellation,
+        long generation) =>
+        ReferenceEquals(_viewerLoadCancellation, cancellation)
+        && generation == Volatile.Read(ref _viewerLoadGeneration)
+        && !cancellation.IsCancellationRequested
+        && IsViewerMode;
 
     private void ClearSearchPresentation()
     {
@@ -909,6 +1077,8 @@ public partial class HomeViewModel : ObservableObject
         TileSize = _tileSize,
         // Grid policy: use only thumbnail_url. Never fall back to preview or original.
         ThumbnailSource = _thumbnailSourceFactory.Create(photo.FileId, photo.ThumbnailUrl),
+        PreviewUrl = photo.PreviewUrl,
+        IsVideo = MediaTypeResolver.Resolve(photo.MimeType, photo.Extension, photo.Filename) == MediaType.Video,
     };
 
     private void ApplyContinuation(FastGalleryPagingUpdate update)
@@ -980,6 +1150,19 @@ public partial class HomeViewModel : ObservableObject
     partial void OnBrowseOptionsErrorMessageChanged(string? value) =>
         OnPropertyChanged(nameof(IsBrowseOptionsErrorVisible));
 
+    partial void OnViewerPreviewBytesChanged(byte[]? value) => NotifyViewerStateChanged();
+
+    partial void OnIsPreviewLoadingChanged(bool value) => NotifyViewerStateChanged();
+
+    partial void OnViewerErrorMessageChanged(string? value) => NotifyViewerStateChanged();
+
+    partial void OnIsViewerVideoChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsViewerVideoStateVisible));
+        OnPropertyChanged(nameof(ViewerTitle));
+        NotifyViewerStateChanged();
+    }
+
     private void NotifyViewStateChanged()
     {
         OnPropertyChanged(nameof(HasItems));
@@ -996,9 +1179,17 @@ public partial class HomeViewModel : ObservableObject
         NotifyViewStateChanged();
     }
 
+    private void NotifyViewerStateChanged()
+    {
+        OnPropertyChanged(nameof(IsViewerPreviewVisible));
+        OnPropertyChanged(nameof(IsViewerErrorVisible));
+    }
+
     private void NotifyContextStateChanged()
     {
         OnPropertyChanged(nameof(IsGalleryMode));
+        OnPropertyChanged(nameof(IsViewerMode));
+        OnPropertyChanged(nameof(IsViewerVideoStateVisible));
         OnPropertyChanged(nameof(IsYearSelectionMode));
         OnPropertyChanged(nameof(IsPlaceSelectionMode));
         OnPropertyChanged(nameof(IsPlaceYearSelectionMode));

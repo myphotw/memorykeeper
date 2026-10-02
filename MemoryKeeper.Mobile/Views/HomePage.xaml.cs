@@ -73,6 +73,18 @@ public partial class HomePage : ContentPage
             position: ScrollToPosition.Center,
             animate: false));
 
+    private void OnViewerPreviewLoaded(object? sender, EventArgs e) =>
+        ViewModel.MarkViewerPreviewReady();
+
+    private void OnViewerPreviewFailed(object? sender, EventArgs e) =>
+        ViewModel.MarkViewerPreviewFailed();
+
+    private void OnViewerPreviousRequested(object? sender, EventArgs e) =>
+        _ = ViewModel.ShowPreviousViewerItemAsync();
+
+    private void OnViewerNextRequested(object? sender, EventArgs e) =>
+        _ = ViewModel.ShowNextViewerItemAsync();
+
     private async Task InitializeSafelyAsync()
     {
         try

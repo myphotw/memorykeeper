@@ -5,6 +5,7 @@ using MemoryKeeper.Application;
 using MemoryKeeper.Application.DTOs;
 using MemoryKeeper.Mobile.Configuration;
 using MemoryKeeper.Mobile.Http;
+using MemoryKeeper.Mobile.Images;
 
 namespace MemoryKeeper.Tests.UnitTests;
 
@@ -68,6 +69,7 @@ public sealed class MobileGalleryHttpFoundationTests
         Assert.Contains("cursor=cursor%2B%2F%3D", terminal.RequestUris.Single().Query, StringComparison.Ordinal);
         Assert.Equal("a", Assert.Single(page.Items).FileId);
         Assert.Equal("/api/common/gallery/a/thumbnail", page.Items[0].ThumbnailUrl);
+        Assert.Equal("/api/common/gallery/a/preview", page.Items[0].PreviewUrl);
         Assert.Equal("opaque+/=", page.NextCursor);
         Assert.True(page.HasMore);
     }
@@ -140,6 +142,60 @@ public sealed class MobileGalleryHttpFoundationTests
         Assert.DoesNotContain(credential, exception.ToString(), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task PreviewLoader_MissingUrlUsesAuthenticatedCanonicalPreviewRoute()
+    {
+        var terminal = new RecordingHandler
+        {
+            ResponseBody = "preview-bytes",
+            ContentType = "image/jpeg",
+        };
+        var configuration = new StubConfiguration(BackendUri, "credential-value");
+        using var authentication = new MobileBackendAuthenticationHandler(configuration)
+        {
+            InnerHandler = terminal,
+        };
+        using var client = new HttpClient(authentication);
+        var loader = new MobilePreviewSourceFactory(
+            new SingleClientFactory(client),
+            configuration);
+
+        var result = await loader.LoadAsync("abc/123", null);
+
+        Assert.True(result.IsSuccess);
+        Assert.NotEmpty(result.Bytes!);
+        Assert.Equal(
+            "/api/common/gallery/abc%2F123/preview",
+            terminal.RequestUris.Single().AbsolutePath);
+        Assert.Equal("Bearer", terminal.Authorization.Single()?.Scheme);
+        Assert.Equal("backend:/api/common/gallery/abc%2F123/preview", result.RequestDescription);
+    }
+
+    [Fact]
+    public async Task PreviewLoader_HttpFailureReturnsBoundedFailureWithoutFallbackImage()
+    {
+        var terminal = new RecordingHandler { StatusCode = HttpStatusCode.NotFound };
+        var configuration = new StubConfiguration(BackendUri, "credential-value");
+        using var authentication = new MobileBackendAuthenticationHandler(configuration)
+        {
+            InnerHandler = terminal,
+        };
+        using var client = new HttpClient(authentication);
+        var loader = new MobilePreviewSourceFactory(
+            new SingleClientFactory(client),
+            configuration);
+
+        var result = await loader.LoadAsync(
+            "file-id",
+            "/api/common/gallery/file-id/preview");
+
+        Assert.False(result.IsSuccess);
+        Assert.Null(result.Bytes);
+        Assert.Equal("http", result.FailureStage);
+        Assert.DoesNotContain("original", terminal.RequestUris.Single().AbsolutePath, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("thumbnail", terminal.RequestUris.Single().AbsolutePath, StringComparison.OrdinalIgnoreCase);
+    }
+
     private sealed class StubConfiguration : IMobileBackendConfiguration
     {
         public StubConfiguration(Uri? baseUri, string? bearerToken)
@@ -172,6 +228,8 @@ public sealed class MobileGalleryHttpFoundationTests
 
         public string ResponseBody { get; init; } = "{}";
 
+        public string ContentType { get; init; } = "application/json";
+
         public HttpStatusCode StatusCode { get; init; } = HttpStatusCode.OK;
 
         protected override Task<HttpResponseMessage> SendAsync(
@@ -182,7 +240,7 @@ public sealed class MobileGalleryHttpFoundationTests
             Authorization.Add(request.Headers.Authorization);
             return Task.FromResult(new HttpResponseMessage(StatusCode)
             {
-                Content = new StringContent(ResponseBody, Encoding.UTF8, "application/json"),
+                Content = new StringContent(ResponseBody, Encoding.UTF8, ContentType),
             });
         }
     }

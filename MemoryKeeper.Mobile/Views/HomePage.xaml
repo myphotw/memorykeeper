@@ -3,6 +3,7 @@
     x:Class="MemoryKeeper.Mobile.Views.HomePage"
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:controls="clr-namespace:MemoryKeeper.Mobile.Controls"
     xmlns:models="clr-namespace:MemoryKeeper.Mobile.Models"
     xmlns:viewModels="clr-namespace:MemoryKeeper.Mobile.ViewModels"
     x:DataType="viewModels:HomeViewModel"
@@ -157,6 +158,11 @@
                                     HeightRequest="{Binding TileSize}"
                                     BackgroundColor="#DDE5EE"
                                     IsClippedToBounds="True">
+                                    <Grid.GestureRecognizers>
+                                        <TapGestureRecognizer
+                                            Command="{Binding Source={RelativeSource AncestorType={x:Type viewModels:HomeViewModel}}, Path=OpenViewerCommand}"
+                                            CommandParameter="{Binding .}" />
+                                    </Grid.GestureRecognizers>
                                     <Label
                                         FontSize="24"
                                         HorizontalOptions="Center"
@@ -596,6 +602,85 @@
                     </DataTemplate>
                 </CollectionView.ItemTemplate>
             </CollectionView>
+        </Grid>
+
+        <!-- Viewer owns its input surface and reveals only a fully loaded Preview. -->
+        <Grid
+            BackgroundColor="Black"
+            IsVisible="{Binding IsViewerMode}"
+            RowDefinitions="Auto,*">
+            <Grid
+                Grid.Row="0"
+                Margin="8,8,8,4"
+                ColumnDefinitions="56,*"
+                HeightRequest="48">
+                <Button
+                    Command="{Binding NavigateBackCommand}"
+                    FontSize="28"
+                    Padding="0"
+                    SemanticProperties.Description="사진 보기 닫기"
+                    Text="&#x2039;"
+                    TextColor="White"
+                    BackgroundColor="Transparent" />
+                <Label
+                    Grid.Column="1"
+                    Margin="0,0,56,0"
+                    FontAttributes="Bold"
+                    FontSize="18"
+                    HorizontalTextAlignment="Center"
+                    Text="{Binding ViewerTitle}"
+                    TextColor="White"
+                    VerticalTextAlignment="Center" />
+            </Grid>
+            <Grid
+                x:Name="ViewerViewport"
+                Grid.Row="1"
+                BackgroundColor="Black">
+                <controls:MobileZoomablePreviewView
+                    x:Name="ViewerPreviewSurface"
+                    PreviewBytes="{Binding ViewerPreviewBytes}"
+                    PreviewFailed="OnViewerPreviewFailed"
+                    PreviewFileId="{Binding ViewerPreviewFileId}"
+                    PreviewLoaded="OnViewerPreviewLoaded"
+                    PreviousRequested="OnViewerPreviousRequested"
+                    NextRequested="OnViewerNextRequested"
+                    PreviewRequestDescription="{Binding ViewerPreviewRequestDescription}" />
+                <ActivityIndicator
+                    HeightRequest="36"
+                    HorizontalOptions="Center"
+                    InputTransparent="True"
+                    IsRunning="{Binding IsPreviewLoading}"
+                    IsVisible="{Binding IsPreviewLoading}"
+                    VerticalOptions="Center"
+                    WidthRequest="36"
+                    Color="White" />
+                <VerticalStackLayout
+                    HorizontalOptions="Center"
+                    InputTransparent="True"
+                    IsVisible="{Binding IsViewerVideoStateVisible}"
+                    Spacing="12"
+                    VerticalOptions="Center">
+                    <Label
+                        FontSize="48"
+                        HorizontalTextAlignment="Center"
+                        Text="&#x25B6;"
+                        TextColor="White" />
+                    <Label
+                        FontSize="16"
+                        HorizontalTextAlignment="Center"
+                        Text="동영상 재생은 준비 중입니다."
+                        TextColor="White" />
+                </VerticalStackLayout>
+                <Label
+                    Margin="32"
+                    FontSize="15"
+                    HorizontalTextAlignment="Center"
+                    InputTransparent="True"
+                    IsVisible="{Binding IsViewerErrorVisible}"
+                    Text="{Binding ViewerErrorMessage}"
+                    TextColor="White"
+                    VerticalOptions="Center" />
+            </Grid>
         </Grid>
     </Grid>
 </ContentPage>

@@ -5,6 +5,7 @@ namespace MemoryKeeper.Mobile.Models;
 public enum MobileGalleryViewMode
 {
     Gallery,
+    Viewer,
     YearSelection,
     PlaceSelection,
     PlaceYearSelection,

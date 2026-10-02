@@ -1,7 +1,9 @@
 using MemoryKeeper.Application.Interfaces;
 using MemoryKeeper.Application.Services;
 using MemoryKeeper.Mobile.Configuration;
+using MemoryKeeper.Mobile.Controls;
 using MemoryKeeper.Mobile.Diagnostics;
+using MemoryKeeper.Mobile.Handlers;
 using MemoryKeeper.Mobile.Http;
 using MemoryKeeper.Mobile.Images;
 using MemoryKeeper.Mobile.ViewModels;
@@ -18,7 +20,10 @@ public static class MauiProgram
         MobileStartupCheckpoint.Record("MAUI-CREATE-START");
         var builder = MauiApp.CreateBuilder();
         MobileStartupCheckpoint.Record("MAUI-BUILDER-CREATED");
-        builder.UseMauiApp<App>();
+        builder
+            .UseMauiApp<App>()
+            .ConfigureMauiHandlers(handlers =>
+                handlers.AddHandler<MobileZoomablePreviewView, MobileZoomablePreviewViewHandler>());
         MobileStartupCheckpoint.Record("MAUI-APP-REGISTERED");
 
         builder.Services.AddSingleton<IMobileBackendConfiguration, MobileBackendConfiguration>();
@@ -38,6 +43,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<FastGalleryPagingService>();
         builder.Services.AddSingleton<BoundedThumbnailMemoryCache>();
         builder.Services.AddSingleton<IMobileThumbnailSourceFactory, MobileThumbnailSourceFactory>();
+        builder.Services.AddSingleton<IMobilePreviewSourceFactory, MobilePreviewSourceFactory>();
         MobileStartupCheckpoint.Record("MAUI-GALLERY-REGISTERED");
         builder.Services.AddSingleton<HomeViewModel>();
         builder.Services.AddSingleton<HomePage>();
