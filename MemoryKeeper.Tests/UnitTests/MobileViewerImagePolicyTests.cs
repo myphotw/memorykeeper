@@ -152,12 +152,17 @@ public sealed class MobileViewerImagePolicyTests
             loadMethod.IndexOf("if (item.IsVideo)", StringComparison.Ordinal)
             < loadMethod.IndexOf("_previewSourceFactory", StringComparison.Ordinal));
         Assert.Contains("IsViewerVideoStateVisible", xaml, StringComparison.Ordinal);
-        Assert.Contains("동영상 재생은 준비 중입니다.", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("Original", loadMethod, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ViewerVideoRequest = new MobileVideoPlaybackRequest", loadMethod, StringComparison.Ordinal);
+        Assert.Contains("MobileVideoPlayerView", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("동영상 재생은 준비 중입니다.", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("_previewSourceFactory", Slice(
+            loadMethod,
+            "if (item.IsVideo)",
+            "var previewGeneration = Interlocked.Increment"), StringComparison.Ordinal);
     }
 
     [Fact]
-    public void ViewerItemChange_ResetsTransformAndKeepsSwipeAvailableDuringLoadingOrVideoState()
+    public void ViewerItemChange_ResetsTransformAndKeepsPhotoSwipeAvailableDuringPhotoLoading()
     {
         var nativeView = ReadSource(
             "MemoryKeeper.Mobile",
@@ -176,6 +181,10 @@ public sealed class MobileViewerImagePolicyTests
             StringComparison.Ordinal);
         Assert.DoesNotContain(
             "IsVisible=\"{Binding IsViewerPreviewVisible}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "IsVisible=\"{Binding IsViewerPhotoSurfaceVisible}\"",
             xaml,
             StringComparison.Ordinal);
         Assert.Contains("InputTransparent=\"True\"", xaml, StringComparison.Ordinal);

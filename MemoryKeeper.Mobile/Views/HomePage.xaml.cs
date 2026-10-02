@@ -1,3 +1,4 @@
+using MemoryKeeper.Mobile.Controls;
 using MemoryKeeper.Mobile.Diagnostics;
 using MemoryKeeper.Mobile.Models;
 using MemoryKeeper.Mobile.ViewModels;
@@ -29,6 +30,7 @@ public partial class HomePage : ContentPage
 
     protected override void OnDisappearing()
     {
+        ViewerVideoSurface.PausePlayback();
         ViewModel.CancelPendingRequests();
         base.OnDisappearing();
     }
@@ -84,6 +86,11 @@ public partial class HomePage : ContentPage
 
     private void OnViewerNextRequested(object? sender, EventArgs e) =>
         _ = ViewModel.ShowNextViewerItemAsync();
+
+    private void OnViewerVideoPlaybackStateChanged(
+        object? sender,
+        MobileVideoPlaybackStateChangedEventArgs e) =>
+        ViewModel.ApplyViewerVideoState(e);
 
     private async Task InitializeSafelyAsync()
     {

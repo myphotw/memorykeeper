@@ -46,6 +46,10 @@
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.1" />
+    <!-- Keep MAUI's Collection.Ktx dependency aligned with Media3's Collection.Jvm generation. -->
+    <PackageReference Include="Xamarin.AndroidX.Collection.Ktx" Version="1.4.0.5" />
+    <PackageReference Include="Xamarin.AndroidX.Media3.ExoPlayer" Version="1.1.1" />
+    <PackageReference Include="Xamarin.AndroidX.Media3.Ui" Version="1.1.1" />
   </ItemGroup>
 
   <ItemGroup>

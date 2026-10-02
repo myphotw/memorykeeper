@@ -107,6 +107,15 @@ public partial class HomeViewModel : ObservableObject
     [ObservableProperty]
     private bool isViewerVideo;
 
+    [ObservableProperty]
+    private MobileVideoPlaybackRequest? viewerVideoRequest;
+
+    [ObservableProperty]
+    private MobileVideoPlaybackState viewerVideoState;
+
+    [ObservableProperty]
+    private string? viewerVideoErrorMessage;
+
     public HomeViewModel(
         FastGalleryPagingService paging,
         IFastGalleryApiRepository repository,
@@ -155,6 +164,16 @@ public partial class HomeViewModel : ObservableObject
                                         && !string.IsNullOrWhiteSpace(ViewerErrorMessage);
 
     public bool IsViewerVideoStateVisible => IsViewerMode && IsViewerVideo;
+
+    public bool IsViewerPhotoSurfaceVisible => IsViewerMode && !IsViewerVideo;
+
+    public bool IsViewerVideoLoading => IsViewerVideoStateVisible
+                                        && ViewerVideoState is MobileVideoPlaybackState.Preparing
+                                            or MobileVideoPlaybackState.Buffering;
+
+    public bool IsViewerVideoErrorVisible => IsViewerVideoStateVisible
+                                             && ViewerVideoState == MobileVideoPlaybackState.Failed
+                                             && !string.IsNullOrWhiteSpace(ViewerVideoErrorMessage);
 
     public string ViewerTitle => IsViewerVideo ? "동영상" : "사진 보기";
 
@@ -329,10 +348,13 @@ public partial class HomeViewModel : ObservableObject
         IsViewerVideo = item.IsVideo;
         if (item.IsVideo)
         {
+            var videoGeneration = Volatile.Read(ref _viewerLoadGeneration);
+            ViewerVideoState = MobileVideoPlaybackState.Preparing;
+            ViewerVideoRequest = new MobileVideoPlaybackRequest(item.FileId, videoGeneration);
             return;
         }
 
-        var generation = Interlocked.Increment(ref _viewerLoadGeneration);
+        var previewGeneration = Interlocked.Increment(ref _viewerLoadGeneration);
         var cancellation = new CancellationTokenSource();
         _viewerLoadCancellation = cancellation;
         IsPreviewLoading = true;
@@ -340,7 +362,7 @@ public partial class HomeViewModel : ObservableObject
         {
             var preview = await _previewSourceFactory
                 .LoadAsync(item.FileId, item.PreviewUrl, cancellation.Token);
-            if (!IsCurrentViewerRequest(cancellation, generation))
+            if (!IsCurrentViewerRequest(cancellation, previewGeneration))
             {
                 return;
             }
@@ -361,7 +383,7 @@ public partial class HomeViewModel : ObservableObject
         }
         catch
         {
-            if (IsCurrentViewerRequest(cancellation, generation))
+            if (IsCurrentViewerRequest(cancellation, previewGeneration))
             {
                 ViewerErrorMessage = "이미지를 불러올 수 없습니다.";
                 IsPreviewLoading = false;
@@ -397,6 +419,24 @@ public partial class HomeViewModel : ObservableObject
         ViewerPreviewBytes = null;
         IsPreviewLoading = false;
         ViewerErrorMessage = "이미지를 불러올 수 없습니다.";
+    }
+
+    public void ApplyViewerVideoState(MobileVideoPlaybackStateChangedEventArgs args)
+    {
+        ArgumentNullException.ThrowIfNull(args);
+        if (!IsViewerMode
+            || !IsViewerVideo
+            || ViewerVideoRequest is not { } currentRequest
+            || !Equals(currentRequest, args.Request)
+            || currentRequest.Generation != Volatile.Read(ref _viewerLoadGeneration))
+        {
+            return;
+        }
+
+        ViewerVideoState = args.State;
+        ViewerVideoErrorMessage = args.State == MobileVideoPlaybackState.Failed
+            ? "동영상을 재생할 수 없습니다."
+            : null;
     }
 
     [RelayCommand]
@@ -846,6 +886,9 @@ public partial class HomeViewModel : ObservableObject
         ViewerPreviewRequestDescription = "missing";
         IsPreviewLoading = false;
         ViewerErrorMessage = null;
+        ViewerVideoRequest = null;
+        ViewerVideoState = MobileVideoPlaybackState.None;
+        ViewerVideoErrorMessage = null;
         IsViewerVideo = false;
     }
 
@@ -1156,9 +1199,14 @@ public partial class HomeViewModel : ObservableObject
 
     partial void OnViewerErrorMessageChanged(string? value) => NotifyViewerStateChanged();
 
+    partial void OnViewerVideoStateChanged(MobileVideoPlaybackState value) => NotifyViewerStateChanged();
+
+    partial void OnViewerVideoErrorMessageChanged(string? value) => NotifyViewerStateChanged();
+
     partial void OnIsViewerVideoChanged(bool value)
     {
         OnPropertyChanged(nameof(IsViewerVideoStateVisible));
+        OnPropertyChanged(nameof(IsViewerPhotoSurfaceVisible));
         OnPropertyChanged(nameof(ViewerTitle));
         NotifyViewerStateChanged();
     }
@@ -1183,6 +1231,8 @@ public partial class HomeViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(IsViewerPreviewVisible));
         OnPropertyChanged(nameof(IsViewerErrorVisible));
+        OnPropertyChanged(nameof(IsViewerVideoLoading));
+        OnPropertyChanged(nameof(IsViewerVideoErrorVisible));
     }
 
     private void NotifyContextStateChanged()
@@ -1190,6 +1240,7 @@ public partial class HomeViewModel : ObservableObject
         OnPropertyChanged(nameof(IsGalleryMode));
         OnPropertyChanged(nameof(IsViewerMode));
         OnPropertyChanged(nameof(IsViewerVideoStateVisible));
+        OnPropertyChanged(nameof(IsViewerPhotoSurfaceVisible));
         OnPropertyChanged(nameof(IsYearSelectionMode));
         OnPropertyChanged(nameof(IsPlaceSelectionMode));
         OnPropertyChanged(nameof(IsPlaceYearSelectionMode));

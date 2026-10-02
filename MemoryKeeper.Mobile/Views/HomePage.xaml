@@ -638,6 +638,7 @@
                 BackgroundColor="Black">
                 <controls:MobileZoomablePreviewView
                     x:Name="ViewerPreviewSurface"
+                    IsVisible="{Binding IsViewerPhotoSurfaceVisible}"
                     PreviewBytes="{Binding ViewerPreviewBytes}"
                     PreviewFailed="OnViewerPreviewFailed"
                     PreviewFileId="{Binding ViewerPreviewFileId}"
@@ -645,6 +646,11 @@
                     PreviousRequested="OnViewerPreviousRequested"
                     NextRequested="OnViewerNextRequested"
                     PreviewRequestDescription="{Binding ViewerPreviewRequestDescription}" />
+                <controls:MobileVideoPlayerView
+                    x:Name="ViewerVideoSurface"
+                    IsVisible="{Binding IsViewerVideoStateVisible}"
+                    PlaybackRequest="{Binding ViewerVideoRequest}"
+                    PlaybackStateChanged="OnViewerVideoPlaybackStateChanged" />
                 <ActivityIndicator
                     HeightRequest="36"
                     HorizontalOptions="Center"
@@ -654,23 +660,45 @@
                     VerticalOptions="Center"
                     WidthRequest="36"
                     Color="White" />
-                <VerticalStackLayout
+                <ActivityIndicator
+                    HeightRequest="36"
                     HorizontalOptions="Center"
                     InputTransparent="True"
+                    IsRunning="{Binding IsViewerVideoLoading}"
+                    IsVisible="{Binding IsViewerVideoLoading}"
+                    VerticalOptions="Center"
+                    WidthRequest="36"
+                    Color="White" />
+                <Button
+                    Margin="12"
+                    BackgroundColor="#66000000"
+                    CornerRadius="8"
+                    FontSize="32"
+                    HeightRequest="64"
+                    HorizontalOptions="Start"
                     IsVisible="{Binding IsViewerVideoStateVisible}"
-                    Spacing="12"
-                    VerticalOptions="Center">
-                    <Label
-                        FontSize="48"
-                        HorizontalTextAlignment="Center"
-                        Text="&#x25B6;"
-                        TextColor="White" />
-                    <Label
-                        FontSize="16"
-                        HorizontalTextAlignment="Center"
-                        Text="동영상 재생은 준비 중입니다."
-                        TextColor="White" />
-                </VerticalStackLayout>
+                    Padding="0"
+                    SemanticProperties.Description="이전 항목"
+                    Text="&#x2039;"
+                    TextColor="White"
+                    VerticalOptions="Center"
+                    WidthRequest="48"
+                    Clicked="OnViewerPreviousRequested" />
+                <Button
+                    Margin="12"
+                    BackgroundColor="#66000000"
+                    CornerRadius="8"
+                    FontSize="32"
+                    HeightRequest="64"
+                    HorizontalOptions="End"
+                    IsVisible="{Binding IsViewerVideoStateVisible}"
+                    Padding="0"
+                    SemanticProperties.Description="다음 항목"
+                    Text="&#x203A;"
+                    TextColor="White"
+                    VerticalOptions="Center"
+                    WidthRequest="48"
+                    Clicked="OnViewerNextRequested" />
                 <Label
                     Margin="32"
                     FontSize="15"
@@ -678,6 +706,15 @@
                     InputTransparent="True"
                     IsVisible="{Binding IsViewerErrorVisible}"
                     Text="{Binding ViewerErrorMessage}"
+                    TextColor="White"
+                    VerticalOptions="Center" />
+                <Label
+                    Margin="32"
+                    FontSize="15"
+                    HorizontalTextAlignment="Center"
+                    InputTransparent="True"
+                    IsVisible="{Binding IsViewerVideoErrorVisible}"
+                    Text="{Binding ViewerVideoErrorMessage}"
                     TextColor="White"
                     VerticalOptions="Center" />
             </Grid>

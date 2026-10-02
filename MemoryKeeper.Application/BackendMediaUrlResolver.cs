@@ -117,6 +117,19 @@ public static class BackendMediaUrlResolver
             $"/api/common/gallery/{Uri.EscapeDataString(fileId.Trim())}/preview");
     }
 
+    /// <summary>Builds the canonical authenticated Original endpoint without embedding credentials.</summary>
+    public static string? ResolveOriginalUrl(string apiBaseUrl, string? fileId)
+    {
+        if (string.IsNullOrWhiteSpace(fileId))
+        {
+            return null;
+        }
+
+        return ToAbsoluteUrl(
+            apiBaseUrl,
+            $"/api/common/gallery/{Uri.EscapeDataString(fileId.Trim())}/original");
+    }
+
     /// <summary>
     /// Chooses an explicit thumbnail, then an explicit preview, and only then synthesizes
     /// the common thumbnail route. This is useful for aggregate DTOs that retain one URL.

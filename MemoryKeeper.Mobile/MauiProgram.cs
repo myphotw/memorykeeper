@@ -23,7 +23,10 @@ public static class MauiProgram
         builder
             .UseMauiApp<App>()
             .ConfigureMauiHandlers(handlers =>
-                handlers.AddHandler<MobileZoomablePreviewView, MobileZoomablePreviewViewHandler>());
+            {
+                handlers.AddHandler<MobileZoomablePreviewView, MobileZoomablePreviewViewHandler>();
+                handlers.AddHandler<MobileVideoPlayerView, MobileVideoPlayerViewHandler>();
+            });
         MobileStartupCheckpoint.Record("MAUI-APP-REGISTERED");
 
         builder.Services.AddSingleton<IMobileBackendConfiguration, MobileBackendConfiguration>();
