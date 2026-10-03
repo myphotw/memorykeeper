@@ -47,6 +47,162 @@ public sealed class MobileViewerImagePolicyTests
         Assert.DoesNotContain("BoundedThumbnailMemoryCache", previewLoader, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void GalleryLoadMore_PreloadsEntirePageThenAppendsWithoutResetOrViewerChanges()
+    {
+        var viewModel = ReadSource("MemoryKeeper.Mobile", "ViewModels", "HomeViewModel.cs");
+        var homePage = ReadSource("MemoryKeeper.Mobile", "Views", "HomePage.xaml");
+        var thumbnailContract = ReadSource(
+            "MemoryKeeper.Mobile", "Images", "IMobileThumbnailSourceFactory.cs");
+        var thumbnailLoader = ReadSource(
+            "MemoryKeeper.Mobile", "Images", "MobileThumbnailSourceFactory.cs");
+        var previewLoader = ReadSource(
+            "MemoryKeeper.Mobile", "Images", "MobilePreviewSourceFactory.cs");
+        var cache = ReadSource(
+            "MemoryKeeper.Application", "Services", "BoundedThumbnailMemoryCache.cs");
+        var loadMore = Slice(
+            viewModel,
+            "public async Task LoadMoreAsync()",
+            "public Task RetryAsync()");
+        var firstPage = Slice(
+            viewModel,
+            "private async Task LoadFirstPageAsync(",
+            "private async Task LoadBrowseOptionsSafelyAsync()");
+        var createThumbnail = Slice(
+            thumbnailLoader,
+            "public ImageSource? Create(",
+            "public async Task PreloadAsync(");
+        var preloadThumbnail = Slice(
+            thumbnailLoader,
+            "public async Task PreloadAsync(",
+            "private async Task<Stream> OpenThumbnailAsync(");
+        var openThumbnail = Slice(
+            thumbnailLoader,
+            "private async Task<Stream> OpenThumbnailAsync(",
+            "private async Task<byte[]?> LoadThumbnailBytesAsync(");
+        var loadThumbnailBytes = Slice(
+            thumbnailLoader,
+            "private async Task<byte[]?> LoadThumbnailBytesAsync(",
+            "private static string CreateCacheKey(");
+        var preloadPage = Slice(
+            viewModel,
+            "private Task PreloadLoadMoreThumbnailsAsync(",
+            "private void ApplyContinuation(");
+
+        var loadingStartIndex = loadMore.IndexOf("IsLoadingMore = true;", StringComparison.Ordinal);
+        var preloadIndex = loadMore.IndexOf("await PreloadLoadMoreThumbnailsAsync(", StringComparison.Ordinal);
+        var currentCheckAfterPreload = loadMore.IndexOf(
+            "if (!IsCurrentRequest(request))",
+            preloadIndex,
+            StringComparison.Ordinal);
+        var appendLoopIndex = loadMore.IndexOf(
+            "foreach (var item in update.AddedItems)",
+            StringComparison.Ordinal);
+        var appendIndex = loadMore.IndexOf(
+            "Items.Add(ToMobileItem(item));",
+            appendLoopIndex,
+            StringComparison.Ordinal);
+        var continuationIndex = loadMore.IndexOf("ApplyContinuation(update);", StringComparison.Ordinal);
+        var loadingStopIndex = loadMore.LastIndexOf("IsLoadingMore = false;", StringComparison.Ordinal);
+
+        Assert.Contains(
+            "public ObservableCollection<MobileGalleryItem> Items { get; } = [];",
+            viewModel,
+            StringComparison.Ordinal);
+        Assert.Contains("Task.WhenAll(photos", preloadPage, StringComparison.Ordinal);
+        Assert.Contains(".Select(photo => _thumbnailSourceFactory.PreloadAsync(", preloadPage, StringComparison.Ordinal);
+        Assert.DoesNotContain(".Take(", preloadPage, StringComparison.Ordinal);
+        Assert.Contains("request.Cancellation.Token", loadMore, StringComparison.Ordinal);
+        Assert.True(loadingStartIndex >= 0);
+        Assert.True(preloadIndex > loadingStartIndex);
+        Assert.True(currentCheckAfterPreload > preloadIndex);
+        Assert.True(appendLoopIndex > currentCheckAfterPreload);
+        Assert.True(appendIndex > appendLoopIndex);
+        Assert.True(continuationIndex > appendIndex);
+        Assert.True(loadingStopIndex > continuationIndex);
+        Assert.DoesNotContain("Items.Clear()", loadMore, StringComparison.Ordinal);
+        Assert.DoesNotContain("Items =", loadMore, StringComparison.Ordinal);
+        Assert.DoesNotContain("Items.AddRange(", loadMore, StringComparison.Ordinal);
+        Assert.DoesNotContain("Reset", loadMore, StringComparison.Ordinal);
+        Assert.Contains("Items.Clear()", firstPage, StringComparison.Ordinal);
+        Assert.Contains("Items.Add(item)", firstPage, StringComparison.Ordinal);
+        Assert.Contains("Task PreloadAsync(", thumbnailContract, StringComparison.Ordinal);
+        Assert.Contains("CreateCacheKey(fileId, thumbnailUrl)", createThumbnail, StringComparison.Ordinal);
+        Assert.Contains("CreateCacheKey(fileId, thumbnailUrl)", preloadThumbnail, StringComparison.Ordinal);
+        Assert.Contains("LoadThumbnailBytesAsync(", preloadThumbnail, StringComparison.Ordinal);
+        Assert.Contains("LoadThumbnailBytesAsync(", openThumbnail, StringComparison.Ordinal);
+        Assert.Contains("_cache", loadThumbnailBytes, StringComparison.Ordinal);
+        Assert.Contains("catch (OperationCanceledException)", loadThumbnailBytes, StringComparison.Ordinal);
+        Assert.Contains("throw;", loadThumbnailBytes, StringComparison.Ordinal);
+        Assert.Contains("catch", loadThumbnailBytes, StringComparison.Ordinal);
+        Assert.Contains("return null;", loadThumbnailBytes, StringComparison.Ordinal);
+        Assert.Contains("DefaultMaxConcurrentLoads = 6", cache, StringComparison.Ordinal);
+        Assert.Contains("DefaultMaxEntries = 256", cache, StringComparison.Ordinal);
+        Assert.Contains("DefaultMaxBytes = 64L * 1024 * 1024", cache, StringComparison.Ordinal);
+        Assert.Contains("<CollectionView.Footer>", homePage, StringComparison.Ordinal);
+        Assert.Contains("IsRunning=\"{Binding IsLoadingMore}\"", homePage, StringComparison.Ordinal);
+        Assert.Contains("IsVisible=\"{Binding IsLoadingMore}\"", homePage, StringComparison.Ordinal);
+        Assert.DoesNotContain("PreloadAsync", previewLoader, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AndroidGalleryThumbnail_UsesBoundedDecodedSessionCacheWithoutViewerChanges()
+    {
+        var xaml = ReadSource("MemoryKeeper.Mobile", "Views", "HomePage.xaml");
+        var program = ReadSource("MemoryKeeper.Mobile", "MauiProgram.cs");
+        var source = ReadSource("MemoryKeeper.Mobile", "Images", "MobileThumbnailImageSource.cs");
+        var factory = ReadSource("MemoryKeeper.Mobile", "Images", "MobileThumbnailSourceFactory.cs");
+        var handler = ReadSource(
+            "MemoryKeeper.Mobile", "Platforms", "Android", "Handlers", "MobileThumbnailImageHandler.cs");
+        var androidCache = ReadSource(
+            "MemoryKeeper.Mobile", "Platforms", "Android", "Images", "AndroidDecodedThumbnailCache.cs");
+        var cachePolicy = ReadSource(
+            "MemoryKeeper.Application", "Services", "BoundedDecodedThumbnailCache.cs");
+        var preview = ReadSource(
+            "MemoryKeeper.Mobile", "Platforms", "Android", "Controls", "ZoomablePreviewImageView.cs");
+        var cacheHitIndex = handler.IndexOf(
+            "cache.TryGet(source.CacheKey",
+            StringComparison.Ordinal);
+        var cachedBitmapIndex = handler.IndexOf(
+            "PlatformView.SetImageBitmap(cached)",
+            cacheHitIndex,
+            StringComparison.Ordinal);
+        var hitReturnIndex = handler.IndexOf(
+            "return;",
+            cachedBitmapIndex,
+            StringComparison.Ordinal);
+        var standardLoadIndex = handler.IndexOf(
+            "await ImageHandler.MapSourceAsync(this, view)",
+            hitReturnIndex,
+            StringComparison.Ordinal);
+
+        Assert.Contains("<controls:MobileThumbnailImage", xaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "AddHandler<MobileThumbnailImage, MobileThumbnailImageHandler>()",
+            program,
+            StringComparison.Ordinal);
+        Assert.Contains("AddSingleton<AndroidDecodedThumbnailCache>()", program, StringComparison.Ordinal);
+        Assert.Contains("MobileThumbnailImageSource : StreamImageSource", source, StringComparison.Ordinal);
+        Assert.Contains("public required string CacheKey", source, StringComparison.Ordinal);
+        Assert.Contains("return new MobileThumbnailImageSource", factory, StringComparison.Ordinal);
+        Assert.Contains("CacheKey = cacheKey", factory, StringComparison.Ordinal);
+        Assert.Contains("? $\"url:{thumbnailUrl.Trim()}\"", factory, StringComparison.Ordinal);
+        Assert.Contains(": $\"file:{fileId.Trim()}\"", factory, StringComparison.Ordinal);
+        Assert.True(cacheHitIndex >= 0);
+        Assert.True(cachedBitmapIndex > cacheHitIndex);
+        Assert.True(hitReturnIndex > cachedBitmapIndex);
+        Assert.True(standardLoadIndex > hitReturnIndex);
+        Assert.Contains("SourceLoader.Reset()", handler, StringComparison.Ordinal);
+        Assert.Contains("cache.AddCopy(source.CacheKey, bitmap)", handler, StringComparison.Ordinal);
+        Assert.Contains("DefaultMaxBytes = 48L * 1024 * 1024", cachePolicy, StringComparison.Ordinal);
+        Assert.Contains("bitmap.AllocationByteCount", androidCache, StringComparison.Ordinal);
+        Assert.Contains("source.GetConfig() ?? Bitmap.Config.Argb8888", androidCache, StringComparison.Ordinal);
+        Assert.Contains("source.Copy(copyConfig, false)", androidCache, StringComparison.Ordinal);
+        Assert.DoesNotContain(".Recycle(", androidCache, StringComparison.Ordinal);
+        Assert.DoesNotContain("BoundedDecodedThumbnailCache", preview, StringComparison.Ordinal);
+        Assert.DoesNotContain("AndroidDecodedThumbnailCache", preview, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(-240, MobileViewerNavigationDirection.Next)]
     [InlineData(240, MobileViewerNavigationDirection.Previous)]

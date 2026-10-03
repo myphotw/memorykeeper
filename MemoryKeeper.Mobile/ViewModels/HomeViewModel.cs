@@ -282,6 +282,14 @@ public partial class HomeViewModel : ObservableObject
                 return;
             }
 
+            await PreloadLoadMoreThumbnailsAsync(
+                update.AddedItems,
+                request.Cancellation.Token);
+            if (!IsCurrentRequest(request))
+            {
+                return;
+            }
+
             foreach (var item in update.AddedItems)
             {
                 Items.Add(ToMobileItem(item));
@@ -1165,6 +1173,15 @@ public partial class HomeViewModel : ObservableObject
         PreviewUrl = photo.PreviewUrl,
         IsVideo = MediaTypeResolver.Resolve(photo.MimeType, photo.Extension, photo.Filename) == MediaType.Video,
     };
+
+    private Task PreloadLoadMoreThumbnailsAsync(
+        IReadOnlyList<FastGalleryPhotoDto> photos,
+        CancellationToken cancellationToken) =>
+        Task.WhenAll(photos
+            .Select(photo => _thumbnailSourceFactory.PreloadAsync(
+                photo.FileId,
+                photo.ThumbnailUrl,
+                cancellationToken)));
 
     private void ApplyContinuation(FastGalleryPagingUpdate update)
     {

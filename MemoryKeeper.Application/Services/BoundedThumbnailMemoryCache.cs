@@ -7,7 +7,7 @@ namespace MemoryKeeper.Application.Services;
 public sealed class BoundedThumbnailMemoryCache
 {
     public const int DefaultMaxEntries = 256;
-    public const long DefaultMaxBytes = 32L * 1024 * 1024;
+    public const long DefaultMaxBytes = 64L * 1024 * 1024;
     public const int DefaultMaxConcurrentLoads = 6;
 
     private readonly object _gate = new();

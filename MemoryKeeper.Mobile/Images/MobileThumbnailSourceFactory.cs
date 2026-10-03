@@ -29,11 +29,10 @@ public sealed class MobileThumbnailSourceFactory : IMobileThumbnailSourceFactory
             return null;
         }
 
-        var cacheKey = string.IsNullOrWhiteSpace(fileId)
-            ? $"url:{thumbnailUrl.Trim()}"
-            : $"file:{fileId.Trim()}";
-        return new StreamImageSource
+        var cacheKey = CreateCacheKey(fileId, thumbnailUrl);
+        return new MobileThumbnailImageSource
         {
+            CacheKey = cacheKey,
             Stream = cancellationToken => OpenThumbnailAsync(
                 cacheKey,
                 thumbnailUrl,
@@ -41,7 +40,39 @@ public sealed class MobileThumbnailSourceFactory : IMobileThumbnailSourceFactory
         };
     }
 
+    public async Task PreloadAsync(
+        string fileId,
+        string? thumbnailUrl,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(thumbnailUrl))
+        {
+            return;
+        }
+
+        _ = await LoadThumbnailBytesAsync(
+                CreateCacheKey(fileId, thumbnailUrl),
+                thumbnailUrl,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     private async Task<Stream> OpenThumbnailAsync(
+        string cacheKey,
+        string thumbnailUrl,
+        CancellationToken cancellationToken)
+    {
+        var bytes = await LoadThumbnailBytesAsync(
+                cacheKey,
+                thumbnailUrl,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return bytes is { Length: > 0 }
+            ? new MemoryStream(bytes, writable: false)
+            : Stream.Null;
+    }
+
+    private async Task<byte[]?> LoadThumbnailBytesAsync(
         string cacheKey,
         string thumbnailUrl,
         CancellationToken cancellationToken)
@@ -57,7 +88,7 @@ public sealed class MobileThumbnailSourceFactory : IMobileThumbnailSourceFactory
             if (!Uri.TryCreate(absoluteUrl, UriKind.Absolute, out var uri)
                 || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp))
             {
-                return Stream.Null;
+                return null;
             }
 
             var bytes = await _cache
@@ -66,9 +97,7 @@ public sealed class MobileThumbnailSourceFactory : IMobileThumbnailSourceFactory
                     token => FetchThumbnailAsync(baseUri, uri, token),
                     cancellationToken)
                 .ConfigureAwait(false);
-            return bytes is { Length: > 0 }
-                ? new MemoryStream(bytes, writable: false)
-                : Stream.Null;
+            return bytes is { Length: > 0 } ? bytes : null;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -76,9 +105,14 @@ public sealed class MobileThumbnailSourceFactory : IMobileThumbnailSourceFactory
         }
         catch
         {
-            return Stream.Null;
+            return null;
         }
     }
+
+    private static string CreateCacheKey(string fileId, string thumbnailUrl) =>
+        string.IsNullOrWhiteSpace(fileId)
+            ? $"url:{thumbnailUrl.Trim()}"
+            : $"file:{fileId.Trim()}";
 
     private async Task<byte[]?> FetchThumbnailAsync(
         Uri baseUri,

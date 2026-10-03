@@ -169,7 +169,7 @@
                                         Text="&#x1F5BC;"
                                         TextColor="#8391A2"
                                         VerticalOptions="Center" />
-                                    <Image
+                                    <controls:MobileThumbnailImage
                                         Aspect="AspectFill"
                                         Source="{Binding ThumbnailSource}" />
                                 </Grid>

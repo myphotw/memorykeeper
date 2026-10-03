@@ -6,6 +6,7 @@ using MemoryKeeper.Mobile.Diagnostics;
 using MemoryKeeper.Mobile.Handlers;
 using MemoryKeeper.Mobile.Http;
 using MemoryKeeper.Mobile.Images;
+using MemoryKeeper.Mobile.Platforms.Android.Images;
 using MemoryKeeper.Mobile.ViewModels;
 using MemoryKeeper.Mobile.Views;
 using Microsoft.Extensions.DependencyInjection;
@@ -26,6 +27,7 @@ public static class MauiProgram
             {
                 handlers.AddHandler<MobileZoomablePreviewView, MobileZoomablePreviewViewHandler>();
                 handlers.AddHandler<MobileVideoPlayerView, MobileVideoPlayerViewHandler>();
+                handlers.AddHandler<MobileThumbnailImage, MobileThumbnailImageHandler>();
             });
         MobileStartupCheckpoint.Record("MAUI-APP-REGISTERED");
 
@@ -60,6 +62,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<IFastGalleryApiRepository, MobileFastGalleryApiRepository>();
         builder.Services.AddSingleton<FastGalleryPagingService>();
         builder.Services.AddSingleton<BoundedThumbnailMemoryCache>();
+        builder.Services.AddSingleton<AndroidDecodedThumbnailCache>();
         builder.Services.AddSingleton<IMobileThumbnailSourceFactory, MobileThumbnailSourceFactory>();
         builder.Services.AddSingleton<IMobilePreviewSourceFactory, MobilePreviewSourceFactory>();
         MobileStartupCheckpoint.Record("MAUI-GALLERY-REGISTERED");

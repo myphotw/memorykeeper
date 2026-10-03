@@ -43,6 +43,27 @@ public sealed class BoundedThumbnailMemoryCacheTests
     }
 
     [Fact]
+    public async Task PreloadThenImageRequest_WithSameKeyDoesNotFetchTwice()
+    {
+        var cache = CreateCache();
+        var fetches = 0;
+        await cache.GetOrLoadAsync("file:preloaded", _ =>
+        {
+            fetches++;
+            return Task.FromResult<byte[]?>([1, 2, 3]);
+        });
+
+        var imageBytes = await cache.GetOrLoadAsync("file:preloaded", _ =>
+        {
+            fetches++;
+            return Task.FromResult<byte[]?>([9]);
+        });
+
+        Assert.Equal(1, fetches);
+        Assert.Equal(new byte[] { 1, 2, 3 }, imageBytes);
+    }
+
+    [Fact]
     public async Task ByteLimit_EvictsLeastRecentlyUsedEntry()
     {
         var cache = new BoundedThumbnailMemoryCache(maxEntries: 10, maxBytes: 4, maxConcurrentLoads: 2);
