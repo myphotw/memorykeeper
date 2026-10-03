@@ -11,7 +11,10 @@ public enum MobileVideoPlaybackState
     Failed,
 }
 
-public sealed record MobileVideoPlaybackRequest(string FileId, long Generation);
+public sealed record MobileVideoPlaybackRequest(
+    string FileId,
+    long Generation,
+    Uri BackendBaseUri);
 
 public sealed class MobileVideoPlaybackStateChangedEventArgs : EventArgs
 {

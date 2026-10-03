@@ -10,6 +10,7 @@ public sealed class MobileViewerImagePolicyTests
         var viewModel = ReadSource("MemoryKeeper.Mobile", "ViewModels", "HomeViewModel.cs");
         var item = ReadSource("MemoryKeeper.Mobile", "Models", "MobileGalleryItem.cs");
         var xaml = ReadSource("MemoryKeeper.Mobile", "Views", "HomePage.xaml");
+        var thumbnailLoader = ReadSource("MemoryKeeper.Mobile", "Images", "MobileThumbnailSourceFactory.cs");
         var previewLoader = ReadSource("MemoryKeeper.Mobile", "Images", "MobilePreviewSourceFactory.cs");
         var program = ReadSource("MemoryKeeper.Mobile", "MauiProgram.cs");
 
@@ -28,6 +29,9 @@ public sealed class MobileViewerImagePolicyTests
         Assert.Contains("IsRunning=\"{Binding IsPreviewLoading}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("IsVisible=\"{Binding IsViewerErrorVisible}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("BackendMediaUrlResolver.ResolvePreviewUrl", previewLoader, StringComparison.Ordinal);
+        Assert.Contains("_endpointResolver.ResolveAsync", previewLoader, StringComparison.Ordinal);
+        Assert.Matches(@"_endpointResolver\s*\.ResolveAsync\(cancellationToken\)", thumbnailLoader);
+        Assert.Contains("BackendMediaUrlResolver.ToAbsoluteUrl", thumbnailLoader, StringComparison.Ordinal);
         Assert.Contains("MobileHttpClientNames.Backend", previewLoader, StringComparison.Ordinal);
         Assert.Contains(
             "AddSingleton<IMobilePreviewSourceFactory, MobilePreviewSourceFactory>()",

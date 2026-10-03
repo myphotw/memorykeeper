@@ -26,11 +26,16 @@
     <Compile Include="..\MemoryKeeper.App\Services\SingleInstanceEventSubscription.cs" Link="App\SingleInstanceEventSubscription.cs" />
     <!-- Mobile HTTP foundation is platform-neutral and remains testable without a MAUI target. -->
     <Compile Include="..\MemoryKeeper.Mobile\Configuration\IMobileBackendConfiguration.cs" Link="Mobile\Configuration\IMobileBackendConfiguration.cs" />
+    <Compile Include="..\MemoryKeeper.Mobile\Configuration\IMobileBackendEndpointResolver.cs" Link="Mobile\Configuration\IMobileBackendEndpointResolver.cs" />
+    <Compile Include="..\MemoryKeeper.Mobile\Configuration\IMobileNetworkChangeSource.cs" Link="Mobile\Configuration\IMobileNetworkChangeSource.cs" />
     <Compile Include="..\MemoryKeeper.Mobile\Configuration\MobileBackendConfiguration.cs" Link="Mobile\Configuration\MobileBackendConfiguration.cs" />
+    <Compile Include="..\MemoryKeeper.Mobile\Configuration\MobileBackendEndpointResolver.cs" Link="Mobile\Configuration\MobileBackendEndpointResolver.cs" />
     <Compile Include="..\MemoryKeeper.Mobile\Http\MobileBackendAuthenticationHandler.cs" Link="Mobile\Http\MobileBackendAuthenticationHandler.cs" />
+    <Compile Include="..\MemoryKeeper.Mobile\Http\MobileBackendEndpointFailureHandler.cs" Link="Mobile\Http\MobileBackendEndpointFailureHandler.cs" />
     <Compile Include="..\MemoryKeeper.Mobile\Http\MobileBackendExceptions.cs" Link="Mobile\Http\MobileBackendExceptions.cs" />
     <Compile Include="..\MemoryKeeper.Mobile\Http\MobileFastGalleryApiRepository.cs" Link="Mobile\Http\MobileFastGalleryApiRepository.cs" />
     <Compile Include="..\MemoryKeeper.Mobile\Http\MobileHttpClientNames.cs" Link="Mobile\Http\MobileHttpClientNames.cs" />
+    <Compile Include="..\MemoryKeeper.Mobile\Http\MobileBackendRequestContext.cs" Link="Mobile\Http\MobileBackendRequestContext.cs" />
     <Compile Include="..\MemoryKeeper.Mobile\Http\MobileVideoPlaybackAuthorization.cs" Link="Mobile\Http\MobileVideoPlaybackAuthorization.cs" />
     <Compile Include="..\MemoryKeeper.Mobile\Images\IMobilePreviewSourceFactory.cs" Link="Mobile\Images\IMobilePreviewSourceFactory.cs" />
     <Compile Include="..\MemoryKeeper.Mobile\Images\MobilePreviewDiagnostics.cs" Link="Mobile\Images\MobilePreviewDiagnostics.cs" />

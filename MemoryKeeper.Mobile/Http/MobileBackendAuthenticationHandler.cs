@@ -16,7 +16,9 @@ public sealed class MobileBackendAuthenticationHandler : DelegatingHandler
         HttpRequestMessage request,
         CancellationToken cancellationToken)
     {
-        if (RequiresBearer(request.RequestUri, _configuration.BaseUri))
+        if (MobileBackendRequestContext.TryGetSelectedBackend(request, out var selectedBaseUri)
+            && IsConfiguredBackendOrigin(selectedBaseUri, _configuration)
+            && RequiresBearer(request.RequestUri, selectedBaseUri))
         {
             var token = _configuration.BearerToken;
             if (string.IsNullOrWhiteSpace(token))
@@ -45,8 +47,20 @@ public sealed class MobileBackendAuthenticationHandler : DelegatingHandler
                || path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool SameOrigin(Uri requestUri, Uri backendBaseUri) =>
-        string.Equals(requestUri.Scheme, backendBaseUri.Scheme, StringComparison.OrdinalIgnoreCase)
+    internal static bool IsConfiguredBackendOrigin(
+        Uri? requestUri,
+        IMobileBackendConfiguration configuration) =>
+        requestUri is not null
+        && (SameOrigin(requestUri, configuration.InternalBaseUri)
+            || SameOrigin(requestUri, configuration.ExternalBaseUri));
+
+    internal static bool IsSameOrigin(Uri? requestUri, Uri? backendBaseUri) =>
+        requestUri is not null && SameOrigin(requestUri, backendBaseUri);
+
+    private static bool SameOrigin(Uri requestUri, Uri? backendBaseUri) =>
+        backendBaseUri is not null
+        && requestUri.IsAbsoluteUri
+        && string.Equals(requestUri.Scheme, backendBaseUri.Scheme, StringComparison.OrdinalIgnoreCase)
         && string.Equals(requestUri.Host, backendBaseUri.Host, StringComparison.OrdinalIgnoreCase)
         && requestUri.Port == backendBaseUri.Port;
 }

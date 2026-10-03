@@ -30,8 +30,22 @@ public static class MauiProgram
         MobileStartupCheckpoint.Record("MAUI-APP-REGISTERED");
 
         builder.Services.AddSingleton<IMobileBackendConfiguration, MobileBackendConfiguration>();
+        builder.Services.AddSingleton<IMobileNetworkChangeSource, MauiMobileNetworkChangeSource>();
+        builder.Services.AddSingleton<IMobileBackendEndpointResolver, MobileBackendEndpointResolver>();
         MobileStartupCheckpoint.Record("MAUI-CONFIG-REGISTERED");
         builder.Services.AddTransient<MobileBackendAuthenticationHandler>();
+        builder.Services.AddTransient<MobileBackendEndpointFailureHandler>();
+        builder.Services
+            .AddHttpClient(MobileHttpClientNames.Probe)
+            .ConfigureHttpClient(client =>
+            {
+                client.Timeout = Timeout.InfiniteTimeSpan;
+                client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+            })
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            {
+                AllowAutoRedirect = false,
+            });
         builder.Services
             .AddHttpClient(MobileHttpClientNames.Backend)
             .ConfigureHttpClient(client =>
@@ -39,7 +53,8 @@ public static class MauiProgram
                 client.Timeout = TimeSpan.FromSeconds(30);
                 client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
             })
-            .AddHttpMessageHandler<MobileBackendAuthenticationHandler>();
+            .AddHttpMessageHandler<MobileBackendAuthenticationHandler>()
+            .AddHttpMessageHandler<MobileBackendEndpointFailureHandler>();
         MobileStartupCheckpoint.Record("MAUI-HTTP-REGISTERED");
 
         builder.Services.AddSingleton<IFastGalleryApiRepository, MobileFastGalleryApiRepository>();

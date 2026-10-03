@@ -25,9 +25,14 @@ public sealed class AuthenticatedVideoPlayerView : PlayerView
     private readonly Context _context;
     private readonly IMobileBackendConfiguration _configuration;
     private readonly Action _pollPlaybackAction;
+    private readonly GestureDetector _navigationGestureDetector;
+    private readonly int _touchSlop;
+    private readonly int _minimumFlingVelocity;
     private IExoPlayer? _player;
     private MobileVideoPlaybackRequest? _currentRequest;
     private MobileVideoPlaybackState _lastState;
+    private bool _navigationGestureBlocked;
+    private bool _touchSequenceHadMultiplePointers;
 
     public AuthenticatedVideoPlayerView(
         Context context,
@@ -37,6 +42,13 @@ public sealed class AuthenticatedVideoPlayerView : PlayerView
         _context = context;
         _configuration = configuration;
         _pollPlaybackAction = PollPlayback;
+        _navigationGestureDetector = new GestureDetector(
+            context,
+            new NavigationGestureListener(this));
+        var viewConfiguration = ViewConfiguration.Get(context)
+            ?? throw new InvalidOperationException("Android ViewConfiguration is unavailable.");
+        _touchSlop = viewConfiguration.ScaledTouchSlop;
+        _minimumFlingVelocity = viewConfiguration.ScaledMinimumFlingVelocity;
         UseController = true;
         ControllerAutoShow = true;
         ControllerHideOnTouch = true;
@@ -47,6 +59,44 @@ public sealed class AuthenticatedVideoPlayerView : PlayerView
     }
 
     public event EventHandler<MobileVideoPlaybackStateChangedEventArgs>? PlaybackStateChanged;
+
+    public event EventHandler? PreviousRequested;
+
+    public event EventHandler? NextRequested;
+
+    public override bool DispatchTouchEvent(MotionEvent? motionEvent)
+    {
+        if (motionEvent is null)
+        {
+            return false;
+        }
+
+        switch (motionEvent.ActionMasked)
+        {
+            case MotionEventActions.Down:
+                _touchSequenceHadMultiplePointers = false;
+                _navigationGestureBlocked = !IsTouchInsideMedia3View("exo_content_frame", motionEvent)
+                                            || IsTouchInsideVisibleController(motionEvent);
+                break;
+            case MotionEventActions.PointerDown:
+                _touchSequenceHadMultiplePointers = true;
+                break;
+        }
+
+        var handled = base.DispatchTouchEvent(motionEvent);
+        if (!_navigationGestureBlocked)
+        {
+            _navigationGestureDetector.OnTouchEvent(motionEvent);
+        }
+
+        if (motionEvent.ActionMasked is MotionEventActions.Up or MotionEventActions.Cancel)
+        {
+            _navigationGestureBlocked = false;
+            _touchSequenceHadMultiplePointers = false;
+        }
+
+        return handled;
+    }
 
     public void SetPlayback(MobileVideoPlaybackRequest? request)
     {
@@ -66,9 +116,8 @@ public sealed class AuthenticatedVideoPlayerView : PlayerView
         EmitState(request, MobileVideoPlaybackState.Preparing);
         try
         {
-            var baseUri = _configuration.BaseUri ?? throw new MobileBackendConfigurationException();
             var originalUrl = BackendMediaUrlResolver.ResolveOriginalUrl(
-                baseUri.ToString(),
+                request.BackendBaseUri.ToString(),
                 request.FileId);
             if (!Uri.TryCreate(originalUrl, UriKind.Absolute, out var mediaUri)
                 || (mediaUri.Scheme != Uri.UriSchemeHttps && mediaUri.Scheme != Uri.UriSchemeHttp))
@@ -78,6 +127,7 @@ public sealed class AuthenticatedVideoPlayerView : PlayerView
 
             var requestHeaders = MobileVideoPlaybackAuthorization.CreateRequestHeaders(
                 _configuration,
+                request.BackendBaseUri,
                 mediaUri);
             var dataSourceFactory = new DefaultHttpDataSource.Factory();
             dataSourceFactory.SetAllowCrossProtocolRedirects(false);
@@ -133,6 +183,74 @@ public sealed class AuthenticatedVideoPlayerView : PlayerView
     {
         PausePlayback();
         base.OnDetachedFromWindow();
+    }
+
+    private bool IsTouchInsideVisibleController(MotionEvent motionEvent) =>
+        IsTouchInsideMedia3View("memorykeeper_controller_area", motionEvent, requireVisible: true)
+        || IsTouchInsideMedia3View("exo_center_controls", motionEvent, requireVisible: true)
+        || IsTouchInsideMedia3View("exo_progress", motionEvent, requireVisible: true)
+        || IsTouchInsideMedia3View("exo_bottom_bar", motionEvent, requireVisible: true)
+        || IsTouchInsideMedia3View("exo_minimal_controls", motionEvent, requireVisible: true)
+        || IsTouchInsideMedia3View("exo_extra_controls_scroll_view", motionEvent, requireVisible: true);
+
+    private bool IsTouchInsideMedia3View(
+        string resourceName,
+        MotionEvent motionEvent,
+        bool requireVisible = false)
+    {
+        var resources = Resources;
+        var packageName = _context.PackageName;
+        if (resources is null || string.IsNullOrWhiteSpace(packageName))
+        {
+            return false;
+        }
+
+        var resourceId = resources.GetIdentifier(resourceName, "id", packageName);
+        var view = resourceId == 0 ? null : FindViewById(resourceId);
+        if (view is null
+            || (requireVisible
+                && (!view.IsShown || view.Visibility != ViewStates.Visible || view.Alpha <= 0.01f)))
+        {
+            return false;
+        }
+
+        var location = new int[2];
+        view.GetLocationOnScreen(location);
+        return motionEvent.RawX >= location[0]
+               && motionEvent.RawX < location[0] + view.Width
+               && motionEvent.RawY >= location[1]
+               && motionEvent.RawY < location[1] + view.Height;
+    }
+
+    private bool TryRequestNavigation(
+        MotionEvent? start,
+        MotionEvent? end,
+        float velocityX)
+    {
+        if (start is null || end is null)
+        {
+            return false;
+        }
+
+        var direction = MobileViewerGestureDecision.ResolveSwipe(
+            MobileZoomState.MinimumScale,
+            _touchSequenceHadMultiplePointers,
+            end.GetX() - start.GetX(),
+            end.GetY() - start.GetY(),
+            velocityX,
+            _touchSlop,
+            _minimumFlingVelocity);
+        switch (direction)
+        {
+            case MobileViewerNavigationDirection.Previous:
+                PreviousRequested?.Invoke(this, EventArgs.Empty);
+                return true;
+            case MobileViewerNavigationDirection.Next:
+                NextRequested?.Invoke(this, EventArgs.Empty);
+                return true;
+            default:
+                return false;
+        }
     }
 
     private void PollPlayback()
@@ -212,5 +330,21 @@ public sealed class AuthenticatedVideoPlayerView : PlayerView
                 player.Dispose();
             }
         }
+    }
+
+    private sealed class NavigationGestureListener : GestureDetector.SimpleOnGestureListener
+    {
+        private readonly AuthenticatedVideoPlayerView _owner;
+
+        public NavigationGestureListener(AuthenticatedVideoPlayerView owner) => _owner = owner;
+
+        public override bool OnDown(MotionEvent e) => true;
+
+        public override bool OnFling(
+            MotionEvent? e1,
+            MotionEvent e2,
+            float velocityX,
+            float velocityY) =>
+            _owner.TryRequestNavigation(e1, e2, velocityX);
     }
 }

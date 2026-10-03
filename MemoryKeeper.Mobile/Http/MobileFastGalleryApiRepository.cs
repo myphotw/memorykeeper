@@ -16,13 +16,16 @@ public sealed class MobileFastGalleryApiRepository : IFastGalleryApiRepository
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IMobileBackendConfiguration _configuration;
+    private readonly IMobileBackendEndpointResolver _endpointResolver;
 
     public MobileFastGalleryApiRepository(
         IHttpClientFactory httpClientFactory,
-        IMobileBackendConfiguration configuration)
+        IMobileBackendConfiguration configuration,
+        IMobileBackendEndpointResolver endpointResolver)
     {
         _httpClientFactory = httpClientFactory;
         _configuration = configuration;
+        _endpointResolver = endpointResolver;
     }
 
     public Task<FastGalleryPhotoPageDto> GetPhotosAsync(
@@ -45,14 +48,15 @@ public sealed class MobileFastGalleryApiRepository : IFastGalleryApiRepository
     private async Task<T> GetAsync<T>(string path, CancellationToken cancellationToken)
         where T : class, new()
     {
-        var baseUri = _configuration.BaseUri;
-        if (!_configuration.IsConfigured || baseUri is null)
+        if (!_configuration.IsConfigured)
         {
             throw new MobileBackendConfigurationException();
         }
 
+        var baseUri = await _endpointResolver.ResolveAsync(cancellationToken).ConfigureAwait(false);
         var requestUri = new Uri(baseUri, path.TrimStart('/'));
         using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+        MobileBackendRequestContext.MarkSelectedBackend(request, baseUri);
         var client = _httpClientFactory.CreateClient(MobileHttpClientNames.Backend);
         using var response = await client
             .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)

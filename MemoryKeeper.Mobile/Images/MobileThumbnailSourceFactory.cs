@@ -9,53 +9,62 @@ namespace MemoryKeeper.Mobile.Images;
 public sealed class MobileThumbnailSourceFactory : IMobileThumbnailSourceFactory
 {
     private readonly IHttpClientFactory _httpClientFactory;
-    private readonly IMobileBackendConfiguration _configuration;
+    private readonly IMobileBackendEndpointResolver _endpointResolver;
     private readonly BoundedThumbnailMemoryCache _cache;
 
     public MobileThumbnailSourceFactory(
         IHttpClientFactory httpClientFactory,
-        IMobileBackendConfiguration configuration,
+        IMobileBackendEndpointResolver endpointResolver,
         BoundedThumbnailMemoryCache cache)
     {
         _httpClientFactory = httpClientFactory;
-        _configuration = configuration;
+        _endpointResolver = endpointResolver;
         _cache = cache;
     }
 
     public ImageSource? Create(string fileId, string? thumbnailUrl)
     {
-        if (string.IsNullOrWhiteSpace(thumbnailUrl) || _configuration.BaseUri is null)
-        {
-            return null;
-        }
-
-        var absoluteUrl = BackendMediaUrlResolver.ToAbsoluteUrl(
-            _configuration.BaseUri.ToString(),
-            thumbnailUrl);
-        if (!Uri.TryCreate(absoluteUrl, UriKind.Absolute, out var uri)
-            || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp))
+        if (string.IsNullOrWhiteSpace(thumbnailUrl))
         {
             return null;
         }
 
         var cacheKey = string.IsNullOrWhiteSpace(fileId)
-            ? $"url:{uri.AbsoluteUri}"
+            ? $"url:{thumbnailUrl.Trim()}"
             : $"file:{fileId.Trim()}";
         return new StreamImageSource
         {
-            Stream = cancellationToken => OpenThumbnailAsync(cacheKey, uri, cancellationToken),
+            Stream = cancellationToken => OpenThumbnailAsync(
+                cacheKey,
+                thumbnailUrl,
+                cancellationToken),
         };
     }
 
     private async Task<Stream> OpenThumbnailAsync(
         string cacheKey,
-        Uri uri,
+        string thumbnailUrl,
         CancellationToken cancellationToken)
     {
         try
         {
+            var baseUri = await _endpointResolver
+                .ResolveAsync(cancellationToken)
+                .ConfigureAwait(false);
+            var absoluteUrl = BackendMediaUrlResolver.ToAbsoluteUrl(
+                baseUri.ToString(),
+                thumbnailUrl);
+            if (!Uri.TryCreate(absoluteUrl, UriKind.Absolute, out var uri)
+                || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp))
+            {
+                return Stream.Null;
+            }
+
             var bytes = await _cache
-                .GetOrLoadAsync(cacheKey, token => FetchThumbnailAsync(uri, token), cancellationToken)
+                .GetOrLoadAsync(
+                    cacheKey,
+                    token => FetchThumbnailAsync(baseUri, uri, token),
+                    cancellationToken)
                 .ConfigureAwait(false);
             return bytes is { Length: > 0 }
                 ? new MemoryStream(bytes, writable: false)
@@ -71,13 +80,18 @@ public sealed class MobileThumbnailSourceFactory : IMobileThumbnailSourceFactory
         }
     }
 
-    private async Task<byte[]?> FetchThumbnailAsync(Uri uri, CancellationToken cancellationToken)
+    private async Task<byte[]?> FetchThumbnailAsync(
+        Uri baseUri,
+        Uri uri,
+        CancellationToken cancellationToken)
     {
         try
         {
             var client = _httpClientFactory.CreateClient(MobileHttpClientNames.Backend);
+            using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+            MobileBackendRequestContext.MarkSelectedBackend(request, baseUri);
             using var response = await client
-                .GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
                 .ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {

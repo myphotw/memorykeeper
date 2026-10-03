@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!--
+    Media3's default 100dp timeline/bottom-bar stack places the 52dp primary
+    controls near the center of short videos. These dimensions keep the same
+    controls in three compact, non-overlapping rows in their fixed region.
+  -->
+  <dimen name="exo_styled_progress_layout_height">24dp</dimen>
+  <dimen name="exo_styled_progress_margin_bottom">0dp</dimen>
+  <dimen name="exo_styled_bottom_bar_height">24dp</dimen>
+  <dimen name="memorykeeper_video_controller_height">104dp</dimen>
+</resources>

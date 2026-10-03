@@ -9,6 +9,7 @@ using MemoryKeeper.Application.Interfaces;
 using MemoryKeeper.Application.Services;
 using MemoryKeeper.Domain.Enums;
 using MemoryKeeper.Mobile.Controls;
+using MemoryKeeper.Mobile.Configuration;
 using MemoryKeeper.Mobile.Http;
 using MemoryKeeper.Mobile.Images;
 using MemoryKeeper.Mobile.Models;
@@ -21,6 +22,7 @@ public partial class HomeViewModel : ObservableObject
     private readonly IFastGalleryApiRepository _repository;
     private readonly IMobileThumbnailSourceFactory _thumbnailSourceFactory;
     private readonly IMobilePreviewSourceFactory _previewSourceFactory;
+    private readonly IMobileBackendEndpointResolver _endpointResolver;
     private readonly object _requestLock = new();
     private readonly SemaphoreSlim _hierarchyGate = new(1, 1);
     private CancellationTokenSource? _requestCancellation;
@@ -120,12 +122,14 @@ public partial class HomeViewModel : ObservableObject
         FastGalleryPagingService paging,
         IFastGalleryApiRepository repository,
         IMobileThumbnailSourceFactory thumbnailSourceFactory,
-        IMobilePreviewSourceFactory previewSourceFactory)
+        IMobilePreviewSourceFactory previewSourceFactory,
+        IMobileBackendEndpointResolver endpointResolver)
     {
         _paging = paging;
         _repository = repository;
         _thumbnailSourceFactory = thumbnailSourceFactory;
         _previewSourceFactory = previewSourceFactory;
+        _endpointResolver = endpointResolver;
 
         var defaultFeed = new MobileGalleryBrowseOption("최근 사진", GalleryBrowseScope.DefaultFeed);
         BrowseOptions.Add(defaultFeed);
@@ -349,8 +353,42 @@ public partial class HomeViewModel : ObservableObject
         if (item.IsVideo)
         {
             var videoGeneration = Volatile.Read(ref _viewerLoadGeneration);
+            var videoCancellation = new CancellationTokenSource();
+            _viewerLoadCancellation = videoCancellation;
             ViewerVideoState = MobileVideoPlaybackState.Preparing;
-            ViewerVideoRequest = new MobileVideoPlaybackRequest(item.FileId, videoGeneration);
+            try
+            {
+                var baseUri = await _endpointResolver
+                    .ResolveAsync(videoCancellation.Token);
+                if (IsCurrentViewerRequest(videoCancellation, videoGeneration))
+                {
+                    ViewerVideoRequest = new MobileVideoPlaybackRequest(
+                        item.FileId,
+                        videoGeneration,
+                        baseUri);
+                }
+            }
+            catch (OperationCanceledException) when (videoCancellation.IsCancellationRequested)
+            {
+            }
+            catch
+            {
+                if (IsCurrentViewerRequest(videoCancellation, videoGeneration))
+                {
+                    ViewerVideoState = MobileVideoPlaybackState.Failed;
+                    ViewerVideoErrorMessage = "동영상을 재생할 수 없습니다.";
+                }
+            }
+            finally
+            {
+                if (ReferenceEquals(_viewerLoadCancellation, videoCancellation))
+                {
+                    _viewerLoadCancellation = null;
+                }
+
+                videoCancellation.Dispose();
+            }
+
             return;
         }
 
@@ -437,6 +475,10 @@ public partial class HomeViewModel : ObservableObject
         ViewerVideoErrorMessage = args.State == MobileVideoPlaybackState.Failed
             ? "동영상을 재생할 수 없습니다."
             : null;
+        if (args.State == MobileVideoPlaybackState.Failed)
+        {
+            _endpointResolver.Invalidate();
+        }
     }
 
     [RelayCommand]

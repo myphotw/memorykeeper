@@ -6,13 +6,17 @@ public static class MobileVideoPlaybackAuthorization
 {
     public static IDictionary<string, string> CreateRequestHeaders(
         IMobileBackendConfiguration configuration,
+        Uri selectedBaseUri,
         Uri mediaUri)
     {
         ArgumentNullException.ThrowIfNull(configuration);
+        ArgumentNullException.ThrowIfNull(selectedBaseUri);
         ArgumentNullException.ThrowIfNull(mediaUri);
 
-        if (configuration.BaseUri is null
-            || !MobileBackendAuthenticationHandler.RequiresBearer(mediaUri, configuration.BaseUri)
+        if (!MobileBackendAuthenticationHandler.IsConfiguredBackendOrigin(
+                selectedBaseUri,
+                configuration)
+            || !MobileBackendAuthenticationHandler.RequiresBearer(mediaUri, selectedBaseUri)
             || string.IsNullOrWhiteSpace(configuration.BearerToken))
         {
             throw new MobileBackendConfigurationException();

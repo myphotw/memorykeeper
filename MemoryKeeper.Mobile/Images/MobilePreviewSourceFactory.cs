@@ -7,14 +7,14 @@ namespace MemoryKeeper.Mobile.Images;
 public sealed class MobilePreviewSourceFactory : IMobilePreviewSourceFactory
 {
     private readonly IHttpClientFactory _httpClientFactory;
-    private readonly IMobileBackendConfiguration _configuration;
+    private readonly IMobileBackendEndpointResolver _endpointResolver;
 
     public MobilePreviewSourceFactory(
         IHttpClientFactory httpClientFactory,
-        IMobileBackendConfiguration configuration)
+        IMobileBackendEndpointResolver endpointResolver)
     {
         _httpClientFactory = httpClientFactory;
-        _configuration = configuration;
+        _endpointResolver = endpointResolver;
     }
 
     public async Task<MobilePreviewLoadResult> LoadAsync(
@@ -22,13 +22,22 @@ public sealed class MobilePreviewSourceFactory : IMobilePreviewSourceFactory
         string? previewUrl,
         CancellationToken cancellationToken = default)
     {
-        if (_configuration.BaseUri is null)
+        Uri baseUri;
+        try
+        {
+            baseUri = await _endpointResolver.ResolveAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
         {
             MobilePreviewDiagnostics.WriteFailure(fileId, "missing", "configuration");
             return MobilePreviewLoadResult.Failure("missing", "configuration");
         }
 
-        var baseUrl = _configuration.BaseUri.ToString();
+        var baseUrl = baseUri.ToString();
         var absoluteUrl = BackendMediaUrlResolver.ResolvePreviewUrl(baseUrl, fileId, previewUrl);
         var requestDescription = BackendMediaUrlResolver.DescribeForDiagnostics(baseUrl, absoluteUrl);
         if (!Uri.TryCreate(absoluteUrl, UriKind.Absolute, out var uri)
@@ -41,8 +50,10 @@ public sealed class MobilePreviewSourceFactory : IMobilePreviewSourceFactory
         try
         {
             var client = _httpClientFactory.CreateClient(MobileHttpClientNames.Backend);
+            using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+            MobileBackendRequestContext.MarkSelectedBackend(request, baseUri);
             using var response = await client
-                .GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
                 .ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {

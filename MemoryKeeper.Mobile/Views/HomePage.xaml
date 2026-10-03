@@ -649,8 +649,10 @@
                 <controls:MobileVideoPlayerView
                     x:Name="ViewerVideoSurface"
                     IsVisible="{Binding IsViewerVideoStateVisible}"
+                    NextRequested="OnViewerNextRequested"
                     PlaybackRequest="{Binding ViewerVideoRequest}"
-                    PlaybackStateChanged="OnViewerVideoPlaybackStateChanged" />
+                    PlaybackStateChanged="OnViewerVideoPlaybackStateChanged"
+                    PreviousRequested="OnViewerPreviousRequested" />
                 <ActivityIndicator
                     HeightRequest="36"
                     HorizontalOptions="Center"
@@ -669,36 +671,6 @@
                     VerticalOptions="Center"
                     WidthRequest="36"
                     Color="White" />
-                <Button
-                    Margin="12"
-                    BackgroundColor="#66000000"
-                    CornerRadius="8"
-                    FontSize="32"
-                    HeightRequest="64"
-                    HorizontalOptions="Start"
-                    IsVisible="{Binding IsViewerVideoStateVisible}"
-                    Padding="0"
-                    SemanticProperties.Description="이전 항목"
-                    Text="&#x2039;"
-                    TextColor="White"
-                    VerticalOptions="Center"
-                    WidthRequest="48"
-                    Clicked="OnViewerPreviousRequested" />
-                <Button
-                    Margin="12"
-                    BackgroundColor="#66000000"
-                    CornerRadius="8"
-                    FontSize="32"
-                    HeightRequest="64"
-                    HorizontalOptions="End"
-                    IsVisible="{Binding IsViewerVideoStateVisible}"
-                    Padding="0"
-                    SemanticProperties.Description="다음 항목"
-                    Text="&#x203A;"
-                    TextColor="White"
-                    VerticalOptions="Center"
-                    WidthRequest="48"
-                    Clicked="OnViewerNextRequested" />
                 <Label
                     Margin="32"
                     FontSize="15"

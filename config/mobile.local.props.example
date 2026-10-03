@@ -1,7 +1,10 @@
 <Project>
   <PropertyGroup>
     <!-- Copy to mobile.local.props (gitignored) and provide local build values. -->
-    <MemoryKeeperMobileBackendUrl></MemoryKeeperMobileBackendUrl>
+    <!-- Internal HTTP is intentionally restricted to the app's approved NAS authority. -->
+    <MemoryKeeperMobileInternalBackendUrl></MemoryKeeperMobileInternalBackendUrl>
+    <!-- External Backend URLs must use HTTPS. -->
+    <MemoryKeeperMobileExternalBackendUrl></MemoryKeeperMobileExternalBackendUrl>
     <MemoryKeeperMobileBackendToken></MemoryKeeperMobileBackendToken>
   </PropertyGroup>
 </Project>

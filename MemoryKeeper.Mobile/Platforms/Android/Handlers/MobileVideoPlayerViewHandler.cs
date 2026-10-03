@@ -35,12 +35,16 @@ public sealed class MobileVideoPlayerViewHandler
     {
         base.ConnectHandler(platformView);
         platformView.PlaybackStateChanged += OnPlaybackStateChanged;
+        platformView.PreviousRequested += OnPreviousRequested;
+        platformView.NextRequested += OnNextRequested;
         VirtualView.PauseRequested += OnPauseRequested;
     }
 
     protected override void DisconnectHandler(AuthenticatedVideoPlayerView platformView)
     {
         VirtualView.PauseRequested -= OnPauseRequested;
+        platformView.PreviousRequested -= OnPreviousRequested;
+        platformView.NextRequested -= OnNextRequested;
         platformView.PlaybackStateChanged -= OnPlaybackStateChanged;
         platformView.ReleasePlayback();
         base.DisconnectHandler(platformView);
@@ -57,4 +61,10 @@ public sealed class MobileVideoPlayerViewHandler
         object? sender,
         MobileVideoPlaybackStateChangedEventArgs e) =>
         VirtualView.RaisePlaybackStateChanged(e);
+
+    private void OnPreviousRequested(object? sender, EventArgs e) =>
+        VirtualView.RaisePreviousRequested();
+
+    private void OnNextRequested(object? sender, EventArgs e) =>
+        VirtualView.RaiseNextRequested();
 }
