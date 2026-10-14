@@ -7,6 +7,7 @@ using MemoryKeeper.Mobile.Handlers;
 using MemoryKeeper.Mobile.Http;
 using MemoryKeeper.Mobile.Images;
 using MemoryKeeper.Mobile.Platforms.Android.Images;
+using MemoryKeeper.Mobile.Uploads;
 using MemoryKeeper.Mobile.ViewModels;
 using MemoryKeeper.Mobile.Views;
 using Microsoft.Extensions.DependencyInjection;
@@ -57,8 +58,27 @@ public static class MauiProgram
             })
             .AddHttpMessageHandler<MobileBackendAuthenticationHandler>()
             .AddHttpMessageHandler<MobileBackendEndpointFailureHandler>();
+        builder.Services
+            .AddHttpClient(MobileHttpClientNames.Upload)
+            .ConfigureHttpClient(client =>
+            {
+                // Original media uploads are bounded by the caller's CancellationToken,
+                // not by the short request timeout used for Gallery JSON reads.
+                client.Timeout = Timeout.InfiniteTimeSpan;
+                client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+            })
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            {
+                // Never forward an authenticated upload request through a redirect.
+                AllowAutoRedirect = false,
+            })
+            .AddHttpMessageHandler<MobileBackendAuthenticationHandler>()
+            .AddHttpMessageHandler<MobileBackendEndpointFailureHandler>();
         MobileStartupCheckpoint.Record("MAUI-HTTP-REGISTERED");
 
+        builder.Services.AddSingleton<IMobileMediaPicker, MauiMobileMediaPicker>();
+        builder.Services.AddSingleton<IMobileContentHasher, MobileContentHasher>();
+        builder.Services.AddSingleton<IMobileUploadApiClient, MobileUploadApiClient>();
         builder.Services.AddSingleton<IFastGalleryApiRepository, MobileFastGalleryApiRepository>();
         builder.Services.AddSingleton<FastGalleryPagingService>();
         builder.Services.AddSingleton<BoundedThumbnailMemoryCache>();

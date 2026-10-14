@@ -48,6 +48,11 @@
     <Compile Include="..\MemoryKeeper.Mobile\Models\MobileGalleryBrowseOption.cs" Link="Mobile\Models\MobileGalleryBrowseOption.cs" />
     <Compile Include="..\MemoryKeeper.Mobile\Models\MobileGalleryContext.cs" Link="Mobile\Models\MobileGalleryContext.cs" />
     <Compile Include="..\MemoryKeeper.Mobile\Models\MobileGalleryNavigationHistory.cs" Link="Mobile\Models\MobileGalleryNavigationHistory.cs" />
+    <Compile Include="..\MemoryKeeper.Mobile\Uploads\IMobileMediaPicker.cs" Link="Mobile\Uploads\IMobileMediaPicker.cs" />
+    <Compile Include="..\MemoryKeeper.Mobile\Uploads\IMobileUploadApiClient.cs" Link="Mobile\Uploads\IMobileUploadApiClient.cs" />
+    <Compile Include="..\MemoryKeeper.Mobile\Uploads\MobileContentHasher.cs" Link="Mobile\Uploads\MobileContentHasher.cs" />
+    <Compile Include="..\MemoryKeeper.Mobile\Uploads\MobileUploadApiClient.cs" Link="Mobile\Uploads\MobileUploadApiClient.cs" />
+    <Compile Include="..\MemoryKeeper.Mobile\Uploads\MobileUploadContracts.cs" Link="Mobile\Uploads\MobileUploadContracts.cs" />
   </ItemGroup>
 
   <ItemGroup>

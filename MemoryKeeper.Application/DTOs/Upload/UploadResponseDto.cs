@@ -20,4 +20,7 @@ public sealed class UploadResponseDto
 
     [JsonPropertyName("incoming_path")]
     public string? IncomingPath { get; init; }
+
+    [JsonPropertyName("idempotent_replay")]
+    public bool IdempotentReplay { get; init; }
 }

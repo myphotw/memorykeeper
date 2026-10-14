@@ -41,6 +41,9 @@ public sealed class UploadJobStatusDto
     [JsonPropertyName("last_error")]
     public string? LastError { get; init; }
 
+    [JsonPropertyName("failure_code")]
+    public string? FailureCode { get; init; }
+
     [JsonPropertyName("updated_at")]
     public DateTimeOffset? UpdatedAt { get; init; }
 
