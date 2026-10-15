@@ -258,6 +258,7 @@ public sealed class MobileUploadFoundationTests
         var upload = new MobileUploadFile(selected, "11111111-2222-3333-4444-555555555555");
         upload.SetContentSha256(ValidSha);
         var fields = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        var progressValues = new List<MobileUploadProgress>();
         AuthenticationHeaderValue? authorization = null;
         var terminal = new DelegateHandler(async (request, cancellationToken) =>
         {
@@ -276,7 +277,9 @@ public sealed class MobileUploadFoundationTests
         });
         var client = CreateAuthenticatedApiClient(terminal);
 
-        var response = await client.UploadAsync(upload);
+        var response = await client.UploadAsync(
+            upload,
+            progress: new InlineProgress<MobileUploadProgress>(progressValues.Add));
 
         Assert.Equal("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", response.JobId);
         Assert.Equal(fileBytes, fields["file"]);
@@ -286,6 +289,9 @@ public sealed class MobileUploadFoundationTests
         Assert.Equal(ValidSha, Encoding.UTF8.GetString(fields["client_content_sha256"]));
         Assert.Equal("Bearer", authorization?.Scheme);
         Assert.Equal("credential-value", authorization?.Parameter);
+        Assert.NotEmpty(progressValues);
+        Assert.Equal(fileBytes.Length, progressValues[^1].BytesSent);
+        Assert.Equal(fileBytes.Length, progressValues[^1].TotalBytes);
     }
 
     [Fact]
@@ -328,7 +334,7 @@ public sealed class MobileUploadFoundationTests
         Assert.Equal(2, disposedCount);
         var apiSource = ReadSource(
             "MemoryKeeper.Mobile", "Uploads", "MobileUploadApiClient.cs");
-        Assert.Contains("new StreamContent(source)", apiSource, StringComparison.Ordinal);
+        Assert.Contains("new StreamContent(uploadSource)", apiSource, StringComparison.Ordinal);
         Assert.DoesNotContain("ReadAsByteArrayAsync", apiSource, StringComparison.Ordinal);
         Assert.DoesNotContain("MemoryStream", apiSource, StringComparison.Ordinal);
     }
@@ -510,6 +516,11 @@ public sealed class MobileUploadFoundationTests
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken) => sendAsync(request, cancellationToken);
+    }
+
+    private sealed class InlineProgress<T>(Action<T> report) : IProgress<T>
+    {
+        public void Report(T value) => report(value);
     }
 
     private sealed class TrackingMemoryStream(byte[] bytes) : MemoryStream(bytes, writable: false)

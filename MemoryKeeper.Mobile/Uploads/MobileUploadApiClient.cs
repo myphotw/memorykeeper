@@ -172,15 +172,19 @@ public sealed class MobileUploadApiClient : IMobileUploadApiClient
 
     public async Task<UploadResponseDto> UploadAsync(
         MobileUploadFile file,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IProgress<MobileUploadProgress>? progress = null)
     {
         ArgumentNullException.ThrowIfNull(file);
         ValidateSha256(file.ClientContentSha256);
 
         var baseUri = await _endpointResolver.ResolveAsync(cancellationToken).ConfigureAwait(false);
         await using var source = await file.Source.OpenReadAsync(cancellationToken).ConfigureAwait(false);
+        await using var uploadSource = progress is null
+            ? source
+            : new ProgressReadStream(source, file.Source.FileSize, progress);
         using var form = new MultipartFormDataContent();
-        using var fileContent = new StreamContent(source);
+        using var fileContent = new StreamContent(uploadSource);
         fileContent.Headers.ContentType = MediaTypeHeaderValue.TryParse(
             file.Source.ContentType,
             out var contentType)

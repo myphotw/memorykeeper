@@ -7,6 +7,8 @@ public sealed class MobileGalleryBrowseRegressionTests
     {
         var xaml = File.ReadAllText(FindSourceFile("MemoryKeeper.Mobile", "Views", "HomePage.xaml"));
         var codeBehind = File.ReadAllText(FindSourceFile("MemoryKeeper.Mobile", "Views", "HomePage.xaml.cs"));
+        var viewModel = File.ReadAllText(FindSourceFile(
+            "MemoryKeeper.Mobile", "ViewModels", "HomeViewModel.cs"));
 
         Assert.Contains("IsVisible=\"{Binding IsGalleryMode}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("IsVisible=\"{Binding IsViewerMode}\"", xaml, StringComparison.Ordinal);
@@ -38,7 +40,8 @@ public sealed class MobileGalleryBrowseRegressionTests
         Assert.Contains("Command=\"{Binding CancelSearchCommand}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Command=\"{Binding NavigateBackCommand}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.HandleBackRequested()", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("ViewModel.AddPhotosRequested += OnAddPhotosRequested", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("_uploads.SelectAndQueueAsync()", viewModel, StringComparison.Ordinal);
+        Assert.DoesNotContain("사진 추가 기능은 준비 중입니다.", codeBehind, StringComparison.Ordinal);
         Assert.Contains("RemainingItemsThreshold=\"8\"", xaml, StringComparison.Ordinal);
         Assert.Contains("ItemsSource=\"{Binding Items}\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("<Picker", xaml, StringComparison.Ordinal);

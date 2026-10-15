@@ -5,6 +5,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:controls="clr-namespace:MemoryKeeper.Mobile.Controls"
     xmlns:models="clr-namespace:MemoryKeeper.Mobile.Models"
+    xmlns:uploads="clr-namespace:MemoryKeeper.Mobile.Uploads"
     xmlns:viewModels="clr-namespace:MemoryKeeper.Mobile.ViewModels"
     x:DataType="viewModels:HomeViewModel"
     BackgroundColor="{StaticResource MemoryKeeperSurface}"
@@ -228,6 +229,16 @@
                         HorizontalOptions="Center"
                         Text="다시 시도" />
                 </VerticalStackLayout>
+
+                <Button
+                    Margin="16"
+                    Command="{Binding OpenUploadPanelCommand}"
+                    HorizontalOptions="End"
+                    IsVisible="{Binding Uploads.HasItems}"
+                    Padding="14,9"
+                    SemanticProperties.Description="업로드 진행 상황 열기"
+                    Text="{Binding Uploads.CompactSummaryText}"
+                    VerticalOptions="End" />
             </Grid>
         </Grid>
 
@@ -690,6 +701,173 @@
                     TextColor="White"
                     VerticalOptions="Center" />
             </Grid>
+        </Grid>
+
+        <!-- Upload work stays in a singleton coordinator when this panel is closed. -->
+        <Grid
+            BackgroundColor="{StaticResource MemoryKeeperSurface}"
+            IsVisible="{Binding IsUploadPanelOpen}"
+            RowDefinitions="Auto,Auto,Auto,*">
+            <Grid
+                Grid.Row="0"
+                Margin="8,8,8,4"
+                ColumnDefinitions="56,*,Auto"
+                HeightRequest="52">
+                <Button
+                    Command="{Binding CloseUploadPanelCommand}"
+                    FontSize="24"
+                    Padding="0"
+                    SemanticProperties.Description="업로드 화면 닫기"
+                    Text="&#x2715;"
+                    TextColor="{StaticResource MemoryKeeperText}"
+                    BackgroundColor="Transparent" />
+                <Label
+                    Grid.Column="1"
+                    FontAttributes="Bold"
+                    FontSize="21"
+                    HorizontalTextAlignment="Center"
+                    Text="사진·동영상 추가"
+                    TextColor="{StaticResource MemoryKeeperText}"
+                    VerticalTextAlignment="Center" />
+                <Button
+                    Grid.Column="2"
+                    Command="{Binding AddPhotosCommand}"
+                    Padding="10,6"
+                    Text="파일 선택" />
+            </Grid>
+
+            <Border
+                Grid.Row="1"
+                Margin="14,4,14,8"
+                Padding="12,9"
+                BackgroundColor="#FFF4E5"
+                IsVisible="{Binding Uploads.IsNoticeVisible}"
+                Stroke="#FFD59A"
+                StrokeShape="RoundRectangle 10">
+                <Label
+                    FontSize="13"
+                    Text="{Binding Uploads.NoticeMessage}"
+                    TextColor="#7A4B00" />
+            </Border>
+
+            <Grid
+                Grid.Row="2"
+                Margin="16,4,16,10"
+                ColumnDefinitions="*,Auto"
+                ColumnSpacing="12">
+                <Label
+                    FontSize="14"
+                    Text="{Binding Uploads.SummaryText}"
+                    TextColor="{StaticResource MemoryKeeperSecondaryText}"
+                    VerticalTextAlignment="Center" />
+                <ActivityIndicator
+                    Grid.Column="1"
+                    IsRunning="{Binding Uploads.IsBusy}"
+                    IsVisible="{Binding Uploads.IsBusy}"
+                    VerticalOptions="Center" />
+            </Grid>
+
+            <CollectionView
+                Grid.Row="3"
+                ItemsSource="{Binding Uploads.Items}"
+                SelectionMode="None">
+                <CollectionView.EmptyView>
+                    <VerticalStackLayout
+                        Margin="32"
+                        Spacing="8"
+                        VerticalOptions="Center">
+                        <Label
+                            FontAttributes="Bold"
+                            FontSize="18"
+                            HorizontalTextAlignment="Center"
+                            Text="추가할 사진이나 동영상을 선택해 주세요."
+                            TextColor="{StaticResource MemoryKeeperText}" />
+                        <Label
+                            FontSize="13"
+                            HorizontalTextAlignment="Center"
+                            Text="한 번에 최대 100개까지 선택할 수 있습니다."
+                            TextColor="{StaticResource MemoryKeeperSecondaryText}" />
+                    </VerticalStackLayout>
+                </CollectionView.EmptyView>
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="uploads:MobileUploadItem">
+                        <Border
+                            Margin="14,4"
+                            Padding="12"
+                            BackgroundColor="White"
+                            Stroke="#D8E0EA"
+                            StrokeShape="RoundRectangle 12">
+                            <Grid
+                                ColumnDefinitions="36,*,Auto"
+                                ColumnSpacing="10"
+                                RowDefinitions="Auto,Auto,Auto,Auto">
+                                <Label
+                                    FontSize="20"
+                                    HorizontalTextAlignment="Center"
+                                    Text="{Binding MediaGlyph}"
+                                    TextColor="{StaticResource MemoryKeeperSecondaryText}"
+                                    VerticalTextAlignment="Center" />
+                                <Label
+                                    Grid.Column="1"
+                                    FontAttributes="Bold"
+                                    FontSize="14"
+                                    LineBreakMode="MiddleTruncation"
+                                    Text="{Binding FileName}"
+                                    TextColor="{StaticResource MemoryKeeperText}" />
+                                <Label
+                                    Grid.Column="1"
+                                    Grid.Row="1"
+                                    FontSize="12"
+                                    Text="{Binding FileSizeText}"
+                                    TextColor="{StaticResource MemoryKeeperSecondaryText}" />
+                                <Label
+                                    Grid.Column="2"
+                                    Grid.RowSpan="2"
+                                    FontSize="12"
+                                    HorizontalTextAlignment="End"
+                                    Text="{Binding StatusText}"
+                                    TextColor="{StaticResource MemoryKeeperSecondaryText}"
+                                    VerticalTextAlignment="Center" />
+                                <ProgressBar
+                                    Grid.Column="1"
+                                    Grid.ColumnSpan="2"
+                                    Grid.Row="2"
+                                    Margin="0,8,0,0"
+                                    IsVisible="{Binding IsTransferProgressVisible}"
+                                    Progress="{Binding TransferProgress}"
+                                    ProgressColor="{StaticResource MemoryKeeperPrimary}" />
+                                <Label
+                                    Grid.Column="1"
+                                    Grid.Row="3"
+                                    Margin="0,6,8,0"
+                                    FontSize="12"
+                                    IsVisible="{Binding IsMessageVisible}"
+                                    LineBreakMode="WordWrap"
+                                    Text="{Binding Message}"
+                                    TextColor="{StaticResource MemoryKeeperSecondaryText}" />
+                                <Button
+                                    Grid.Column="2"
+                                    Grid.Row="3"
+                                    Command="{Binding Source={RelativeSource AncestorType={x:Type viewModels:HomeViewModel}}, Path=CancelUploadCommand}"
+                                    CommandParameter="{Binding .}"
+                                    FontSize="12"
+                                    IsVisible="{Binding CanCancel}"
+                                    Padding="8,3"
+                                    Text="취소" />
+                                <Button
+                                    Grid.Column="2"
+                                    Grid.Row="3"
+                                    Command="{Binding Source={RelativeSource AncestorType={x:Type viewModels:HomeViewModel}}, Path=RetryUploadCommand}"
+                                    CommandParameter="{Binding .}"
+                                    FontSize="12"
+                                    IsVisible="{Binding CanRetry}"
+                                    Padding="8,3"
+                                    Text="{Binding RetryText}" />
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
         </Grid>
     </Grid>
 </ContentPage>

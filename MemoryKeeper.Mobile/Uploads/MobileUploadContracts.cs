@@ -132,6 +132,13 @@ public sealed class MobileUploadFile
 
 public sealed record MobileContentHashResult(string Sha256, long BytesRead);
 
+public sealed record MobileUploadProgress(long BytesSent, long TotalBytes)
+{
+    public double Fraction => TotalBytes > 0
+        ? Math.Clamp((double)BytesSent / TotalBytes, 0d, 1d)
+        : 0d;
+}
+
 public sealed class MobileBackendCapabilitiesDto
 {
     [JsonPropertyName("api_version")]

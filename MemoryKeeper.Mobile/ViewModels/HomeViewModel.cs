@@ -13,6 +13,7 @@ using MemoryKeeper.Mobile.Configuration;
 using MemoryKeeper.Mobile.Http;
 using MemoryKeeper.Mobile.Images;
 using MemoryKeeper.Mobile.Models;
+using MemoryKeeper.Mobile.Uploads;
 
 namespace MemoryKeeper.Mobile.ViewModels;
 
@@ -23,6 +24,7 @@ public partial class HomeViewModel : ObservableObject
     private readonly IMobileThumbnailSourceFactory _thumbnailSourceFactory;
     private readonly IMobilePreviewSourceFactory _previewSourceFactory;
     private readonly IMobileBackendEndpointResolver _endpointResolver;
+    private readonly MobileUploadCoordinator _uploads;
     private readonly object _requestLock = new();
     private readonly SemaphoreSlim _hierarchyGate = new(1, 1);
     private CancellationTokenSource? _requestCancellation;
@@ -41,6 +43,8 @@ public partial class HomeViewModel : ObservableObject
     private bool _browseOptionsLoaded;
     private bool _initialized;
     private bool _suppressBrowseSelection;
+    private bool _galleryRefreshPendingAfterUpload;
+    private int _uploadGalleryRefreshRunning;
     private double _tileSize = 120;
 
     [ObservableProperty]
@@ -118,18 +122,24 @@ public partial class HomeViewModel : ObservableObject
     [ObservableProperty]
     private string? viewerVideoErrorMessage;
 
+    [ObservableProperty]
+    private bool isUploadPanelOpen;
+
     public HomeViewModel(
         FastGalleryPagingService paging,
         IFastGalleryApiRepository repository,
         IMobileThumbnailSourceFactory thumbnailSourceFactory,
         IMobilePreviewSourceFactory previewSourceFactory,
-        IMobileBackendEndpointResolver endpointResolver)
+        IMobileBackendEndpointResolver endpointResolver,
+        MobileUploadCoordinator uploads)
     {
         _paging = paging;
         _repository = repository;
         _thumbnailSourceFactory = thumbnailSourceFactory;
         _previewSourceFactory = previewSourceFactory;
         _endpointResolver = endpointResolver;
+        _uploads = uploads;
+        _uploads.GalleryRefreshRequested += OnUploadGalleryRefreshRequested;
 
         var defaultFeed = new MobileGalleryBrowseOption("최근 사진", GalleryBrowseScope.DefaultFeed);
         BrowseOptions.Add(defaultFeed);
@@ -137,8 +147,6 @@ public partial class HomeViewModel : ObservableObject
         Items.CollectionChanged += OnItemsChanged;
         SearchResults.CollectionChanged += OnSearchResultsChanged;
     }
-
-    public event EventHandler? AddPhotosRequested;
 
     public event Action<MobileGalleryTreeNode>? PlaceTreeFocusRequested;
 
@@ -151,6 +159,8 @@ public partial class HomeViewModel : ObservableObject
     public ObservableCollection<MobileGalleryBrowseOption> SearchResults { get; } = [];
 
     public ObservableCollection<MobileGalleryBrowseOption> SiblingYearOptions { get; } = [];
+
+    public MobileUploadCoordinator Uploads => _uploads;
 
     public GalleryBrowseScope CurrentScope => CurrentContext.Scope;
 
@@ -234,6 +244,7 @@ public partial class HomeViewModel : ObservableObject
 
     public async Task InitializeAsync()
     {
+        _ = _uploads.RestoreAsync();
         _ = LoadBrowseOptionsSafelyAsync();
 
         if (_initialized && Items.Count > 0)
@@ -326,7 +337,23 @@ public partial class HomeViewModel : ObservableObject
     public Task RetryBrowseOptionsAsync() => LoadBrowseOptionsSafelyAsync();
 
     [RelayCommand]
-    private void AddPhotos() => AddPhotosRequested?.Invoke(this, EventArgs.Empty);
+    private async Task AddPhotosAsync()
+    {
+        IsUploadPanelOpen = true;
+        await _uploads.SelectAndQueueAsync();
+    }
+
+    [RelayCommand]
+    private void OpenUploadPanel() => IsUploadPanelOpen = true;
+
+    [RelayCommand]
+    private void CloseUploadPanel() => IsUploadPanelOpen = false;
+
+    [RelayCommand]
+    private void CancelUpload(MobileUploadItem? item) => _uploads.Cancel(item);
+
+    [RelayCommand]
+    private Task RetryUploadAsync(MobileUploadItem? item) => _uploads.RetryAsync(item);
 
     [RelayCommand]
     private async Task OpenViewerAsync(MobileGalleryItem? item)
@@ -637,6 +664,12 @@ public partial class HomeViewModel : ObservableObject
 
     public bool HandleBackRequested()
     {
+        if (IsUploadPanelOpen)
+        {
+            IsUploadPanelOpen = false;
+            return true;
+        }
+
         if (!CanNavigateBack)
         {
             return false;
@@ -717,7 +750,14 @@ public partial class HomeViewModel : ObservableObject
 
     partial void OnIsSearchNoResultsVisibleChanged(bool value) => NotifyViewStateChanged();
 
-    partial void OnViewModeChanged(MobileGalleryViewMode value) => NotifyContextStateChanged();
+    partial void OnViewModeChanged(MobileGalleryViewMode value)
+    {
+        NotifyContextStateChanged();
+        if (value == MobileGalleryViewMode.Gallery && _galleryRefreshPendingAfterUpload)
+        {
+            StartGalleryRefreshAfterUpload();
+        }
+    }
 
     partial void OnCurrentContextChanged(MobileGalleryContext value)
     {
@@ -1313,6 +1353,46 @@ public partial class HomeViewModel : ObservableObject
         OnPropertyChanged(nameof(PlaceSelectionTitle));
         OnPropertyChanged(nameof(IsSearchErrorVisible));
         NotifyViewStateChanged();
+    }
+
+    private void OnUploadGalleryRefreshRequested(object? sender, EventArgs e)
+    {
+        _galleryRefreshPendingAfterUpload = true;
+        if (IsGalleryMode)
+        {
+            StartGalleryRefreshAfterUpload();
+        }
+    }
+
+    private void StartGalleryRefreshAfterUpload()
+    {
+        if (Interlocked.Exchange(ref _uploadGalleryRefreshRunning, 1) == 0)
+        {
+            _ = RefreshGalleryAfterUploadAsync();
+        }
+    }
+
+    private async Task RefreshGalleryAfterUploadAsync()
+    {
+        try
+        {
+            while (_galleryRefreshPendingAfterUpload && IsGalleryMode)
+            {
+                _galleryRefreshPendingAfterUpload = false;
+                _hierarchy = null;
+                _browseOptionsLoaded = false;
+                await RefreshAsync();
+                await LoadBrowseOptionsSafelyAsync();
+            }
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _uploadGalleryRefreshRunning, 0);
+            if (_galleryRefreshPendingAfterUpload && IsGalleryMode)
+            {
+                StartGalleryRefreshAfterUpload();
+            }
+        }
     }
 
     private sealed record GalleryRequestContext(

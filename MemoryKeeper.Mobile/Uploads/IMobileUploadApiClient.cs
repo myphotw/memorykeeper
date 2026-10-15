@@ -14,7 +14,8 @@ public interface IMobileUploadApiClient
 
     Task<UploadResponseDto> UploadAsync(
         MobileUploadFile file,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        IProgress<MobileUploadProgress>? progress = null);
 
     Task<MobileUploadJobResult> GetJobAsync(
         Guid jobId,

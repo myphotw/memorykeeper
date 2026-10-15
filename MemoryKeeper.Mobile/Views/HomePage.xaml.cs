@@ -15,7 +15,6 @@ public partial class HomePage : ContentPage
         InitializeComponent();
         ViewModel = viewModel;
         BindingContext = viewModel;
-        ViewModel.AddPhotosRequested += OnAddPhotosRequested;
         ViewModel.PlaceTreeFocusRequested += OnPlaceTreeFocusRequested;
         MobileStartupCheckpoint.Record("HOME-PAGE-DONE");
     }
@@ -62,11 +61,6 @@ public partial class HomePage : ContentPage
         {
             ViewModel.HandleUnexpectedLoadFailure(exception);
         }
-    }
-
-    private async void OnAddPhotosRequested(object? sender, EventArgs e)
-    {
-        await DisplayAlert("사진 추가", "사진 추가 기능은 준비 중입니다.", "확인");
     }
 
     private void OnPlaceTreeFocusRequested(MobileGalleryTreeNode node) =>

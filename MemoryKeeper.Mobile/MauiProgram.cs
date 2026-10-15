@@ -79,6 +79,9 @@ public static class MauiProgram
         builder.Services.AddSingleton<IMobileMediaPicker, MauiMobileMediaPicker>();
         builder.Services.AddSingleton<IMobileContentHasher, MobileContentHasher>();
         builder.Services.AddSingleton<IMobileUploadApiClient, MobileUploadApiClient>();
+        builder.Services.AddSingleton<IMobileUploadRecoveryStore, MauiMobileUploadRecoveryStore>();
+        builder.Services.AddSingleton<IMobileUploadScheduler, MobileUploadScheduler>();
+        builder.Services.AddSingleton<MobileUploadCoordinator>();
         builder.Services.AddSingleton<IFastGalleryApiRepository, MobileFastGalleryApiRepository>();
         builder.Services.AddSingleton<FastGalleryPagingService>();
         builder.Services.AddSingleton<BoundedThumbnailMemoryCache>();
