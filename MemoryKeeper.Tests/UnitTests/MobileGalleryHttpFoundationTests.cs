@@ -15,10 +15,10 @@ public sealed class MobileGalleryHttpFoundationTests
     private static readonly Uri ExternalBackendUri = new("https://backend.example:8443/");
 
     [Fact]
-    public void BuildConfiguration_RequiresExplicitInternalExternalAndCredential()
+    public void BuildConfiguration_AllowsExternalHttpsWithoutInternalAndRequiresCredential()
     {
         Assert.False(new MobileBackendConfiguration(null, null, null).IsConfigured);
-        Assert.False(new MobileBackendConfiguration(
+        Assert.True(new MobileBackendConfiguration(
             "http://backend.example:8000",
             ExternalBackendUri.ToString(),
             "token").IsConfigured);
@@ -30,15 +30,79 @@ public sealed class MobileGalleryHttpFoundationTests
             InternalBackendUri.ToString(),
             ExternalBackendUri.ToString(),
             null).IsConfigured);
+        Assert.False(new MobileBackendConfiguration(
+            InternalBackendUri.ToString(),
+            null,
+            "token").IsConfigured);
+
+        var externalOnly = new MobileBackendConfiguration(
+            null,
+            ExternalBackendUri.ToString(),
+            "token");
 
         var configured = new MobileBackendConfiguration(
             InternalBackendUri.ToString(),
             ExternalBackendUri.ToString(),
             "token");
 
+        Assert.True(externalOnly.IsConfigured);
+        Assert.Null(externalOnly.InternalBaseUri);
+        Assert.Equal(ExternalBackendUri, externalOnly.ExternalBaseUri);
         Assert.True(configured.IsConfigured);
         Assert.Equal(InternalBackendUri, configured.InternalBaseUri);
         Assert.Equal(ExternalBackendUri, configured.ExternalBaseUri);
+    }
+
+    [Fact]
+    public async Task EndpointResolver_ExternalOnlySelectsExternalWithoutInternalProbe()
+    {
+        var probe = new RecordingHandler();
+        using var client = new HttpClient(probe);
+        using var resolver = CreateResolver(
+            client,
+            configuration: new StubConfiguration(null, ExternalBackendUri, "credential-value"));
+
+        var selected = await resolver.ResolveAsync();
+
+        Assert.Equal(ExternalBackendUri, selected);
+        Assert.Equal(ExternalBackendUri, resolver.CurrentBaseUri);
+        Assert.Equal(0, probe.RequestCount);
+    }
+
+    [Fact]
+    public async Task EndpointResolver_MissingExternalOrCredentialFailsWithoutProbe()
+    {
+        var configurations = new IMobileBackendConfiguration[]
+        {
+            new StubConfiguration(InternalBackendUri, null, "credential-value"),
+            new StubConfiguration(null, ExternalBackendUri, null),
+        };
+
+        foreach (var configuration in configurations)
+        {
+            var probe = new RecordingHandler();
+            using var client = new HttpClient(probe);
+            using var resolver = CreateResolver(client, configuration: configuration);
+
+            await Assert.ThrowsAsync<MobileBackendConfigurationException>(() =>
+                resolver.ResolveAsync());
+            Assert.Equal(0, probe.RequestCount);
+        }
+    }
+
+    [Fact]
+    public void MobileProject_PreservesLegacySingleEndpointAsExternalFallback()
+    {
+        var project = ReadSource("MemoryKeeper.Mobile", "MemoryKeeper.Mobile.csproj");
+
+        Assert.Contains(
+            "'$(MemoryKeeperMobileBackendUrl)' != ''",
+            project,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "<MemoryKeeperMobileExternalBackendUrl",
+            project,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -378,9 +442,10 @@ public sealed class MobileGalleryHttpFoundationTests
     private static MobileBackendEndpointResolver CreateResolver(
         HttpClient client,
         TimeSpan? probeTimeout = null,
-        TestNetworkChangeSource? networkChangeSource = null) =>
+        TestNetworkChangeSource? networkChangeSource = null,
+        IMobileBackendConfiguration? configuration = null) =>
         new(
-            CreateConfiguration(),
+            configuration ?? CreateConfiguration(),
             new SingleClientFactory(client),
             networkChangeSource ?? new TestNetworkChangeSource(),
             probeTimeout ?? TimeSpan.FromSeconds(1),
@@ -402,8 +467,7 @@ public sealed class MobileGalleryHttpFoundationTests
         public string? BearerToken { get; }
 
         public bool IsConfigured =>
-            InternalBaseUri is not null
-            && ExternalBaseUri is not null
+            ExternalBaseUri is not null
             && !string.IsNullOrWhiteSpace(BearerToken);
     }
 

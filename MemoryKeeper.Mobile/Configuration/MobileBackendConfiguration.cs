@@ -35,8 +35,7 @@ public sealed class MobileBackendConfiguration : IMobileBackendConfiguration
     public string? BearerToken { get; }
 
     public bool IsConfigured =>
-        InternalBaseUri is not null
-        && ExternalBaseUri is not null
+        ExternalBaseUri is not null
         && !string.IsNullOrWhiteSpace(BearerToken);
 
     private static Uri? ParseInternalBaseUri(string? value)

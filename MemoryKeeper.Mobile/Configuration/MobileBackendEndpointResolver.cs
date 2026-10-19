@@ -63,7 +63,6 @@ public sealed class MobileBackendEndpointResolver : IMobileBackendEndpointResolv
     {
         ThrowIfDisposed();
         if (!_configuration.IsConfigured
-            || _configuration.InternalBaseUri is not { } internalBaseUri
             || _configuration.ExternalBaseUri is not { } externalBaseUri)
         {
             throw new MobileBackendConfigurationException();
@@ -85,10 +84,13 @@ public sealed class MobileBackendEndpointResolver : IMobileBackendEndpointResolv
             }
 
             var generation = Volatile.Read(ref _generation);
-            var selected = await IsInternalReachableAsync(internalBaseUri)
-                .ConfigureAwait(false)
-                ? internalBaseUri
-                : externalBaseUri;
+            var internalBaseUri = _configuration.InternalBaseUri;
+            var selected = externalBaseUri;
+            if (internalBaseUri is not null
+                && await IsInternalReachableAsync(internalBaseUri).ConfigureAwait(false))
+            {
+                selected = internalBaseUri;
+            }
 
             cancellationToken.ThrowIfCancellationRequested();
             lock (_stateLock)
