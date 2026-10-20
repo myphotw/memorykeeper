@@ -224,6 +224,7 @@ public sealed class AndroidOriginalMediaPicker : IMobileMediaPicker
         AndroidUri uri)
     {
         string? displayName = null;
+        var displayNameStatus = "not_queried";
         long fileSize = 0;
         try
         {
@@ -243,11 +244,15 @@ public sealed class AndroidOriginalMediaPicker : IMobileMediaPicker
                 null);
             if (cursor?.MoveToFirst() == true)
             {
+                displayNameStatus = "missing";
                 var nameIndex = cursor.GetColumnIndex(displayNameColumn);
                 var sizeIndex = cursor.GetColumnIndex(sizeColumn);
                 if (nameIndex >= 0 && !cursor.IsNull(nameIndex))
                 {
                     displayName = cursor.GetString(nameIndex);
+                    displayNameStatus = string.IsNullOrWhiteSpace(displayName)
+                        ? "empty"
+                        : "value";
                 }
 
                 if (sizeIndex >= 0 && !cursor.IsNull(sizeIndex))
@@ -255,27 +260,67 @@ public sealed class AndroidOriginalMediaPicker : IMobileMediaPicker
                     fileSize = cursor.GetLong(sizeIndex);
                 }
             }
+            else
+            {
+                displayNameStatus = "no_row";
+            }
         }
         catch
         {
+            displayNameStatus = "query_failed";
             // The stream staging step remains authoritative for readable bytes and size.
         }
 
-        var mediaDataPath = QueryMediaDataPath(resolver, uri);
+        var selectedDataPath = QueryMediaDataPath(resolver, uri, out var selectedDataStatus);
+        var mediaDataPath = selectedDataPath;
+        var conversionAttempted = false;
+        AndroidUri? convertedMediaStoreUri = null;
+        string? convertedDisplayName = null;
+        var convertedDisplayNameStatus = "not_queried";
+        string? convertedDataPath = null;
+        var convertedDataStatus = "not_queried";
         if (mediaDataPath is null && OperatingSystem.IsAndroidVersionAtLeast(29))
         {
-            var mediaStoreUri = ResolveMediaStoreUri(context, uri);
-            if (mediaStoreUri is not null)
+            conversionAttempted = true;
+            convertedMediaStoreUri = ResolveMediaStoreUri(context, uri);
+            if (convertedMediaStoreUri is not null)
             {
-                mediaDataPath = QueryMediaDataPath(resolver, mediaStoreUri);
+                convertedDisplayName = QueryDisplayName(
+                    resolver,
+                    convertedMediaStoreUri,
+                    out convertedDisplayNameStatus);
+                convertedDataPath = QueryMediaDataPath(
+                    resolver,
+                    convertedMediaStoreUri,
+                    out convertedDataStatus);
+                mediaDataPath = convertedDataPath;
             }
         }
 
-        var fileName = AndroidOriginalMediaAccessPolicy.ResolveOriginalFileName(
-                           mediaDataPath,
-                           displayName,
-                           uri.LastPathSegment)
-                       ?? $"selected-{Guid.NewGuid():N}";
+        var resolvedFileName = AndroidOriginalMediaAccessPolicy.ResolveOriginalFileName(
+            mediaDataPath,
+            displayName,
+            uri.LastPathSegment);
+        var fileNameSource = ResolveFileNameSource(
+            resolvedFileName,
+            selectedDataPath,
+            convertedDataPath);
+        var fileName = resolvedFileName ?? $"selected-{Guid.NewGuid():N}";
+        LogFileNameDiagnostics(
+            context,
+            uri,
+            displayName,
+            displayNameStatus,
+            selectedDataPath,
+            selectedDataStatus,
+            conversionAttempted,
+            convertedMediaStoreUri,
+            convertedDisplayName,
+            convertedDisplayNameStatus,
+            convertedDataPath,
+            convertedDataStatus,
+            fileName,
+            fileNameSource);
         var contentType = resolver.GetType(uri);
         if (string.IsNullOrWhiteSpace(contentType))
         {
@@ -287,10 +332,14 @@ public sealed class AndroidOriginalMediaPicker : IMobileMediaPicker
         return new SelectedUri(uri, fileName, contentType, fileSize, isPhoto);
     }
 
-    private static string? QueryMediaDataPath(ContentResolver resolver, AndroidUri uri)
+    private static string? QueryMediaDataPath(
+        ContentResolver resolver,
+        AndroidUri uri,
+        out string status)
     {
         if (!string.Equals(uri.Authority, "media", StringComparison.OrdinalIgnoreCase))
         {
+            status = "not_media";
             return null;
         }
 
@@ -299,19 +348,262 @@ public sealed class AndroidOriginalMediaPicker : IMobileMediaPicker
             using var cursor = resolver.Query(uri, [MediaDataColumn], null, null, null);
             if (cursor?.MoveToFirst() != true)
             {
+                status = "no_row";
                 return null;
             }
 
             var dataIndex = cursor.GetColumnIndex(MediaDataColumn);
-            return dataIndex >= 0 && !cursor.IsNull(dataIndex)
-                ? cursor.GetString(dataIndex)
-                : null;
+            if (dataIndex < 0 || cursor.IsNull(dataIndex))
+            {
+                status = "missing";
+                return null;
+            }
+
+            var value = cursor.GetString(dataIndex);
+            status = string.IsNullOrWhiteSpace(value) ? "empty" : "value";
+            return value;
         }
         catch
         {
+            status = "query_failed";
             // Some document/cloud providers do not expose MediaStore's backing path.
             return null;
         }
+    }
+
+    private static string? QueryDisplayName(
+        ContentResolver resolver,
+        AndroidUri uri,
+        out string status)
+    {
+        try
+        {
+            var displayNameColumn = IOpenableColumns.DisplayName;
+            if (string.IsNullOrWhiteSpace(displayNameColumn))
+            {
+                status = "column_unavailable";
+                return null;
+            }
+
+            using var cursor = resolver.Query(uri, [displayNameColumn], null, null, null);
+            if (cursor?.MoveToFirst() != true)
+            {
+                status = "no_row";
+                return null;
+            }
+
+            var nameIndex = cursor.GetColumnIndex(displayNameColumn);
+            if (nameIndex < 0 || cursor.IsNull(nameIndex))
+            {
+                status = "missing";
+                return null;
+            }
+
+            var value = cursor.GetString(nameIndex);
+            status = string.IsNullOrWhiteSpace(value) ? "empty" : "value";
+            return value;
+        }
+        catch
+        {
+            status = "query_failed";
+            return null;
+        }
+    }
+
+    private static string ResolveFileNameSource(
+        string? resolvedFileName,
+        string? selectedDataPath,
+        string? convertedDataPath)
+    {
+        if (resolvedFileName is null)
+        {
+            return "fallback";
+        }
+
+        if (string.Equals(
+                GetLeafName(selectedDataPath),
+                resolvedFileName,
+                StringComparison.Ordinal))
+        {
+            return "selected_data";
+        }
+
+        if (string.Equals(
+                GetLeafName(convertedDataPath),
+                resolvedFileName,
+                StringComparison.Ordinal))
+        {
+            return "converted_data";
+        }
+
+        return "selected_display";
+    }
+
+    private static void LogFileNameDiagnostics(
+        Context context,
+        AndroidUri selectedUri,
+        string? selectedDisplayName,
+        string selectedDisplayStatus,
+        string? selectedDataPath,
+        string selectedDataStatus,
+        bool conversionAttempted,
+        AndroidUri? convertedMediaStoreUri,
+        string? convertedDisplayName,
+        string convertedDisplayStatus,
+        string? convertedDataPath,
+        string convertedDataStatus,
+        string finalFileName,
+        string finalFileNameSource)
+    {
+        try
+        {
+            var isDocumentUri = DocumentsContract.IsDocumentUri(context, selectedUri);
+            var selectedDataName = GetLeafName(selectedDataPath);
+            var convertedDataName = GetLeafName(convertedDataPath);
+            global::Android.Util.Log.Info(
+                DiagnosticTag,
+                $"MK_UPLOAD_FILENAME event=metadata "
+                + $"scheme={SafeToken(selectedUri.Scheme)} "
+                + $"authority={SafeToken(selectedUri.Authority)} "
+                + $"path_type={ClassifyUriPath(selectedUri, isDocumentUri)} "
+                + $"document_uri={(isDocumentUri ? "true" : "false")} "
+                + $"last_segment_shape={NameShape(selectedUri.LastPathSegment)} "
+                + $"selected_display_status={selectedDisplayStatus} "
+                + $"selected_display_shape={NameShape(selectedDisplayName)} "
+                + $"selected_display_ext={ExtensionToken(selectedDisplayName)} "
+                + $"selected_display_length={GetLeafName(selectedDisplayName)?.Length ?? 0} "
+                + $"selected_data_status={selectedDataStatus} "
+                + $"selected_data_shape={NameShape(selectedDataName)} "
+                + $"selected_data_ext={ExtensionToken(selectedDataName)} "
+                + $"selected_data_length={selectedDataName?.Length ?? 0} "
+                + $"selected_names_match={MatchState(selectedDisplayName, selectedDataName)} "
+                + $"conversion_attempted={(conversionAttempted ? "true" : "false")} "
+                + $"conversion_succeeded={(convertedMediaStoreUri is not null ? "true" : "false")} "
+                + $"converted_path_type={ClassifyConvertedUriPath(convertedMediaStoreUri)} "
+                + $"converted_display_status={convertedDisplayStatus} "
+                + $"converted_display_shape={NameShape(convertedDisplayName)} "
+                + $"converted_display_ext={ExtensionToken(convertedDisplayName)} "
+                + $"converted_display_length={GetLeafName(convertedDisplayName)?.Length ?? 0} "
+                + $"converted_data_status={convertedDataStatus} "
+                + $"converted_data_shape={NameShape(convertedDataName)} "
+                + $"converted_data_ext={ExtensionToken(convertedDataName)} "
+                + $"converted_data_length={convertedDataName?.Length ?? 0} "
+                + $"final_name_shape={NameShape(finalFileName)} "
+                + $"final_name_ext={ExtensionToken(finalFileName)} "
+                + $"final_name_length={GetLeafName(finalFileName)?.Length ?? 0} "
+                + $"final_source={finalFileNameSource}");
+        }
+        catch
+        {
+            // Diagnostics must never affect selection or upload.
+        }
+    }
+
+    private static string ClassifyUriPath(AndroidUri uri, bool isDocumentUri)
+    {
+        var path = uri.Path ?? string.Empty;
+        if (path.Contains("/picker/", StringComparison.OrdinalIgnoreCase))
+        {
+            return "picker";
+        }
+
+        if (isDocumentUri)
+        {
+            return "document";
+        }
+
+        if (string.Equals(uri.Authority, "media", StringComparison.OrdinalIgnoreCase)
+            && (path.Contains("/images/media/", StringComparison.OrdinalIgnoreCase)
+                || path.Contains("/video/media/", StringComparison.OrdinalIgnoreCase)))
+        {
+            return "external_media";
+        }
+
+        return "other";
+    }
+
+    private static string ClassifyConvertedUriPath(AndroidUri? uri) => uri is null
+        ? "none"
+        : ClassifyUriPath(uri, false);
+
+    private static string MatchState(string? first, string? second)
+    {
+        var firstName = GetLeafName(first);
+        var secondName = GetLeafName(second);
+        if (firstName is null || secondName is null)
+        {
+            return "unknown";
+        }
+
+        return string.Equals(firstName, secondName, StringComparison.Ordinal)
+            ? "true"
+            : "false";
+    }
+
+    private static string NameShape(string? value)
+    {
+        var leafName = GetLeafName(value);
+        if (leafName is null)
+        {
+            return "missing";
+        }
+
+        var extensionIndex = leafName.LastIndexOf('.');
+        var stem = extensionIndex > 0 ? leafName[..extensionIndex] : leafName;
+        if (stem.Length > 0 && stem.All(char.IsDigit))
+        {
+            return "numeric_id";
+        }
+
+        return stem.StartsWith("selected-", StringComparison.Ordinal)
+            ? "generated"
+            : "named";
+    }
+
+    private static string ExtensionToken(string? value)
+    {
+        var leafName = GetLeafName(value);
+        if (leafName is null)
+        {
+            return "none";
+        }
+
+        var extensionIndex = leafName.LastIndexOf('.');
+        if (extensionIndex < 0 || extensionIndex == leafName.Length - 1)
+        {
+            return "none";
+        }
+
+        var extension = leafName[(extensionIndex + 1)..];
+        return extension.Length <= 10 && extension.All(char.IsLetterOrDigit)
+            ? extension.ToLowerInvariant()
+            : "other";
+    }
+
+    private static string? GetLeafName(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var separatorIndex = Math.Max(value.LastIndexOf('/'), value.LastIndexOf('\\'));
+        var leafName = separatorIndex >= 0 ? value[(separatorIndex + 1)..] : value;
+        return string.IsNullOrWhiteSpace(leafName) ? null : leafName;
+    }
+
+    private static string SafeToken(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "missing";
+        }
+
+        return value.Length <= 100
+               && value.All(character => char.IsLetterOrDigit(character)
+                                         || character is '.' or '_' or '-')
+            ? value.ToLowerInvariant()
+            : "other";
     }
 
     [SupportedOSPlatform("android29.0")]

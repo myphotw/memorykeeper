@@ -22,6 +22,7 @@ namespace MemoryKeeper.Mobile;
                            | ConfigChanges.Density)]
 public sealed class MainActivity : MauiAppCompatActivity
 {
+    private const string DiagnosticTag = "MemoryKeeper.Upload";
     private const string RequestLocationMetadataAccessExtra =
         "android.provider.extra.REQUEST_LOCATION_METADATA_ACCESS";
     private const int UploadMediaPickerRequestCode = 41001;
@@ -80,7 +81,12 @@ public sealed class MainActivity : MauiAppCompatActivity
             () => completion.TrySetCanceled(cancellationToken));
         try
         {
-            var usesLocationAwarePhotoPicker = SupportsLocationAwarePhotoPicker();
+            var usesLocationAwarePhotoPicker = SupportsLocationAwarePhotoPicker(
+                out var apiLevel,
+                out var extensionVersion);
+            global::Android.Util.Log.Info(
+                DiagnosticTag,
+                $"MK_UPLOAD_FILENAME event=picker_selected api_level={apiLevel} extension_version={extensionVersion} picker={(usesLocationAwarePhotoPicker ? "pick_images" : "get_content")} location_picker_supported={(usesLocationAwarePhotoPicker ? "true" : "false")}");
             using var pickerIntent = usesLocationAwarePhotoPicker
                 ? CreateLocationAwarePhotoPickerIntent()
                 : CreateOriginalContentPickerIntent();
@@ -143,17 +149,22 @@ public sealed class MainActivity : MauiAppCompatActivity
     }
 
     [SupportedOSPlatformGuard("android33.0")]
-    private static bool SupportsLocationAwarePhotoPicker()
+    private static bool SupportsLocationAwarePhotoPicker(
+        out int apiLevel,
+        out int extensionVersion)
     {
-        if (!OperatingSystem.IsAndroidVersionAtLeast(33))
+        apiLevel = (int)Build.VERSION.SdkInt;
+        extensionVersion = 0;
+        if (!OperatingSystem.IsAndroidVersionAtLeast(
+                AndroidOriginalMediaAccessPolicy.Android13ApiLevel))
         {
             return false;
         }
 
-        var extensionVersion = SdkExtensions.GetExtensionVersion(
+        extensionVersion = SdkExtensions.GetExtensionVersion(
             (int)BuildVersionCodes.Tiramisu);
         return AndroidOriginalMediaAccessPolicy.SupportsLocationAwarePhotoPicker(
-            (int)Build.VERSION.SdkInt,
+            apiLevel,
             extensionVersion);
     }
 
