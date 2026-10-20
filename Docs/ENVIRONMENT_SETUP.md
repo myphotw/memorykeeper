@@ -140,14 +140,23 @@ dotnet publish MemoryKeeper.App/MemoryKeeper.App.csproj -c Release -p:PublishPro
 | RuntimeIdentifier | win-x64 |
 | SelfContained | true |
 | WindowsAppSDKSelfContained | true |
-| PublishDir | `../MemoryKeeper.Release/` |
+| PublishDir | `../publish/win-x64/` |
 | PublishSingleFile | false |
 
 산출물 예:
 
-- `MemoryKeeper.Release/MemoryKeeper.exe`
+- `publish/win-x64/MemoryKeeper.exe`
 - 종속 DLL / Windows App SDK 런타임 파일
 - `appsettings.json` (CopyToPublishDirectory)
+
+Android 설치용 APK는 모바일 배포 스크립트로 생성한다.
+
+```powershell
+.\MemoryKeeper.Mobile\build\BuildDeployment.ps1
+```
+
+- 출력 디렉터리: `publish/mobile/`
+- 기존 `ApplicationId`와 프로젝트에 구성된 Android 서명 설정을 그대로 사용
 
 ---
 

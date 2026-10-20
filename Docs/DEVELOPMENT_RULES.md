@@ -54,7 +54,7 @@
 - App은 **Windows x64 / win-x64** 고정 (`MemoryKeeper.App.csproj`).
 - Publish:  
   `dotnet publish MemoryKeeper.App\MemoryKeeper.App.csproj -c Release -p:PublishProfile=FolderProfile`  
-  → `MemoryKeeper.Release\`
+  → `publish\win-x64\`
 - 실행 진단 로그: `%LocalAppData%\MemoryKeeper\Logs\startup.log`
 - MK-041B 단계별 MessageBox는 **제거됨**. 기동 실패 시 `StartupDiagnostics.ShowErrorMessageBox`만 사용.
 

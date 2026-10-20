@@ -57,7 +57,7 @@ Gallery read / Search / Map / Timeline / Statistics: `IGalleryApiRepository` + A
 - App services: Thumbnail, Folder/File picker, Navigation state
 - Maps: `Maps/Google/` (WebView2 지도 호스트)
 - Host DI in `App.xaml.cs`
-- Publish: `Properties/PublishProfiles/FolderProfile.pubxml` → `MemoryKeeper.Release\`
+- Publish: `Properties/PublishProfiles/FolderProfile.pubxml` → `publish\win-x64\`
 
 ---
 
@@ -100,7 +100,7 @@ Infrastructure (EF, File IO, HTTP)
 | Startup log | `%LocalAppData%\MemoryKeeper\Logs\startup.log` |
 | Map HTML cache | `%LocalAppData%\MemoryKeeper\map-host` |
 | Photo library | `TB_STORAGE.PhotoRoot` + `TB_MEDIA.RelativePath` |
-| Publish 산출물 | 리포지토리 `MemoryKeeper.Release\` |
+| Publish 산출물 | 리포지토리 `publish\win-x64\` |
 
 ---
 

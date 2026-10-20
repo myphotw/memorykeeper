@@ -78,6 +78,7 @@ config/mobile.local.props
 
 Release/
 Debug/
+publish/
 
 .vs/
 

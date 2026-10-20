@@ -32,7 +32,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <MauiIcon Include="Resources\AppIcon\memorykeeper.png" />
+    <!-- Use the same canonical 1024x1024 artwork as the Windows app. -->
+    <MauiIcon Include="..\MemoryKeeper.App\Assets\MemoryKeeper.png"
+              Link="Resources\AppIcon\memorykeeper.png" />
   </ItemGroup>
 
   <ItemGroup>

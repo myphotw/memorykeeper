@@ -43,7 +43,7 @@ MemoryKeeper.App\bin\x64\Release\net8.0-windows10.0.19041.0\MemoryKeeper.exe
 **Publish 산출물 (재Publish 시):**
 
 ```text
-MemoryKeeper.Release\MemoryKeeper.exe
+publish\win-x64\MemoryKeeper.exe
 ```
 
 **로컬 데이터 (실행 시 자동 생성):**
@@ -104,7 +104,7 @@ MemoryKeeper.Release\MemoryKeeper.exe
 - 소스: Domain / Application / Infrastructure / App / Tests
 - `Docs/` (인수인계 문서 전체)
 - `README.md`, `DEVELOPMENT.md`, `TRANSFER_INFO.md`, `.gitignore`
-- `MemoryKeeper.Release/` (Publish 시 생성, exe 포함 가능)
+- `publish/win-x64/` (Publish 시 생성, exe 포함 가능)
 
 ---
 
