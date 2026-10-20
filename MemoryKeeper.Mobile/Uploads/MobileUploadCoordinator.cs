@@ -112,6 +112,7 @@ public sealed class MobileUploadCoordinator : INotifyPropertyChanged
         if (selected.Count > MaximumSelectionCount)
         {
             NoticeMessage = $"한 번에 최대 {MaximumSelectionCount}개까지 추가할 수 있어 처음 {MaximumSelectionCount}개만 처리합니다.";
+            await ReleaseSourcesSafelyAsync(selected.Skip(MaximumSelectionCount));
             selected = selected.Take(MaximumSelectionCount).ToArray();
         }
         else
@@ -128,6 +129,7 @@ public sealed class MobileUploadCoordinator : INotifyPropertyChanged
     {
         ArgumentNullException.ThrowIfNull(selected);
         var accepted = selected.Take(MaximumSelectionCount).ToArray();
+        await ReleaseSourcesSafelyAsync(selected.Skip(MaximumSelectionCount));
         if (accepted.Length == 0)
         {
             return;
@@ -367,6 +369,7 @@ public sealed class MobileUploadCoordinator : INotifyPropertyChanged
                     MobileUploadItemState.Duplicate,
                     "이미 MemoryKeeper에 보관된 파일입니다.",
                     MobileUploadErrorCodes.DuplicateContent);
+                await ReleaseSourceSafelyAsync(item);
                 return false;
             }
 
@@ -394,6 +397,10 @@ public sealed class MobileUploadCoordinator : INotifyPropertyChanged
             }
 
             item.SetAcceptedJob(jobId, _scheduler.UtcNow);
+            // Hashing and upload both used the same private staged file. Once the
+            // Backend has accepted a Job, retries only poll that Job and no longer
+            // need the local original bytes.
+            await ReleaseSourceSafelyAsync(item);
             // Once the server has accepted a Job, persist it even if the user stops local tracking.
             try
             {
@@ -415,6 +422,11 @@ public sealed class MobileUploadCoordinator : INotifyPropertyChanged
         catch (MobileUploadException exception)
         {
             ApplyUploadFailure(item, exception.Code);
+            if (IsTerminalSourceFailure(exception.Code))
+            {
+                await ReleaseSourceSafelyAsync(item);
+            }
+
             return false;
         }
         catch
@@ -675,10 +687,49 @@ public sealed class MobileUploadCoordinator : INotifyPropertyChanged
         MobileUploadErrorCodes.AuthenticationRequired => "서버 인증을 확인할 수 없습니다.",
         MobileUploadErrorCodes.ServerUpdateRequired => "모바일 업로드를 사용하려면 서버 업데이트가 필요합니다.",
         MobileUploadErrorCodes.FileAccess => "파일 접근 권한이 만료되었습니다. 파일을 다시 선택해 주세요.",
+        MobileUploadErrorCodes.OriginalMediaPermissionRequired =>
+            "사진의 GPS를 포함한 원본을 보관하려면 사진 위치정보 접근을 허용한 뒤 다시 선택해 주세요.",
+        MobileUploadErrorCodes.OriginalMediaUnavailable =>
+            "GPS를 포함한 사진 원본을 읽을 수 없습니다. 기기에 원본을 저장한 뒤 다시 선택해 주세요.",
         MobileUploadErrorCodes.Network => "네트워크에 연결할 수 없습니다. 연결 후 다시 시도해 주세요.",
         MobileUploadErrorCodes.Conflict => "같은 업로드 요청의 상태를 확인할 수 없습니다. 잠시 후 다시 시도해 주세요.",
         _ => "서버에서 파일을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.",
     };
+
+    private static bool IsTerminalSourceFailure(string code) =>
+        code is MobileUploadErrorCodes.DuplicateContent
+            or MobileUploadErrorCodes.ContentSha256Mismatch
+            or MobileUploadErrorCodes.OriginalMediaPermissionRequired
+            or MobileUploadErrorCodes.OriginalMediaUnavailable;
+
+    private static Task ReleaseSourcesSafelyAsync(
+        IEnumerable<MobileSelectedMediaFile> sources) =>
+        Task.WhenAll(sources.Select(async source =>
+        {
+            try
+            {
+                await source.ReleaseAsync();
+            }
+            catch
+            {
+            }
+        }));
+
+    private static async Task ReleaseSourceSafelyAsync(MobileUploadItem item)
+    {
+        if (item.UploadFile is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await item.UploadFile.Source.ReleaseAsync();
+        }
+        catch
+        {
+        }
+    }
 
     private void Subscribe(MobileUploadItem item) => item.PropertyChanged += OnItemPropertyChanged;
 

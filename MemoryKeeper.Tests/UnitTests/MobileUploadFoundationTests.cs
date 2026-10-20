@@ -15,21 +15,146 @@ public sealed class MobileUploadFoundationTests
     private const string ValidSha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
     [Fact]
-    public void SystemPicker_RequestsPhotosAndVideosAsReopenableStreamsWithoutCopies()
+    public void AndroidPicker_RequiresOriginalPhotoBytesAndStagesPhotosAndVideos()
     {
-        var source = ReadSource(
-            "MemoryKeeper.Mobile", "Uploads", "MauiMobileMediaPicker.cs");
+        var picker = ReadSource(
+            "MemoryKeeper.Mobile", "Platforms", "Android", "Uploads", "AndroidOriginalMediaPicker.cs");
+        var activity = ReadSource(
+            "MemoryKeeper.Mobile", "Platforms", "Android", "MainActivity.cs");
+        var manifest = ReadSource(
+            "MemoryKeeper.Mobile", "Platforms", "Android", "AndroidManifest.xml");
+        var startup = ReadSource("MemoryKeeper.Mobile", "MauiProgram.cs");
 
-        Assert.Contains("PickMultipleAsync", source, StringComparison.Ordinal);
-        Assert.Contains("\"image/*\"", source, StringComparison.Ordinal);
-        Assert.Contains("\"video/*\"", source, StringComparison.Ordinal);
-        Assert.Contains("result.OpenReadAsync()", source, StringComparison.Ordinal);
-        Assert.Contains("FileSize", ReadSource(
-            "MemoryKeeper.Mobile", "Uploads", "MobileUploadContracts.cs"), StringComparison.Ordinal);
-        Assert.DoesNotContain("File.Copy", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("WriteAllBytes", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("CacheDirectory", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("AppDataDirectory", source, StringComparison.Ordinal);
+        Assert.Contains("Intent.ActionOpenDocument", activity, StringComparison.Ordinal);
+        Assert.Contains("Intent.ExtraAllowMultiple", activity, StringComparison.Ordinal);
+        Assert.Contains("\"image/*\"", activity, StringComparison.Ordinal);
+        Assert.Contains("\"video/*\"", activity, StringComparison.Ordinal);
+        Assert.Contains("ACCESS_MEDIA_LOCATION", manifest, StringComparison.Ordinal);
+        Assert.Contains("MediaStore.SetRequireOriginal", picker, StringComparison.Ordinal);
+        Assert.Contains("MediaStore.GetMediaUri", picker, StringComparison.Ordinal);
+        Assert.Contains("_stagingStore.StageAsync", picker, StringComparison.Ordinal);
+        Assert.Contains("AndroidOriginalMediaPicker", startup, StringComparison.Ordinal);
+        Assert.DoesNotContain("BitmapFactory", picker, StringComparison.Ordinal);
+        Assert.DoesNotContain("Compress", picker, StringComparison.Ordinal);
+        Assert.DoesNotContain("ExifInterface", picker, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(28, true, false, false, AndroidOriginalMediaReadMode.Direct)]
+    [InlineData(34, false, false, false, AndroidOriginalMediaReadMode.Direct)]
+    [InlineData(34, true, false, true, AndroidOriginalMediaReadMode.PermissionRequired)]
+    [InlineData(34, true, true, false, AndroidOriginalMediaReadMode.UnsupportedProvider)]
+    [InlineData(34, true, true, true, AndroidOriginalMediaReadMode.RequireMediaStoreOriginal)]
+    public void AndroidOriginalAccessPolicy_SelectsSafeReadMode(
+        int apiLevel,
+        bool isPhoto,
+        bool hasPermission,
+        bool hasMediaStoreUri,
+        AndroidOriginalMediaReadMode expected)
+    {
+        Assert.Equal(expected, AndroidOriginalMediaAccessPolicy.Decide(
+            apiLevel,
+            isPhoto,
+            hasPermission,
+            hasMediaStoreUri));
+    }
+
+    [Fact]
+    public async Task StagedOriginal_IsByteIdenticalForHashAndUploadAndIsReleased()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"memorykeeper-upload-test-{Guid.NewGuid():N}");
+        try
+        {
+            var bytes = Enumerable.Range(0, 512_123).Select(index => (byte)(index % 251)).ToArray();
+            var store = new MobileUploadStagingStore(root);
+            await using var original = new MemoryStream(bytes, writable: false);
+            var staged = await store.StageAsync("gps-photo.jpg", "image/jpeg", original);
+
+            var hash = await new MobileContentHasher().ComputeSha256Async(staged);
+            using var uploaded = new MemoryStream();
+            await using (var uploadStream = await staged.OpenReadAsync())
+            {
+                await uploadStream.CopyToAsync(uploaded);
+            }
+
+            Assert.Equal(bytes.Length, staged.FileSize);
+            Assert.Equal(Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(), hash.Sha256);
+            Assert.Equal(bytes, uploaded.ToArray());
+            Assert.Single(Directory.EnumerateFiles(root, "*.upload"));
+
+            await staged.ReleaseAsync();
+
+            Assert.Empty(Directory.EnumerateFiles(root, "*.upload"));
+            var released = await Assert.ThrowsAsync<MobileUploadException>(
+                () => staged.OpenReadAsync());
+            Assert.Equal(MobileUploadErrorCodes.FileAccess, released.Code);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task StagingCancellation_RemovesPartialPrivateCopy()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"memorykeeper-upload-test-{Guid.NewGuid():N}");
+        try
+        {
+            using var cancellation = new CancellationTokenSource();
+            await using var original = new CancelingReadStream(
+                new byte[MobileUploadStagingStore.BufferSize * 2],
+                cancellation);
+            var store = new MobileUploadStagingStore(root);
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => store.StageAsync(
+                "canceled.jpg",
+                "image/jpeg",
+                original,
+                cancellation.Token));
+
+            Assert.True(Directory.Exists(root));
+            Assert.Empty(Directory.EnumerateFiles(root, "*.upload"));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task GpsFreeJpeg_IsStagedWithoutExifInspectionOrRewriting()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"memorykeeper-upload-test-{Guid.NewGuid():N}");
+        try
+        {
+            byte[] jpegWithoutGps = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x02, 0xFF, 0xD9];
+            var store = new MobileUploadStagingStore(root);
+            await using var original = new MemoryStream(jpegWithoutGps, writable: false);
+            var staged = await store.StageAsync("without-gps.jpg", "image/jpeg", original);
+            using var copied = new MemoryStream();
+            await using (var reopened = await staged.OpenReadAsync())
+            {
+                await reopened.CopyToAsync(copied);
+            }
+
+            Assert.Equal(jpegWithoutGps, copied.ToArray());
+            await staged.ReleaseAsync();
+            Assert.Empty(Directory.EnumerateFiles(root, "*.upload"));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
     }
 
     [Fact]
@@ -295,7 +420,7 @@ public sealed class MobileUploadFoundationTests
     }
 
     [Fact]
-    public async Task HashThenUpload_ReopensSourceInsteadOfBufferingOrCopyingOriginal()
+    public async Task HashThenUpload_ReopensSameSelectedSourceWithoutBufferingWholeFile()
     {
         var bytes = Enumerable.Range(0, 200_000).Select(index => (byte)(index % 251)).ToArray();
         var openCount = 0;
@@ -548,6 +673,24 @@ public sealed class MobileUploadFoundationTests
             }
 
             base.Dispose(disposing);
+        }
+    }
+
+    private sealed class CancelingReadStream(
+        byte[] bytes,
+        CancellationTokenSource cancellation) : MemoryStream(bytes, writable: false)
+    {
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            var read = await base.ReadAsync(buffer, cancellationToken);
+            if (read > 0)
+            {
+                cancellation.Cancel();
+            }
+
+            return read;
         }
     }
 

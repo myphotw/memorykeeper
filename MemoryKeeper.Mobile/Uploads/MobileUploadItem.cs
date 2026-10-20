@@ -111,7 +111,15 @@ public sealed class MobileUploadItem : INotifyPropertyChanged
                                  StringComparison.Ordinal))
                             || (JobId is null
                                 && UploadFile is not null
-                                && State is (MobileUploadItemState.Failed or MobileUploadItemState.Canceled));
+                                && State is (MobileUploadItemState.Failed or MobileUploadItemState.Canceled)
+                                && !string.Equals(
+                                    FailureCode,
+                                    MobileUploadErrorCodes.OriginalMediaPermissionRequired,
+                                    StringComparison.Ordinal)
+                                && !string.Equals(
+                                    FailureCode,
+                                    MobileUploadErrorCodes.OriginalMediaUnavailable,
+                                    StringComparison.Ordinal));
 
     public string RetryText => JobId.HasValue
         ? "상태 다시 확인"

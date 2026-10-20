@@ -56,13 +56,49 @@ public sealed class MobileUploadCoordinatorTests
     {
         var api = new FakeUploadApi { PreflightIsDuplicate = true };
         var coordinator = CreateCoordinator(api: api);
+        var released = 0;
+        var source = new MobileSelectedMediaFile(
+            "duplicate.jpg",
+            "image/jpeg",
+            1,
+            _ => Task.FromResult<Stream>(new MemoryStream([1], writable: false)),
+            () =>
+            {
+                Interlocked.Increment(ref released);
+                return ValueTask.CompletedTask;
+            });
 
-        await coordinator.QueueSelectedAsync([File("duplicate.jpg")]);
+        await coordinator.QueueSelectedAsync([source]);
 
         var item = Assert.Single(coordinator.Items);
         Assert.Equal(MobileUploadItemState.Duplicate, item.State);
         Assert.Equal(MobileUploadErrorCodes.DuplicateContent, item.FailureCode);
         Assert.Equal(0, api.UploadCalls);
+        Assert.Equal(1, released);
+    }
+
+    [Fact]
+    public async Task OriginalAccessFailure_IsPerItemAndDoesNotBlockOtherSelectedFiles()
+    {
+        var unavailable = new MobileSelectedMediaFile(
+            "cloud-photo.jpg",
+            "image/jpeg",
+            0,
+            _ => Task.FromException<Stream>(new MobileUploadException(
+                MobileUploadErrorCodes.OriginalMediaUnavailable,
+                "original unavailable")));
+        var coordinator = CreateCoordinator(
+            hasher: new MobileContentHasher(),
+            api: new FakeUploadApi());
+
+        await coordinator.QueueSelectedAsync([unavailable, File("available.jpg")]);
+
+        var failed = Assert.Single(coordinator.Items, item => item.FileName == "cloud-photo.jpg");
+        var completed = Assert.Single(coordinator.Items, item => item.FileName == "available.jpg");
+        Assert.Equal(MobileUploadItemState.Failed, failed.State);
+        Assert.Equal(MobileUploadErrorCodes.OriginalMediaUnavailable, failed.FailureCode);
+        Assert.False(failed.CanRetry);
+        Assert.Equal(MobileUploadItemState.Completed, completed.State);
     }
 
     [Fact]
@@ -147,18 +183,31 @@ public sealed class MobileUploadCoordinatorTests
     {
         var api = new FakeUploadApi { FailFirstUpload = true };
         var coordinator = CreateCoordinator(api: api);
-        await coordinator.QueueSelectedAsync([File("retry.jpg")]);
+        var released = 0;
+        var source = new MobileSelectedMediaFile(
+            "retry.jpg",
+            "image/jpeg",
+            1,
+            _ => Task.FromResult<Stream>(new MemoryStream([1], writable: false)),
+            () =>
+            {
+                Interlocked.Increment(ref released);
+                return ValueTask.CompletedTask;
+            });
+        await coordinator.QueueSelectedAsync([source]);
         var item = Assert.Single(coordinator.Items);
         var originalClientFileId = item.ClientFileId;
 
         Assert.Equal(MobileUploadItemState.Failed, item.State);
         Assert.True(item.CanRetry);
+        Assert.Equal(0, released);
 
         await coordinator.RetryAsync(item);
 
         Assert.Equal(MobileUploadItemState.Completed, item.State);
         Assert.Equal(2, api.UploadedClientFileIds.Count);
         Assert.All(api.UploadedClientFileIds, id => Assert.Equal(originalClientFileId, id));
+        Assert.Equal(1, released);
     }
 
     [Fact]

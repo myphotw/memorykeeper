@@ -15,6 +15,8 @@ public static class MobileUploadErrorCodes
     public const string Server = "SERVER_ERROR";
     public const string InvalidResponse = "INVALID_RESPONSE";
     public const string FileAccess = "FILE_ACCESS_ERROR";
+    public const string OriginalMediaPermissionRequired = "ORIGINAL_MEDIA_PERMISSION_REQUIRED";
+    public const string OriginalMediaUnavailable = "ORIGINAL_MEDIA_UNAVAILABLE";
 }
 
 public sealed class MobileUploadException : Exception
@@ -35,15 +37,18 @@ public sealed class MobileUploadException : Exception
     public HttpStatusCode? StatusCode { get; }
 }
 
-public sealed class MobileSelectedMediaFile
+public sealed class MobileSelectedMediaFile : IAsyncDisposable
 {
     private readonly Func<CancellationToken, Task<Stream>> _openReadAsync;
+    private readonly Func<ValueTask>? _releaseAsync;
+    private int _released;
 
     public MobileSelectedMediaFile(
         string fileName,
         string contentType,
         long fileSize,
-        Func<CancellationToken, Task<Stream>> openReadAsync)
+        Func<CancellationToken, Task<Stream>> openReadAsync,
+        Func<ValueTask>? releaseAsync = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
         ArgumentException.ThrowIfNullOrWhiteSpace(contentType);
@@ -54,6 +59,7 @@ public sealed class MobileSelectedMediaFile
         ContentType = contentType;
         FileSize = fileSize;
         _openReadAsync = openReadAsync;
+        _releaseAsync = releaseAsync;
     }
 
     public string FileName { get; }
@@ -65,6 +71,13 @@ public sealed class MobileSelectedMediaFile
     public async Task<Stream> OpenReadAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (Volatile.Read(ref _released) != 0)
+        {
+            throw new MobileUploadException(
+                MobileUploadErrorCodes.FileAccess,
+                "선택한 파일의 임시 원본이 정리되었습니다. 파일을 다시 선택해 주세요.");
+        }
+
         try
         {
             var stream = await _openReadAsync(cancellationToken).ConfigureAwait(false);
@@ -92,6 +105,18 @@ public sealed class MobileSelectedMediaFile
                 innerException: ex);
         }
     }
+
+    public async ValueTask ReleaseAsync()
+    {
+        if (Interlocked.Exchange(ref _released, 1) != 0 || _releaseAsync is null)
+        {
+            return;
+        }
+
+        await _releaseAsync().ConfigureAwait(false);
+    }
+
+    public ValueTask DisposeAsync() => ReleaseAsync();
 }
 
 public sealed class MobileUploadFile

@@ -7,11 +7,13 @@ using MemoryKeeper.Mobile.Handlers;
 using MemoryKeeper.Mobile.Http;
 using MemoryKeeper.Mobile.Images;
 using MemoryKeeper.Mobile.Platforms.Android.Images;
+using MemoryKeeper.Mobile.Platforms.Android.Uploads;
 using MemoryKeeper.Mobile.Uploads;
 using MemoryKeeper.Mobile.ViewModels;
 using MemoryKeeper.Mobile.Views;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Maui.Hosting;
+using Microsoft.Maui.Storage;
 
 namespace MemoryKeeper.Mobile;
 
@@ -76,7 +78,11 @@ public static class MauiProgram
             .AddHttpMessageHandler<MobileBackendEndpointFailureHandler>();
         MobileStartupCheckpoint.Record("MAUI-HTTP-REGISTERED");
 
-        builder.Services.AddSingleton<IMobileMediaPicker, MauiMobileMediaPicker>();
+        builder.Services.AddSingleton<IMobileUploadStagingStore>(_ =>
+            new MobileUploadStagingStore(Path.Combine(
+                FileSystem.CacheDirectory,
+                "MemoryKeeperUploads")));
+        builder.Services.AddSingleton<IMobileMediaPicker, AndroidOriginalMediaPicker>();
         builder.Services.AddSingleton<IMobileContentHasher, MobileContentHasher>();
         builder.Services.AddSingleton<IMobileUploadApiClient, MobileUploadApiClient>();
         builder.Services.AddSingleton<IMobileUploadRecoveryStore, MauiMobileUploadRecoveryStore>();
