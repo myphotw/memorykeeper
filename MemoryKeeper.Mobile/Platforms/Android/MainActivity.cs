@@ -2,7 +2,10 @@ using Android.App;
 using Android.Content;
 using Android.Content.PM;
 using Android.OS;
+using Android.OS.Ext;
+using Android.Provider;
 using MemoryKeeper.Mobile.Diagnostics;
+using MemoryKeeper.Mobile.Uploads;
 using System.Runtime.Versioning;
 
 namespace MemoryKeeper.Mobile;
@@ -19,6 +22,8 @@ namespace MemoryKeeper.Mobile;
                            | ConfigChanges.Density)]
 public sealed class MainActivity : MauiAppCompatActivity
 {
+    private const string RequestLocationMetadataAccessExtra =
+        "android.provider.extra.REQUEST_LOCATION_METADATA_ACCESS";
     private const int UploadMediaPickerRequestCode = 41001;
     private const int MediaLocationPermissionRequestCode = 41002;
     private readonly object _requestLock = new();
@@ -55,7 +60,8 @@ public sealed class MainActivity : MauiAppCompatActivity
 #endif
     }
 
-    internal async Task<Intent?> PickUploadMediaAsync(CancellationToken cancellationToken)
+    internal async Task<AndroidUploadMediaPickerResult?> PickUploadMediaAsync(
+        CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var completion = new TaskCompletionSource<Intent?>(
@@ -74,27 +80,17 @@ public sealed class MainActivity : MauiAppCompatActivity
             () => completion.TrySetCanceled(cancellationToken));
         try
         {
-            using var pickerIntent = new Intent(RequireAndroidValue(
-                Intent.ActionOpenDocument,
-                nameof(Intent.ActionOpenDocument)));
-            pickerIntent.AddCategory(RequireAndroidValue(
-                Intent.CategoryOpenable,
-                nameof(Intent.CategoryOpenable)));
-            pickerIntent.SetType("*/*");
-            pickerIntent.PutExtra(
-                RequireAndroidValue(Intent.ExtraMimeTypes, nameof(Intent.ExtraMimeTypes)),
-                new[] { "image/*", "video/*" });
-            pickerIntent.PutExtra(
-                RequireAndroidValue(Intent.ExtraAllowMultiple, nameof(Intent.ExtraAllowMultiple)),
-                true);
-            pickerIntent.AddFlags(ActivityFlags.GrantReadUriPermission);
-
-            using var chooser = Intent.CreateChooser(
-                pickerIntent,
-                "업로드할 사진과 동영상 선택")
-                ?? throw new InvalidOperationException("Android media chooser is unavailable.");
-            StartActivityForResult(chooser, UploadMediaPickerRequestCode);
-            return await completion.Task;
+            var usesLocationAwarePhotoPicker = SupportsLocationAwarePhotoPicker();
+            using var pickerIntent = usesLocationAwarePhotoPicker
+                ? CreateLocationAwarePhotoPickerIntent()
+                : CreateOriginalContentPickerIntent();
+            StartActivityForResult(pickerIntent, UploadMediaPickerRequestCode);
+            var resultIntent = await completion.Task;
+            return resultIntent is null
+                ? null
+                : new AndroidUploadMediaPickerResult(
+                    resultIntent,
+                    usesLocationAwarePhotoPicker);
         }
         finally
         {
@@ -106,6 +102,59 @@ public sealed class MainActivity : MauiAppCompatActivity
                 }
             }
         }
+    }
+
+    private static Intent CreateOriginalContentPickerIntent()
+    {
+        var intent = new Intent(RequireAndroidValue(
+            Intent.ActionGetContent,
+            nameof(Intent.ActionGetContent)));
+        intent.AddCategory(RequireAndroidValue(
+            Intent.CategoryOpenable,
+            nameof(Intent.CategoryOpenable)));
+        intent.SetType("*/*");
+        intent.PutExtra(
+            RequireAndroidValue(Intent.ExtraMimeTypes, nameof(Intent.ExtraMimeTypes)),
+            new[] { "image/*", "video/*" });
+        intent.PutExtra(
+            RequireAndroidValue(Intent.ExtraAllowMultiple, nameof(Intent.ExtraAllowMultiple)),
+            true);
+        intent.AddFlags(ActivityFlags.GrantReadUriPermission);
+        return intent;
+    }
+
+    [SupportedOSPlatform("android33.0")]
+    private static Intent CreateLocationAwarePhotoPickerIntent()
+    {
+        var intent = new Intent(RequireAndroidValue(
+            MediaStore.ActionPickImages,
+            nameof(MediaStore.ActionPickImages)));
+        intent.PutExtra(
+            RequireAndroidValue(MediaStore.ExtraPickImagesMax, nameof(MediaStore.ExtraPickImagesMax)),
+            Math.Min(
+                MobileUploadCoordinator.MaximumSelectionCount,
+                MediaStore.PickImagesMaxLimit));
+        intent.PutExtra(RequestLocationMetadataAccessExtra, true);
+        intent.PutExtra(
+            RequireAndroidValue(Intent.ExtraLocalOnly, nameof(Intent.ExtraLocalOnly)),
+            true);
+        intent.AddFlags(ActivityFlags.GrantReadUriPermission);
+        return intent;
+    }
+
+    [SupportedOSPlatformGuard("android33.0")]
+    private static bool SupportsLocationAwarePhotoPicker()
+    {
+        if (!OperatingSystem.IsAndroidVersionAtLeast(33))
+        {
+            return false;
+        }
+
+        var extensionVersion = SdkExtensions.GetExtensionVersion(
+            (int)BuildVersionCodes.Tiramisu);
+        return AndroidOriginalMediaAccessPolicy.SupportsLocationAwarePhotoPicker(
+            (int)Build.VERSION.SdkInt,
+            extensionVersion);
     }
 
     internal async Task<bool> RequestMediaLocationPermissionAsync(
@@ -208,3 +257,7 @@ public sealed class MainActivity : MauiAppCompatActivity
     private static string RequireAndroidValue(string? value, string name) =>
         value ?? throw new InvalidOperationException($"Android value '{name}' is unavailable.");
 }
+
+internal sealed record AndroidUploadMediaPickerResult(
+    Intent Intent,
+    bool UsedLocationAwarePhotoPicker);

@@ -25,14 +25,24 @@ public sealed class MobileUploadFoundationTests
             "MemoryKeeper.Mobile", "Platforms", "Android", "AndroidManifest.xml");
         var startup = ReadSource("MemoryKeeper.Mobile", "MauiProgram.cs");
 
-        Assert.Contains("Intent.ActionOpenDocument", activity, StringComparison.Ordinal);
+        Assert.Contains("MediaStore.ActionPickImages", activity, StringComparison.Ordinal);
+        Assert.Contains("MediaStore.ExtraPickImagesMax", activity, StringComparison.Ordinal);
+        Assert.Contains(
+            "android.provider.extra.REQUEST_LOCATION_METADATA_ACCESS",
+            activity,
+            StringComparison.Ordinal);
+        Assert.Contains("Intent.ExtraLocalOnly", activity, StringComparison.Ordinal);
+        Assert.Contains("Intent.ActionGetContent", activity, StringComparison.Ordinal);
         Assert.Contains("Intent.ExtraAllowMultiple", activity, StringComparison.Ordinal);
         Assert.Contains("\"image/*\"", activity, StringComparison.Ordinal);
         Assert.Contains("\"video/*\"", activity, StringComparison.Ordinal);
         Assert.Contains("ACCESS_MEDIA_LOCATION", manifest, StringComparison.Ordinal);
         Assert.Contains("MediaStore.SetRequireOriginal", picker, StringComparison.Ordinal);
         Assert.Contains("MediaStore.GetMediaUri", picker, StringComparison.Ordinal);
+        Assert.Contains("MediaDataColumn", picker, StringComparison.Ordinal);
+        Assert.Contains("ResolveOriginalFileName", picker, StringComparison.Ordinal);
         Assert.Contains("_stagingStore.StageAsync", picker, StringComparison.Ordinal);
+        Assert.Contains("MK_UPLOAD_ORIGINAL", picker, StringComparison.Ordinal);
         Assert.Contains("AndroidOriginalMediaPicker", startup, StringComparison.Ordinal);
         Assert.DoesNotContain("BitmapFactory", picker, StringComparison.Ordinal);
         Assert.DoesNotContain("Compress", picker, StringComparison.Ordinal);
@@ -40,15 +50,17 @@ public sealed class MobileUploadFoundationTests
     }
 
     [Theory]
-    [InlineData(28, true, false, false, AndroidOriginalMediaReadMode.Direct)]
-    [InlineData(34, false, false, false, AndroidOriginalMediaReadMode.Direct)]
-    [InlineData(34, true, false, true, AndroidOriginalMediaReadMode.PermissionRequired)]
-    [InlineData(34, true, true, false, AndroidOriginalMediaReadMode.UnsupportedProvider)]
-    [InlineData(34, true, true, true, AndroidOriginalMediaReadMode.RequireMediaStoreOriginal)]
+    [InlineData(28, true, false, false, false, AndroidOriginalMediaReadMode.Direct)]
+    [InlineData(34, false, false, false, false, AndroidOriginalMediaReadMode.Direct)]
+    [InlineData(34, true, false, true, true, AndroidOriginalMediaReadMode.PermissionRequired)]
+    [InlineData(34, true, true, true, false, AndroidOriginalMediaReadMode.LocationAwarePhotoPicker)]
+    [InlineData(34, true, true, false, false, AndroidOriginalMediaReadMode.UnsupportedProvider)]
+    [InlineData(34, true, true, false, true, AndroidOriginalMediaReadMode.RequireMediaStoreOriginal)]
     public void AndroidOriginalAccessPolicy_SelectsSafeReadMode(
         int apiLevel,
         bool isPhoto,
         bool hasPermission,
+        bool usedLocationAwarePhotoPicker,
         bool hasMediaStoreUri,
         AndroidOriginalMediaReadMode expected)
     {
@@ -56,7 +68,62 @@ public sealed class MobileUploadFoundationTests
             apiLevel,
             isPhoto,
             hasPermission,
+            usedLocationAwarePhotoPicker,
             hasMediaStoreUri));
+    }
+
+    [Theory]
+    [InlineData(32, 23, false)]
+    [InlineData(33, 22, false)]
+    [InlineData(33, 23, true)]
+    [InlineData(37, 23, true)]
+    public void AndroidPhotoPicker_RequiresLocationMetadataCapablePlatform(
+        int apiLevel,
+        int extensionVersion,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            AndroidOriginalMediaAccessPolicy.SupportsLocationAwarePhotoPicker(
+                apiLevel,
+                extensionVersion));
+    }
+
+    [Theory]
+    [InlineData(
+        "/storage/emulated/0/DCIM/Camera/20261008_141830.jpg",
+        "18300.jpg",
+        "18300",
+        "20261008_141830.jpg")]
+    [InlineData(null, "20261008_141830.jpg", "18300", "20261008_141830.jpg")]
+    [InlineData(null, "제주 여행 사진 01.jpg", "18300", "제주 여행 사진 01.jpg")]
+    public void AndroidOriginalFileName_PrefersMediaPathAndPreservesDisplayName(
+        string? mediaDataPath,
+        string? displayName,
+        string? uriLastPathSegment,
+        string expected)
+    {
+        Assert.Equal(
+            expected,
+            AndroidOriginalMediaAccessPolicy.ResolveOriginalFileName(
+                mediaDataPath,
+                displayName,
+                uriLastPathSegment));
+    }
+
+    [Theory]
+    [InlineData(null, null, "18300")]
+    [InlineData(null, "18300.jpg", "18300")]
+    [InlineData(null, "18300", "18300")]
+    public void AndroidOriginalFileName_ReturnsNullWhenMetadataCannotIdentifyOriginal(
+        string? mediaDataPath,
+        string? displayName,
+        string? uriLastPathSegment)
+    {
+        Assert.Null(AndroidOriginalMediaAccessPolicy.ResolveOriginalFileName(
+            mediaDataPath,
+            displayName,
+            uriLastPathSegment));
     }
 
     [Fact]
@@ -78,6 +145,7 @@ public sealed class MobileUploadFoundationTests
             }
 
             Assert.Equal(bytes.Length, staged.FileSize);
+            Assert.Equal("gps-photo.jpg", staged.FileName);
             Assert.Equal(Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(), hash.Sha256);
             Assert.Equal(bytes, uploaded.ToArray());
             Assert.Single(Directory.EnumerateFiles(root, "*.upload"));
@@ -385,6 +453,7 @@ public sealed class MobileUploadFoundationTests
         var fields = new Dictionary<string, byte[]>(StringComparer.Ordinal);
         var progressValues = new List<MobileUploadProgress>();
         AuthenticationHeaderValue? authorization = null;
+        string? uploadedFileName = null;
         var terminal = new DelegateHandler(async (request, cancellationToken) =>
         {
             authorization = request.Headers.Authorization;
@@ -393,6 +462,11 @@ public sealed class MobileUploadFoundationTests
             {
                 var name = part.Headers.ContentDisposition?.Name?.Trim('"');
                 Assert.False(string.IsNullOrWhiteSpace(name));
+                if (string.Equals(name, "file", StringComparison.Ordinal))
+                {
+                    uploadedFileName = part.Headers.ContentDisposition?.FileName?.Trim('"');
+                }
+
                 fields[name!] = await part.ReadAsByteArrayAsync(cancellationToken);
             }
 
@@ -408,6 +482,7 @@ public sealed class MobileUploadFoundationTests
 
         Assert.Equal("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", response.JobId);
         Assert.Equal(fileBytes, fields["file"]);
+        Assert.Equal("clip.mp4", uploadedFileName);
         Assert.Equal("MemoryKeeper", Encoding.UTF8.GetString(fields["service_name"]));
         Assert.Equal("mobile", Encoding.UTF8.GetString(fields["upload_source"]));
         Assert.Equal(upload.ClientFileId, Encoding.UTF8.GetString(fields["client_file_id"]));

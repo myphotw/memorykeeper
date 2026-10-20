@@ -97,8 +97,32 @@ public sealed class MobileUploadCoordinatorTests
         var completed = Assert.Single(coordinator.Items, item => item.FileName == "available.jpg");
         Assert.Equal(MobileUploadItemState.Failed, failed.State);
         Assert.Equal(MobileUploadErrorCodes.OriginalMediaUnavailable, failed.FailureCode);
+        Assert.Contains("원본을 읽을 수 없습니다", failed.Message ?? string.Empty, StringComparison.Ordinal);
         Assert.False(failed.CanRetry);
         Assert.Equal(MobileUploadItemState.Completed, completed.State);
+    }
+
+    [Fact]
+    public async Task OriginalLocationPermissionDenial_IsReportedSeparatelyFromReadFailure()
+    {
+        var permissionDenied = new MobileSelectedMediaFile(
+            "permission-photo.jpg",
+            "image/jpeg",
+            0,
+            _ => Task.FromException<Stream>(new MobileUploadException(
+                MobileUploadErrorCodes.OriginalMediaPermissionRequired,
+                "permission required")));
+        var coordinator = CreateCoordinator(
+            hasher: new MobileContentHasher(),
+            api: new FakeUploadApi());
+
+        await coordinator.QueueSelectedAsync([permissionDenied]);
+
+        var failed = Assert.Single(coordinator.Items);
+        Assert.Equal(MobileUploadItemState.Failed, failed.State);
+        Assert.Equal(MobileUploadErrorCodes.OriginalMediaPermissionRequired, failed.FailureCode);
+        Assert.Contains("위치정보 접근을 허용", failed.Message ?? string.Empty, StringComparison.Ordinal);
+        Assert.False(failed.CanRetry);
     }
 
     [Fact]
