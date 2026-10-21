@@ -54,7 +54,11 @@ public sealed class AndroidOriginalMediaPicker : IMobileMediaPicker
                                MobileUploadErrorCodes.FileAccess,
                                "사진 또는 동영상 데이터를 읽을 수 없습니다.");
             var selections = ExtractUris(pickerResult.Intent)
-                .Select(uri => Describe(activity, resolver, uri))
+                .Select(uri => Describe(
+                    activity,
+                    resolver,
+                    uri,
+                    PickerName(pickerResult)))
                 .ToArray();
             global::Android.Util.Log.Info(
                 DiagnosticTag,
@@ -221,7 +225,8 @@ public sealed class AndroidOriginalMediaPicker : IMobileMediaPicker
     private static SelectedUri Describe(
         Context context,
         ContentResolver resolver,
-        AndroidUri uri)
+        AndroidUri uri,
+        string pickerName)
     {
         string? displayName = null;
         var displayNameStatus = "not_queried";
@@ -271,20 +276,30 @@ public sealed class AndroidOriginalMediaPicker : IMobileMediaPicker
             // The stream staging step remains authoritative for readable bytes and size.
         }
 
+        var isDocumentUri = IsDocumentUri(context, uri);
+        var selectedUriKind = AndroidOriginalMediaAccessPolicy.ClassifyUri(
+            uri.Authority,
+            uri.Path,
+            isDocumentUri);
         var selectedDataPath = QueryMediaDataPath(resolver, uri, out var selectedDataStatus);
-        var mediaDataPath = selectedDataPath;
         var conversionAttempted = false;
         AndroidUri? convertedMediaStoreUri = null;
+        var convertedUriKind = AndroidMediaUriKind.Other;
         string? convertedDisplayName = null;
         var convertedDisplayNameStatus = "not_queried";
         string? convertedDataPath = null;
         var convertedDataStatus = "not_queried";
-        if (mediaDataPath is null && OperatingSystem.IsAndroidVersionAtLeast(29))
+        if (selectedUriKind == AndroidMediaUriKind.Document
+            && OperatingSystem.IsAndroidVersionAtLeast(29))
         {
             conversionAttempted = true;
-            convertedMediaStoreUri = ResolveMediaStoreUri(context, uri);
+            convertedMediaStoreUri = ConvertDocumentToMediaStoreUri(context, uri);
             if (convertedMediaStoreUri is not null)
             {
+                convertedUriKind = AndroidOriginalMediaAccessPolicy.ClassifyUri(
+                    convertedMediaStoreUri.Authority,
+                    convertedMediaStoreUri.Path,
+                    isDocumentUri: false);
                 convertedDisplayName = QueryDisplayName(
                     resolver,
                     convertedMediaStoreUri,
@@ -293,34 +308,36 @@ public sealed class AndroidOriginalMediaPicker : IMobileMediaPicker
                     resolver,
                     convertedMediaStoreUri,
                     out convertedDataStatus);
-                mediaDataPath = convertedDataPath;
             }
         }
 
-        var resolvedFileName = AndroidOriginalMediaAccessPolicy.ResolveOriginalFileName(
-            mediaDataPath,
+        var fileNameResolution = AndroidOriginalMediaAccessPolicy.ResolveOriginalFileName(
+            selectedUriKind,
             displayName,
-            uri.LastPathSegment);
-        var fileNameSource = ResolveFileNameSource(
-            resolvedFileName,
             selectedDataPath,
-            convertedDataPath);
-        var fileName = resolvedFileName ?? $"selected-{Guid.NewGuid():N}";
+            uri.LastPathSegment,
+            convertedUriKind,
+            convertedDisplayName,
+            convertedDataPath,
+            convertedMediaStoreUri?.LastPathSegment);
+        var fileName = fileNameResolution.FileName ?? $"selected-{Guid.NewGuid():N}";
         LogFileNameDiagnostics(
-            context,
             uri,
+            pickerName,
+            selectedUriKind,
             displayName,
             displayNameStatus,
             selectedDataPath,
             selectedDataStatus,
             conversionAttempted,
             convertedMediaStoreUri,
+            convertedUriKind,
             convertedDisplayName,
             convertedDisplayNameStatus,
             convertedDataPath,
             convertedDataStatus,
             fileName,
-            fileNameSource);
+            fileNameResolution);
         var contentType = resolver.GetType(uri);
         if (string.IsNullOrWhiteSpace(contentType))
         {
@@ -410,88 +427,76 @@ public sealed class AndroidOriginalMediaPicker : IMobileMediaPicker
         }
     }
 
-    private static string ResolveFileNameSource(
-        string? resolvedFileName,
-        string? selectedDataPath,
-        string? convertedDataPath)
-    {
-        if (resolvedFileName is null)
-        {
-            return "fallback";
-        }
-
-        if (string.Equals(
-                GetLeafName(selectedDataPath),
-                resolvedFileName,
-                StringComparison.Ordinal))
-        {
-            return "selected_data";
-        }
-
-        if (string.Equals(
-                GetLeafName(convertedDataPath),
-                resolvedFileName,
-                StringComparison.Ordinal))
-        {
-            return "converted_data";
-        }
-
-        return "selected_display";
-    }
-
     private static void LogFileNameDiagnostics(
-        Context context,
         AndroidUri selectedUri,
+        string pickerName,
+        AndroidMediaUriKind selectedUriKind,
         string? selectedDisplayName,
         string selectedDisplayStatus,
         string? selectedDataPath,
         string selectedDataStatus,
         bool conversionAttempted,
         AndroidUri? convertedMediaStoreUri,
+        AndroidMediaUriKind convertedUriKind,
         string? convertedDisplayName,
         string convertedDisplayStatus,
         string? convertedDataPath,
         string convertedDataStatus,
         string finalFileName,
-        string finalFileNameSource)
+        AndroidOriginalFileNameResolution resolution)
     {
         try
         {
-            var isDocumentUri = DocumentsContract.IsDocumentUri(context, selectedUri);
             var selectedDataName = GetLeafName(selectedDataPath);
             var convertedDataName = GetLeafName(convertedDataPath);
+            var selectedUriId = AndroidOriginalMediaAccessPolicy.AnalyzeProviderMediaId(
+                selectedUri.LastPathSegment);
+            var selectedDisplayMatchesUriId =
+                AndroidOriginalMediaAccessPolicy.DisplayNameMatchesProviderMediaId(
+                    selectedDisplayName,
+                    selectedUri.LastPathSegment);
             global::Android.Util.Log.Info(
                 DiagnosticTag,
                 $"MK_UPLOAD_FILENAME event=metadata "
+                + $"picker={pickerName} "
                 + $"scheme={SafeToken(selectedUri.Scheme)} "
                 + $"authority={SafeToken(selectedUri.Authority)} "
-                + $"path_type={ClassifyUriPath(selectedUri, isDocumentUri)} "
-                + $"document_uri={(isDocumentUri ? "true" : "false")} "
+                + $"path_type={UriKindToken(selectedUriKind)} "
+                + $"document_uri={(selectedUriKind == AndroidMediaUriKind.Document ? "true" : "false")} "
                 + $"last_segment_shape={NameShape(selectedUri.LastPathSegment)} "
+                + $"uri_id_status={selectedUriId.Status} "
+                + $"uri_id_has_extension={(selectedUriId.HasExtension ? "true" : "false")} "
                 + $"selected_display_status={selectedDisplayStatus} "
                 + $"selected_display_shape={NameShape(selectedDisplayName)} "
                 + $"selected_display_ext={ExtensionToken(selectedDisplayName)} "
                 + $"selected_display_length={GetLeafName(selectedDisplayName)?.Length ?? 0} "
+                + $"selected_display_matches_uri_id={selectedDisplayMatchesUriId} "
+                + $"selected_display_decision={resolution.SelectedDisplayDecision} "
                 + $"selected_data_status={selectedDataStatus} "
                 + $"selected_data_shape={NameShape(selectedDataName)} "
                 + $"selected_data_ext={ExtensionToken(selectedDataName)} "
                 + $"selected_data_length={selectedDataName?.Length ?? 0} "
                 + $"selected_names_match={MatchState(selectedDisplayName, selectedDataName)} "
+                + $"selected_data_decision={resolution.SelectedDataDecision} "
+                + $"conversion_supported={(selectedUriKind == AndroidMediaUriKind.Document ? "true" : "false")} "
                 + $"conversion_attempted={(conversionAttempted ? "true" : "false")} "
                 + $"conversion_succeeded={(convertedMediaStoreUri is not null ? "true" : "false")} "
-                + $"converted_path_type={ClassifyConvertedUriPath(convertedMediaStoreUri)} "
+                + $"converted_path_type={UriKindToken(convertedUriKind)} "
                 + $"converted_display_status={convertedDisplayStatus} "
                 + $"converted_display_shape={NameShape(convertedDisplayName)} "
                 + $"converted_display_ext={ExtensionToken(convertedDisplayName)} "
                 + $"converted_display_length={GetLeafName(convertedDisplayName)?.Length ?? 0} "
+                + $"converted_display_decision={resolution.ConvertedDisplayDecision} "
                 + $"converted_data_status={convertedDataStatus} "
                 + $"converted_data_shape={NameShape(convertedDataName)} "
                 + $"converted_data_ext={ExtensionToken(convertedDataName)} "
                 + $"converted_data_length={convertedDataName?.Length ?? 0} "
+                + $"converted_data_decision={resolution.ConvertedDataDecision} "
                 + $"final_name_shape={NameShape(finalFileName)} "
                 + $"final_name_ext={ExtensionToken(finalFileName)} "
                 + $"final_name_length={GetLeafName(finalFileName)?.Length ?? 0} "
-                + $"final_source={finalFileNameSource}");
+                + $"final_source={resolution.Source} "
+                + $"final_reason={resolution.Reason}");
         }
         catch
         {
@@ -499,32 +504,28 @@ public sealed class AndroidOriginalMediaPicker : IMobileMediaPicker
         }
     }
 
-    private static string ClassifyUriPath(AndroidUri uri, bool isDocumentUri)
+    private static bool IsDocumentUri(Context context, AndroidUri uri)
     {
-        var path = uri.Path ?? string.Empty;
-        if (path.Contains("/picker/", StringComparison.OrdinalIgnoreCase))
+        try
         {
-            return "picker";
+            return DocumentsContract.IsDocumentUri(context, uri);
         }
-
-        if (isDocumentUri)
+        catch
         {
-            return "document";
+            return false;
         }
-
-        if (string.Equals(uri.Authority, "media", StringComparison.OrdinalIgnoreCase)
-            && (path.Contains("/images/media/", StringComparison.OrdinalIgnoreCase)
-                || path.Contains("/video/media/", StringComparison.OrdinalIgnoreCase)))
-        {
-            return "external_media";
-        }
-
-        return "other";
     }
 
-    private static string ClassifyConvertedUriPath(AndroidUri? uri) => uri is null
-        ? "none"
-        : ClassifyUriPath(uri, false);
+    private static string UriKindToken(AndroidMediaUriKind kind) => kind switch
+    {
+        AndroidMediaUriKind.Document => "document",
+        AndroidMediaUriKind.PhotoPicker => "picker",
+        AndroidMediaUriKind.PhotoPickerGetContent => "picker_get_content",
+        AndroidMediaUriKind.MediaStoreImage => "media_store_image",
+        AndroidMediaUriKind.MediaStoreVideo => "media_store_video",
+        AndroidMediaUriKind.MediaStoreFile => "media_store_file",
+        _ => "other",
+    };
 
     private static string MatchState(string? first, string? second)
     {
@@ -604,6 +605,21 @@ public sealed class AndroidOriginalMediaPicker : IMobileMediaPicker
                                          || character is '.' or '_' or '-')
             ? value.ToLowerInvariant()
             : "other";
+    }
+
+    [SupportedOSPlatform("android29.0")]
+    private static AndroidUri? ConvertDocumentToMediaStoreUri(
+        Context context,
+        AndroidUri documentUri)
+    {
+        try
+        {
+            return MediaStore.GetMediaUri(context, documentUri);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     [SupportedOSPlatform("android29.0")]

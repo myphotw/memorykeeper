@@ -41,6 +41,18 @@ public sealed class MobileUploadFoundationTests
         Assert.Contains("MediaStore.GetMediaUri", picker, StringComparison.Ordinal);
         Assert.Contains("MediaDataColumn", picker, StringComparison.Ordinal);
         Assert.Contains("ResolveOriginalFileName", picker, StringComparison.Ordinal);
+        Assert.Contains("picker={pickerName}", picker, StringComparison.Ordinal);
+        Assert.Contains("uri_id_status=", picker, StringComparison.Ordinal);
+        Assert.Contains("uri_id_has_extension=", picker, StringComparison.Ordinal);
+        Assert.Contains("selected_display_matches_uri_id=", picker, StringComparison.Ordinal);
+        Assert.Contains("selected_display_decision=", picker, StringComparison.Ordinal);
+        Assert.Contains("final_source=", picker, StringComparison.Ordinal);
+        Assert.Contains("final_reason=", picker, StringComparison.Ordinal);
+        Assert.Contains(
+            "selectedUriKind == AndroidMediaUriKind.Document",
+            picker,
+            StringComparison.Ordinal);
+        Assert.Contains("?? $\"selected-{Guid.NewGuid():N}\"", picker, StringComparison.Ordinal);
         Assert.Contains("_stagingStore.StageAsync", picker, StringComparison.Ordinal);
         Assert.Contains("MK_UPLOAD_ORIGINAL", picker, StringComparison.Ordinal);
         Assert.Contains("AndroidOriginalMediaPicker", startup, StringComparison.Ordinal);
@@ -90,40 +102,144 @@ public sealed class MobileUploadFoundationTests
     }
 
     [Theory]
-    [InlineData(
-        "/storage/emulated/0/DCIM/Camera/20261008_141830.jpg",
-        "18300.jpg",
-        "18300",
-        "20261008_141830.jpg")]
-    [InlineData(null, "20261008_141830.jpg", "18300", "20261008_141830.jpg")]
-    [InlineData(null, "제주 여행 사진 01.jpg", "18300", "제주 여행 사진 01.jpg")]
-    public void AndroidOriginalFileName_PrefersMediaPathAndPreservesDisplayName(
-        string? mediaDataPath,
-        string? displayName,
-        string? uriLastPathSegment,
-        string expected)
+    [InlineData("media", "/external_primary/images/media/18300", false, AndroidMediaUriKind.MediaStoreImage)]
+    [InlineData("media", "/external_primary/video/media/18300", false, AndroidMediaUriKind.MediaStoreVideo)]
+    [InlineData("media", "/external_primary/file/18300", false, AndroidMediaUriKind.MediaStoreFile)]
+    [InlineData("media", "/external_primary/file/18300.jpg", false, AndroidMediaUriKind.MediaStoreFile)]
+    [InlineData("media", "/picker/0/local/media/18300", false, AndroidMediaUriKind.PhotoPicker)]
+    [InlineData("media", "/picker_get_content/0/18300", false, AndroidMediaUriKind.PhotoPickerGetContent)]
+    [InlineData("media", "/picker_get_content/0/local/media/18300.jpg", false, AndroidMediaUriKind.PhotoPickerGetContent)]
+    [InlineData("media", "/unrecognized/18300", false, AndroidMediaUriKind.Other)]
+    [InlineData("media", "/external_primary/file/18300", true, AndroidMediaUriKind.Document)]
+    [InlineData("documents", "/document/image:18300", true, AndroidMediaUriKind.Document)]
+    public void AndroidMediaUriKind_RequiresRecognizedOfficialShape(
+        string authority,
+        string path,
+        bool isDocumentUri,
+        AndroidMediaUriKind expected)
     {
         Assert.Equal(
             expected,
-            AndroidOriginalMediaAccessPolicy.ResolveOriginalFileName(
-                mediaDataPath,
-                displayName,
-                uriLastPathSegment));
+            AndroidOriginalMediaAccessPolicy.ClassifyUri(authority, path, isDocumentUri));
     }
 
     [Theory]
-    [InlineData(null, null, "18300")]
-    [InlineData(null, "18300.jpg", "18300")]
-    [InlineData(null, "18300", "18300")]
-    public void AndroidOriginalFileName_ReturnsNullWhenMetadataCannotIdentifyOriginal(
-        string? mediaDataPath,
-        string? displayName,
-        string? uriLastPathSegment)
+    [InlineData("20261008_141830.jpg")]
+    [InlineData("제주 여행 사진 01.jpg")]
+    [InlineData("20261008.jpg")]
+    public void AndroidOriginalFileName_PreservesTrustedDisplayName(string displayName)
     {
-        Assert.Null(AndroidOriginalMediaAccessPolicy.ResolveOriginalFileName(
-            mediaDataPath,
+        var result = AndroidOriginalMediaAccessPolicy.ResolveOriginalFileName(
+            AndroidMediaUriKind.PhotoPickerGetContent,
             displayName,
-            uriLastPathSegment));
+            $"/storage/emulated/0/DCIM/Camera/{displayName}",
+            "18300.jpg",
+            AndroidMediaUriKind.Other,
+            null,
+            null,
+            null);
+
+        Assert.Equal(displayName, result.FileName);
+        Assert.Equal("selected_display", result.Source);
+        Assert.Equal("accepted", result.SelectedDisplayDecision);
+        Assert.Equal("corroborates_display", result.SelectedDataDecision);
+    }
+
+    [Theory]
+    [InlineData(AndroidMediaUriKind.MediaStoreFile, "18300")]
+    [InlineData(AndroidMediaUriKind.MediaStoreFile, "18300.jpg")]
+    [InlineData(AndroidMediaUriKind.PhotoPicker, "18300")]
+    [InlineData(AndroidMediaUriKind.PhotoPickerGetContent, "18300.jpg")]
+    public void AndroidOriginalFileName_DoesNotTreatProviderIdMetadataAsOriginalName(
+        AndroidMediaUriKind uriKind,
+        string uriLastPathSegment)
+    {
+        var result = AndroidOriginalMediaAccessPolicy.ResolveOriginalFileName(
+            uriKind,
+            "18300.jpg",
+            "/storage/emulated/0/DCIM/Camera/18300.jpg",
+            uriLastPathSegment,
+            AndroidMediaUriKind.Other,
+            null,
+            null,
+            null);
+
+        Assert.Null(result.FileName);
+        Assert.Equal("fallback", result.Source);
+        Assert.Equal("rejected_uri_id", result.SelectedDisplayDecision);
+        Assert.Equal("rejected_uri_id", result.SelectedDataDecision);
+    }
+
+    [Fact]
+    public void AndroidOriginalFileName_PreservesNumericNameWhenItDoesNotMatchProviderId()
+    {
+        var result = AndroidOriginalMediaAccessPolicy.ResolveOriginalFileName(
+            AndroidMediaUriKind.PhotoPickerGetContent,
+            "20261008.jpg",
+            "/storage/emulated/0/DCIM/Camera/20261008.jpg",
+            "18300.jpg",
+            AndroidMediaUriKind.Other,
+            null,
+            null,
+            null);
+
+        Assert.Equal("20261008.jpg", result.FileName);
+        Assert.Equal("selected_display", result.Source);
+        Assert.Equal("accepted", result.SelectedDisplayDecision);
+        Assert.Equal("corroborates_display", result.SelectedDataDecision);
+    }
+
+    [Fact]
+    public void AndroidOriginalFileName_DoesNotPreferDataPathOverRejectedDisplayName()
+    {
+        var result = AndroidOriginalMediaAccessPolicy.ResolveOriginalFileName(
+            AndroidMediaUriKind.MediaStoreFile,
+            "18300.jpg",
+            "/storage/emulated/0/DCIM/Camera/20261008_141830.jpg",
+            "18300",
+            AndroidMediaUriKind.Other,
+            null,
+            null,
+            null);
+
+        Assert.Null(result.FileName);
+        Assert.Equal("not_authoritative", result.SelectedDataDecision);
+    }
+
+    [Fact]
+    public void AndroidOriginalFileName_PrefersConvertedMediaStoreDisplayName()
+    {
+        var result = AndroidOriginalMediaAccessPolicy.ResolveOriginalFileName(
+            AndroidMediaUriKind.Document,
+            "18300.jpg",
+            null,
+            "image:18300",
+            AndroidMediaUriKind.MediaStoreImage,
+            "20261008_141830.jpg",
+            "/storage/emulated/0/DCIM/Camera/20261008_141830.jpg",
+            "18300");
+
+        Assert.Equal("20261008_141830.jpg", result.FileName);
+        Assert.Equal("converted_display", result.Source);
+        Assert.Equal("official_mediastore_display", result.Reason);
+    }
+
+    [Fact]
+    public void AndroidOriginalFileName_ReturnsFallbackWhenConversionAndMetadataAreUnavailable()
+    {
+        var result = AndroidOriginalMediaAccessPolicy.ResolveOriginalFileName(
+            AndroidMediaUriKind.Document,
+            null,
+            null,
+            "image:18300",
+            AndroidMediaUriKind.Other,
+            null,
+            null,
+            null);
+
+        Assert.Null(result.FileName);
+        Assert.Equal("fallback", result.Source);
+        Assert.Equal("no_trusted_display_name", result.Reason);
     }
 
     [Fact]
@@ -492,6 +608,35 @@ public sealed class MobileUploadFoundationTests
         Assert.NotEmpty(progressValues);
         Assert.Equal(fileBytes.Length, progressValues[^1].BytesSent);
         Assert.Equal(fileBytes.Length, progressValues[^1].TotalBytes);
+    }
+
+    [Fact]
+    public async Task MultipartUpload_AcceptsGeneratedFallbackFileName()
+    {
+        var fallbackFileName = $"selected-{Guid.NewGuid():N}";
+        var selected = CreateSelectedFile(
+            fallbackFileName,
+            "image/jpeg",
+            [0xFF, 0xD8, 0xFF, 0xD9]);
+        var upload = new MobileUploadFile(selected);
+        upload.SetContentSha256(ValidSha);
+        string? uploadedFileName = null;
+        var client = CreateApiClient(new DelegateHandler((request, _) =>
+        {
+            var multipart = Assert.IsType<MultipartFormDataContent>(request.Content);
+            var filePart = multipart.Single(part => string.Equals(
+                part.Headers.ContentDisposition?.Name?.Trim('"'),
+                "file",
+                StringComparison.Ordinal));
+            uploadedFileName = filePart.Headers.ContentDisposition?.FileName?.Trim('"');
+            return Task.FromResult(JsonResponse(HttpStatusCode.OK, """
+                {"job_id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","status":"WAITING"}
+                """));
+        }));
+
+        await client.UploadAsync(upload);
+
+        Assert.Equal(fallbackFileName, uploadedFileName);
     }
 
     [Fact]
