@@ -753,7 +753,7 @@
             <Grid
                 Grid.Row="2"
                 Margin="16,4,16,10"
-                ColumnDefinitions="*,Auto"
+                ColumnDefinitions="*,Auto,Auto"
                 ColumnSpacing="12">
                 <Label
                     FontSize="14"
@@ -765,6 +765,13 @@
                     IsRunning="{Binding Uploads.IsBusy}"
                     IsVisible="{Binding Uploads.IsBusy}"
                     VerticalOptions="Center" />
+                <Button
+                    Grid.Column="2"
+                    Clicked="ShareDiagnostics_OnClicked"
+                    FontSize="12"
+                    Padding="8,5"
+                    SemanticProperties.Description="업로드 진단 로그 공유"
+                    Text="진단 로그 공유" />
             </Grid>
 
             <CollectionView

@@ -1,6 +1,7 @@
 using Android.Content;
 using Android.Provider;
 using MemoryKeeper.Mobile.Uploads;
+using MemoryKeeper.Mobile.Diagnostics;
 using Microsoft.Maui.ApplicationModel;
 using System.Runtime.Versioning;
 using AndroidUri = Android.Net.Uri;
@@ -36,6 +37,8 @@ public sealed class AndroidOriginalMediaPicker : IMobileMediaPicker
         }
         catch (Exception ex)
         {
+            RecordDiagnostic(MobileDiagnosticEventCode.Selection,
+                MobileDiagnosticStage.Picker, MobileDiagnosticResult.Failed, ex);
             throw new MobileUploadException(
                 MobileUploadErrorCodes.FileAccess,
                 "사진 또는 동영상을 선택할 수 없습니다.",
@@ -44,6 +47,8 @@ public sealed class AndroidOriginalMediaPicker : IMobileMediaPicker
 
         if (pickerResult is null)
         {
+            RecordDiagnostic(MobileDiagnosticEventCode.Selection,
+                MobileDiagnosticStage.Picker, MobileDiagnosticResult.Cancelled);
             return [];
         }
 
@@ -63,6 +68,8 @@ public sealed class AndroidOriginalMediaPicker : IMobileMediaPicker
             global::Android.Util.Log.Info(
                 DiagnosticTag,
                 $"MK_UPLOAD_ORIGINAL event=selection picker={PickerName(pickerResult)} selected_count={selections.Length}");
+            RecordDiagnostic(MobileDiagnosticEventCode.Selection, MobileDiagnosticStage.Picker,
+                MobileDiagnosticResult.Succeeded);
             var supportsOriginalPhotoAccess = OperatingSystem.IsAndroidVersionAtLeast(
                 AndroidOriginalMediaAccessPolicy.Android10ApiLevel);
             var needsOriginalPhotoAccess = supportsOriginalPhotoAccess
@@ -76,6 +83,10 @@ public sealed class AndroidOriginalMediaPicker : IMobileMediaPicker
                     DiagnosticTag,
                     $"MK_UPLOAD_ORIGINAL event=permission_denied selected_count={selections.Length}");
             }
+            RecordDiagnostic(MobileDiagnosticEventCode.OriginalRead,
+                MobileDiagnosticStage.MediaLocationPermission,
+                !needsOriginalPhotoAccess ? MobileDiagnosticResult.NotApplicable
+                    : hasOriginalPhotoPermission ? MobileDiagnosticResult.Granted : MobileDiagnosticResult.Denied);
 
             var staged = new List<MobileSelectedMediaFile>(selections.Length);
             var permissionDeniedCount = 0;
@@ -86,6 +97,28 @@ public sealed class AndroidOriginalMediaPicker : IMobileMediaPicker
                 foreach (var selection in selections)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    if (selection.UriKind == AndroidMediaUriKind.Document)
+                    {
+                        try
+                        {
+                            // This checks an explicit URI grant; stream-open remains the definitive read result.
+                            var readGrant = activity.CheckUriPermission(
+                                selection.Uri,
+                                global::Android.OS.Process.MyPid(),
+                                global::Android.OS.Process.MyUid(),
+                                ActivityFlags.GrantReadUriPermission);
+                            RecordDiagnostic(MobileDiagnosticEventCode.OriginalRead,
+                                MobileDiagnosticStage.DocumentReadGrant,
+                                readGrant == global::Android.Content.PM.Permission.Granted
+                                    ? MobileDiagnosticResult.Granted : MobileDiagnosticResult.Denied);
+                        }
+                        catch (Exception ex)
+                        {
+                            RecordDiagnostic(MobileDiagnosticEventCode.OriginalRead,
+                                MobileDiagnosticStage.DocumentReadGrant,
+                                MobileDiagnosticResult.Failed, ex);
+                        }
+                    }
                     AndroidUri? mediaStoreUri = null;
                     if (selection.IsPhoto)
                     {
@@ -94,6 +127,11 @@ public sealed class AndroidOriginalMediaPicker : IMobileMediaPicker
                             mediaStoreUri = ResolveMediaStoreUri(activity, selection.Uri);
                         }
                     }
+                    RecordDiagnostic(MobileDiagnosticEventCode.OriginalRead,
+                        MobileDiagnosticStage.MediaStoreConversion,
+                        !selection.IsPhoto || !OperatingSystem.IsAndroidVersionAtLeast(29)
+                            ? MobileDiagnosticResult.NotApplicable
+                            : mediaStoreUri is null ? MobileDiagnosticResult.Failed : MobileDiagnosticResult.Succeeded);
                     var readMode = AndroidOriginalMediaAccessPolicy.Decide(
                         supportsOriginalPhotoAccess
                             ? AndroidOriginalMediaAccessPolicy.Android10ApiLevel
@@ -104,6 +142,8 @@ public sealed class AndroidOriginalMediaPicker : IMobileMediaPicker
                         mediaStoreUri is not null);
                     if (readMode == AndroidOriginalMediaReadMode.PermissionRequired)
                     {
+                        RecordDiagnostic(MobileDiagnosticEventCode.OriginalRead,
+                            MobileDiagnosticStage.RequireOriginal, MobileDiagnosticResult.Denied);
                         permissionDeniedCount++;
                         staged.Add(Unavailable(
                             selection,
@@ -115,6 +155,8 @@ public sealed class AndroidOriginalMediaPicker : IMobileMediaPicker
                     var readUri = selection.Uri;
                     if (readMode == AndroidOriginalMediaReadMode.UnsupportedProvider)
                     {
+                        RecordDiagnostic(MobileDiagnosticEventCode.OriginalRead,
+                            MobileDiagnosticStage.RequireOriginal, MobileDiagnosticResult.Unsupported);
                         unsupportedProviderCount++;
                         staged.Add(Unavailable(
                             selection,
@@ -123,6 +165,7 @@ public sealed class AndroidOriginalMediaPicker : IMobileMediaPicker
                         continue;
                     }
 
+                    var failureStage = MobileDiagnosticStage.RequireOriginal;
                     try
                     {
                         if (readMode == AndroidOriginalMediaReadMode.RequireMediaStoreOriginal)
@@ -144,19 +187,34 @@ public sealed class AndroidOriginalMediaPicker : IMobileMediaPicker
                                 throw new IOException(
                                     "Android 10 original media access is unavailable.");
                             }
+                            RecordDiagnostic(MobileDiagnosticEventCode.OriginalRead,
+                                MobileDiagnosticStage.RequireOriginal, MobileDiagnosticResult.Succeeded);
+                        }
+                        else
+                        {
+                            RecordDiagnostic(MobileDiagnosticEventCode.OriginalRead,
+                                MobileDiagnosticStage.RequireOriginal, MobileDiagnosticResult.NotApplicable);
                         }
 
+                        failureStage = MobileDiagnosticStage.OpenInputStream;
                         await using var originalStream = resolver.OpenInputStream(readUri)
                                                            ?? throw new IOException(
                                                                "The provider returned no original stream.");
+                        RecordDiagnostic(MobileDiagnosticEventCode.OriginalRead,
+                            MobileDiagnosticStage.OpenInputStream, MobileDiagnosticResult.Succeeded);
+                        failureStage = MobileDiagnosticStage.Staging;
                         staged.Add(await _stagingStore.StageAsync(
                             selection.FileName,
                             selection.ContentType,
                             originalStream,
                             cancellationToken));
+                        RecordDiagnostic(MobileDiagnosticEventCode.OriginalRead,
+                            MobileDiagnosticStage.Staging, MobileDiagnosticResult.Succeeded);
                     }
                     catch (System.OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                     {
+                        RecordDiagnostic(MobileDiagnosticEventCode.OriginalRead,
+                            failureStage, MobileDiagnosticResult.Cancelled);
                         throw;
                     }
                     catch (Exception ex)
@@ -165,6 +223,29 @@ public sealed class AndroidOriginalMediaPicker : IMobileMediaPicker
                         global::Android.Util.Log.Warn(
                             DiagnosticTag,
                             $"MK_UPLOAD_ORIGINAL event=read_failed media_type={(selection.IsPhoto ? "photo" : "video")} picker={PickerName(pickerResult)} error_type={ex.GetType().Name}");
+                        RecordDiagnostic(MobileDiagnosticEventCode.OriginalRead,
+                            failureStage, MobileDiagnosticResult.Failed, ex);
+                        if (selection.IsPhoto
+                            && selection.UriKind == AndroidMediaUriKind.Document
+                            && readMode == AndroidOriginalMediaReadMode.RequireMediaStoreOriginal
+                            && failureStage == MobileDiagnosticStage.OpenInputStream
+                            && mediaStoreUri is { } convertedUri)
+                        {
+                            try
+                            {
+                                // Diagnostic only: inspect one byte per path, never use a probe as upload input.
+                                await Task.Run(() =>
+                                {
+                                    ProbeReadPath(resolver, convertedUri,
+                                        MobileDiagnosticEventCode.MediaStoreReadProbe);
+                                    ProbeReadPath(resolver, readUri,
+                                        MobileDiagnosticEventCode.OriginalReadProbe);
+                                    ProbeReadPath(resolver, selection.Uri,
+                                        MobileDiagnosticEventCode.DocumentReadProbe);
+                                });
+                            }
+                            catch { /* Probe failures cannot change the existing upload failure. */ }
+                        }
                         staged.Add(Unavailable(
                             selection,
                             MobileUploadErrorCodes.OriginalMediaUnavailable,
@@ -177,6 +258,10 @@ public sealed class AndroidOriginalMediaPicker : IMobileMediaPicker
                 global::Android.Util.Log.Info(
                     DiagnosticTag,
                     $"MK_UPLOAD_ORIGINAL event=staging_complete selected_count={selections.Length} staged_count={staged.Count - permissionDeniedCount - unsupportedProviderCount - readFailureCount} permission_denied_count={permissionDeniedCount} unsupported_provider_count={unsupportedProviderCount} read_failure_count={readFailureCount}");
+                RecordDiagnostic(MobileDiagnosticEventCode.StagingComplete,
+                    MobileDiagnosticStage.Complete,
+                    permissionDeniedCount + unsupportedProviderCount + readFailureCount == 0
+                        ? MobileDiagnosticResult.Succeeded : MobileDiagnosticResult.Failed);
                 return staged;
             }
             catch
@@ -193,6 +278,24 @@ public sealed class AndroidOriginalMediaPicker : IMobileMediaPicker
 
     private static string PickerName(AndroidUploadMediaPickerResult pickerResult) =>
         pickerResult.UsedLocationAwarePhotoPicker ? "photo_picker" : "get_content";
+
+    private static void ProbeReadPath(ContentResolver resolver, AndroidUri uri,
+        MobileDiagnosticEventCode eventCode) =>
+        MobileOriginalReadProbe.Probe(
+            () => resolver.OpenInputStream(uri),
+            (stage, result, exception) => RecordDiagnostic(eventCode, stage, result, exception));
+
+    private static void RecordDiagnostic(MobileDiagnosticEventCode eventCode,
+        MobileDiagnosticStage stage, MobileDiagnosticResult result, Exception? exception = null)
+    {
+        try
+        {
+            MobileDiagnosticLog.Current?.Write(eventCode, stage, result, exception);
+            global::Android.Util.Log.Info(DiagnosticTag,
+                $"MK_UPLOAD_DIAGNOSTIC event={eventCode} stage={stage} result={result} exception_type={exception?.GetType().Name ?? "None"}");
+        }
+        catch { /* Diagnostics never alter the picker or upload result. */ }
+    }
 
     private static IReadOnlyList<AndroidUri> ExtractUris(Intent resultIntent)
     {
@@ -281,6 +384,15 @@ public sealed class AndroidOriginalMediaPicker : IMobileMediaPicker
             uri.Authority,
             uri.Path,
             isDocumentUri);
+        RecordDiagnostic(MobileDiagnosticEventCode.UriMetadata,
+            MobileDiagnosticStage.UriKind,
+            selectedUriKind switch
+            {
+                AndroidMediaUriKind.Document => MobileDiagnosticResult.Document,
+                AndroidMediaUriKind.PhotoPicker or AndroidMediaUriKind.PhotoPickerGetContent => MobileDiagnosticResult.PhotoPicker,
+                AndroidMediaUriKind.MediaStoreImage or AndroidMediaUriKind.MediaStoreVideo or AndroidMediaUriKind.MediaStoreFile => MobileDiagnosticResult.Media,
+                _ => MobileDiagnosticResult.Other,
+            });
         var selectedDataPath = QueryMediaDataPath(resolver, uri, out var selectedDataStatus);
         var conversionAttempted = false;
         AndroidUri? convertedMediaStoreUri = null;
@@ -294,6 +406,9 @@ public sealed class AndroidOriginalMediaPicker : IMobileMediaPicker
         {
             conversionAttempted = true;
             convertedMediaStoreUri = ConvertDocumentToMediaStoreUri(context, uri);
+            RecordDiagnostic(MobileDiagnosticEventCode.UriMetadata,
+                MobileDiagnosticStage.MediaStoreConversion,
+                convertedMediaStoreUri is null ? MobileDiagnosticResult.Failed : MobileDiagnosticResult.Succeeded);
             if (convertedMediaStoreUri is not null)
             {
                 convertedUriKind = AndroidOriginalMediaAccessPolicy.ClassifyUri(
@@ -320,7 +435,11 @@ public sealed class AndroidOriginalMediaPicker : IMobileMediaPicker
             convertedDisplayName,
             convertedDataPath,
             convertedMediaStoreUri?.LastPathSegment);
-        var fileName = fileNameResolution.FileName ?? $"selected-{Guid.NewGuid():N}";
+        var contentType = resolver.GetType(uri);
+        var fileName = fileNameResolution.FileName
+                       ?? AndroidOriginalMediaAccessPolicy.CreateFallbackFileName(
+                           Guid.NewGuid(),
+                           contentType);
         LogFileNameDiagnostics(
             uri,
             pickerName,
@@ -338,7 +457,10 @@ public sealed class AndroidOriginalMediaPicker : IMobileMediaPicker
             convertedDataStatus,
             fileName,
             fileNameResolution);
-        var contentType = resolver.GetType(uri);
+        RecordDiagnostic(MobileDiagnosticEventCode.UriMetadata,
+            MobileDiagnosticStage.FileName,
+            fileNameResolution.FileName is null
+                ? MobileDiagnosticResult.Failed : MobileDiagnosticResult.Succeeded);
         if (string.IsNullOrWhiteSpace(contentType))
         {
             contentType = ResolveContentType(fileName);
@@ -346,7 +468,7 @@ public sealed class AndroidOriginalMediaPicker : IMobileMediaPicker
 
         var isPhoto = contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
                       || IsPhotoExtension(Path.GetExtension(fileName));
-        return new SelectedUri(uri, fileName, contentType, fileSize, isPhoto);
+        return new SelectedUri(uri, fileName, contentType, fileSize, isPhoto, selectedUriKind);
     }
 
     private static string? QueryMediaDataPath(
@@ -616,8 +738,10 @@ public sealed class AndroidOriginalMediaPicker : IMobileMediaPicker
         {
             return MediaStore.GetMediaUri(context, documentUri);
         }
-        catch
+        catch (Exception ex)
         {
+            RecordDiagnostic(MobileDiagnosticEventCode.UriMetadata,
+                MobileDiagnosticStage.MediaStoreConversion, MobileDiagnosticResult.Failed, ex);
             return null;
         }
     }
@@ -634,8 +758,10 @@ public sealed class AndroidOriginalMediaPicker : IMobileMediaPicker
         {
             return MediaStore.GetMediaUri(context, selectedUri);
         }
-        catch
+        catch (Exception ex)
         {
+            RecordDiagnostic(MobileDiagnosticEventCode.OriginalRead,
+                MobileDiagnosticStage.MediaStoreConversion, MobileDiagnosticResult.Failed, ex);
             return null;
         }
     }
@@ -677,5 +803,6 @@ public sealed class AndroidOriginalMediaPicker : IMobileMediaPicker
         string FileName,
         string ContentType,
         long FileSize,
-        bool IsPhoto);
+        bool IsPhoto,
+        AndroidMediaUriKind UriKind);
 }

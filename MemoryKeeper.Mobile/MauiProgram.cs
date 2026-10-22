@@ -22,6 +22,8 @@ public static class MauiProgram
     public static MauiApp CreateMauiApp()
     {
         MobileStartupCheckpoint.Record("MAUI-CREATE-START");
+        try { MobileDiagnosticLog.Initialize(FileSystem.AppDataDirectory); }
+        catch { /* Diagnostics are never required for startup. */ }
         var builder = MauiApp.CreateBuilder();
         MobileStartupCheckpoint.Record("MAUI-BUILDER-CREATED");
         builder

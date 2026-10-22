@@ -87,6 +87,12 @@ public sealed class MainActivity : MauiAppCompatActivity
             global::Android.Util.Log.Info(
                 DiagnosticTag,
                 $"MK_UPLOAD_FILENAME event=picker_selected api_level={apiLevel} extension_version={extensionVersion} picker={(usesLocationAwarePhotoPicker ? "pick_images" : "get_content")} location_picker_supported={(usesLocationAwarePhotoPicker ? "true" : "false")}");
+            MobileDiagnosticLog.Current?.Write(
+                MobileDiagnosticEventCode.PickerSelected,
+                MobileDiagnosticStage.Picker,
+                usesLocationAwarePhotoPicker
+                    ? MobileDiagnosticResult.PickImages
+                    : MobileDiagnosticResult.GetContent);
             using var pickerIntent = usesLocationAwarePhotoPicker
                 ? CreateLocationAwarePhotoPickerIntent()
                 : CreateOriginalContentPickerIntent();

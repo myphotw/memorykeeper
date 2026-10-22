@@ -33,12 +33,22 @@ public sealed class MobileUploadFoundationTests
             StringComparison.Ordinal);
         Assert.Contains("Intent.ExtraLocalOnly", activity, StringComparison.Ordinal);
         Assert.Contains("Intent.ActionGetContent", activity, StringComparison.Ordinal);
+        Assert.DoesNotContain("Intent.ActionOpenDocument", activity, StringComparison.Ordinal);
+        Assert.Contains("CreateOriginalContentPickerIntent()", activity, StringComparison.Ordinal);
+        Assert.Contains("MobileDiagnosticResult.GetContent", activity, StringComparison.Ordinal);
+        Assert.Contains("Intent.CategoryOpenable", activity, StringComparison.Ordinal);
         Assert.Contains("Intent.ExtraAllowMultiple", activity, StringComparison.Ordinal);
         Assert.Contains("\"image/*\"", activity, StringComparison.Ordinal);
         Assert.Contains("\"video/*\"", activity, StringComparison.Ordinal);
+        Assert.Contains("resultCode == Result.Ok ? data : null", activity, StringComparison.Ordinal);
+        Assert.Contains("clipData.GetItemAt(index)?.Uri", picker, StringComparison.Ordinal);
         Assert.Contains("ACCESS_MEDIA_LOCATION", manifest, StringComparison.Ordinal);
         Assert.Contains("MediaStore.SetRequireOriginal", picker, StringComparison.Ordinal);
         Assert.Contains("MediaStore.GetMediaUri", picker, StringComparison.Ordinal);
+        Assert.Contains("var readUri = selection.Uri", picker, StringComparison.Ordinal);
+        Assert.Contains("readUri = RequireOriginalUri(mediaStoreUri)", picker, StringComparison.Ordinal);
+        Assert.Contains("resolver.OpenInputStream(readUri)", picker, StringComparison.Ordinal);
+        Assert.Contains("\"get_content\"", picker, StringComparison.Ordinal);
         Assert.Contains("MediaDataColumn", picker, StringComparison.Ordinal);
         Assert.Contains("ResolveOriginalFileName", picker, StringComparison.Ordinal);
         Assert.Contains("picker={pickerName}", picker, StringComparison.Ordinal);
@@ -52,7 +62,7 @@ public sealed class MobileUploadFoundationTests
             "selectedUriKind == AndroidMediaUriKind.Document",
             picker,
             StringComparison.Ordinal);
-        Assert.Contains("?? $\"selected-{Guid.NewGuid():N}\"", picker, StringComparison.Ordinal);
+        Assert.Contains("CreateFallbackFileName(", picker, StringComparison.Ordinal);
         Assert.Contains("_stagingStore.StageAsync", picker, StringComparison.Ordinal);
         Assert.Contains("MK_UPLOAD_ORIGINAL", picker, StringComparison.Ordinal);
         Assert.Contains("AndroidOriginalMediaPicker", startup, StringComparison.Ordinal);
@@ -143,6 +153,27 @@ public sealed class MobileUploadFoundationTests
         Assert.Equal("selected_display", result.Source);
         Assert.Equal("accepted", result.SelectedDisplayDecision);
         Assert.Equal("corroborates_display", result.SelectedDataDecision);
+    }
+
+    [Theory]
+    [InlineData("20261008_141830.jpg")]
+    [InlineData("제주 여행 사진 01.heic")]
+    [InlineData("20261008.png")]
+    [InlineData("123456.mp4")]
+    public void AndroidOriginalFileName_PreservesDocumentDisplayName(string displayName)
+    {
+        var result = AndroidOriginalMediaAccessPolicy.ResolveOriginalFileName(
+            AndroidMediaUriKind.Document,
+            displayName,
+            null,
+            "image:18300",
+            AndroidMediaUriKind.Other,
+            null,
+            null,
+            null);
+
+        Assert.Equal(displayName, result.FileName);
+        Assert.Equal("selected_display", result.Source);
     }
 
     [Theory]
@@ -240,6 +271,29 @@ public sealed class MobileUploadFoundationTests
         Assert.Null(result.FileName);
         Assert.Equal("fallback", result.Source);
         Assert.Equal("no_trusted_display_name", result.Reason);
+    }
+
+    [Theory]
+    [InlineData("image/jpeg", ".jpg")]
+    [InlineData("image/heic", ".heic")]
+    [InlineData("image/heif", ".heif")]
+    [InlineData("image/png", ".png")]
+    [InlineData("video/mp4", ".mp4")]
+    [InlineData("video/quicktime", ".mov")]
+    [InlineData("video/x-matroska", ".mkv")]
+    [InlineData("image/jpeg; charset=binary", ".jpg")]
+    [InlineData("application/octet-stream", "")]
+    [InlineData("image/*", "")]
+    [InlineData(null, "")]
+    public void AndroidOriginalFileName_FallbackUsesOnlyKnownConcreteMediaType(
+        string? contentType,
+        string expectedExtension)
+    {
+        var fileId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+
+        Assert.Equal(
+            $"selected-{fileId:N}{expectedExtension}",
+            AndroidOriginalMediaAccessPolicy.CreateFallbackFileName(fileId, contentType));
     }
 
     [Fact]
@@ -613,7 +667,9 @@ public sealed class MobileUploadFoundationTests
     [Fact]
     public async Task MultipartUpload_AcceptsGeneratedFallbackFileName()
     {
-        var fallbackFileName = $"selected-{Guid.NewGuid():N}";
+        var fallbackFileName = AndroidOriginalMediaAccessPolicy.CreateFallbackFileName(
+            Guid.NewGuid(), "image/jpeg");
+        Assert.EndsWith(".jpg", fallbackFileName, StringComparison.Ordinal);
         var selected = CreateSelectedFile(
             fallbackFileName,
             "image/jpeg",

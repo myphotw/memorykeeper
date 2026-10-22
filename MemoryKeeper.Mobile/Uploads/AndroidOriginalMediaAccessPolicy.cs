@@ -170,6 +170,26 @@ public static class AndroidOriginalMediaAccessPolicy
             convertedDataDecision);
     }
 
+    public static string CreateFallbackFileName(Guid fileId, string? contentType)
+    {
+        var mediaType = contentType?.Split(';', 2)[0].Trim().ToLowerInvariant();
+        var extension = mediaType switch
+        {
+            "image/jpeg" => ".jpg",
+            "image/heic" => ".heic",
+            "image/heif" => ".heif",
+            "image/png" => ".png",
+            "image/gif" => ".gif",
+            "image/webp" => ".webp",
+            "video/mp4" => ".mp4",
+            "video/quicktime" => ".mov",
+            "video/x-matroska" => ".mkv",
+            "video/webm" => ".webm",
+            _ => string.Empty,
+        };
+        return $"selected-{fileId:N}{extension}";
+    }
+
     public static AndroidOriginalMediaReadMode Decide(
         int apiLevel,
         bool isPhoto,

@@ -33,7 +33,8 @@ public sealed class PhotoExportService
         var copyFailed = 0;
         var completed = 0;
 
-        foreach (var item in items)
+        // A stable order also makes suffix assignment stable when several files share a second.
+        foreach (var item in items.OrderBy(item => item.FileId, StringComparer.Ordinal))
         {
             cancellationToken.ThrowIfCancellationRequested();
             try
@@ -46,7 +47,8 @@ public sealed class PhotoExportService
                     SafeSegment(item.Region, GalleryHierarchyService.OtherTitle),
                     SafeSegment(item.Place, GalleryHierarchyService.UnclassifiedTitle));
                 Directory.CreateDirectory(directory);
-                var targetPath = ResolveCollisionPath(directory, item.Filename);
+                var (exportFileName, usesCaptureDate) = ResolveExportFileName(item, detail.Detail);
+                var targetPath = ResolveCollisionPath(directory, exportFileName, usesCaptureDate);
                 var temporaryPath = targetPath + ".partial";
                 try
                 {
@@ -115,16 +117,67 @@ public sealed class PhotoExportService
         };
     }
 
-    internal static string ResolveCollisionPath(string directory, string filename)
+    private static (string FileName, bool UsesCaptureDate) ResolveExportFileName(
+        PhotoExportCatalogItemDto item,
+        MemoryKeeper.Application.DTOs.Gallery.PhotoDetailDto detail)
+    {
+        // A DATE value may contain a synthetic midnight. Never turn that into an invented time.
+        if (detail.EffectiveCaptureDatetime is not { } capture
+            || !string.Equals(detail.EffectiveCapturePrecision, "DATETIME", StringComparison.OrdinalIgnoreCase))
+        {
+            return (item.Filename, false);
+        }
+
+        var extension = ResolveOriginalExtension(item, detail);
+        return extension is null
+            ? (item.Filename, false)
+            : (capture.ToLocalTime().ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture) + extension, true);
+    }
+
+    private static string? ResolveOriginalExtension(
+        PhotoExportCatalogItemDto item,
+        MemoryKeeper.Application.DTOs.Gallery.PhotoDetailDto detail)
+    {
+        foreach (var candidate in new[]
+                 {
+                     detail.Extension,
+                     Path.GetExtension(detail.Filename),
+                     Path.GetExtension(item.Filename),
+                 })
+        {
+            if (string.IsNullOrWhiteSpace(candidate))
+            {
+                continue;
+            }
+
+            var extension = candidate.Trim();
+            if (!extension.StartsWith('.'))
+            {
+                extension = "." + extension;
+            }
+
+            if (extension.Length > 1 && extension.Skip(1).All(char.IsAsciiLetterOrDigit))
+            {
+                return extension.ToLowerInvariant();
+            }
+        }
+
+        return null;
+    }
+
+    internal static string ResolveCollisionPath(string directory, string filename, bool usesCaptureDate = false)
     {
         var safeName = SafeSegment(Path.GetFileName(filename), "photo");
         var extension = Path.GetExtension(safeName);
         var stem = Path.GetFileNameWithoutExtension(safeName);
         var candidate = Path.Combine(directory, safeName);
-        var suffix = 2;
-        while (File.Exists(candidate) || File.Exists(Path.ChangeExtension(candidate, ".xmp")))
+        var suffix = usesCaptureDate ? 1 : 2;
+        while (File.Exists(candidate)
+               || File.Exists(candidate + ".partial")
+               || File.Exists(Path.ChangeExtension(candidate, ".xmp")))
         {
-            candidate = Path.Combine(directory, $"{stem}_{suffix}{extension}");
+            var numberedStem = usesCaptureDate ? $"{stem}_{suffix:000}" : $"{stem}_{suffix}";
+            candidate = Path.Combine(directory, numberedStem + extension);
             suffix++;
         }
 

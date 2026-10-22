@@ -2,6 +2,8 @@ using MemoryKeeper.Mobile.Controls;
 using MemoryKeeper.Mobile.Diagnostics;
 using MemoryKeeper.Mobile.Models;
 using MemoryKeeper.Mobile.ViewModels;
+using Microsoft.Maui.ApplicationModel.DataTransfer;
+using Microsoft.Maui.Storage;
 
 namespace MemoryKeeper.Mobile.Views;
 
@@ -20,6 +22,29 @@ public partial class HomePage : ContentPage
     }
 
     public HomeViewModel ViewModel { get; }
+
+    private async void ShareDiagnostics_OnClicked(object? sender, EventArgs e)
+    {
+        try
+        {
+            var snapshot = MobileDiagnosticLog.Current?.CreateShareSnapshot(FileSystem.CacheDirectory);
+            if (snapshot is null)
+            {
+                await DisplayAlert("진단 로그", "공유할 진단 로그가 없습니다.", "확인");
+                return;
+            }
+
+            await Share.Default.RequestAsync(new ShareFileRequest
+            {
+                Title = "MemoryKeeper 진단 로그 공유",
+                File = new ShareFile(snapshot),
+            });
+        }
+        catch
+        {
+            await DisplayAlert("진단 로그", "진단 로그를 공유할 수 없습니다. 다시 시도해 주세요.", "확인");
+        }
+    }
 
     protected override void OnAppearing()
     {

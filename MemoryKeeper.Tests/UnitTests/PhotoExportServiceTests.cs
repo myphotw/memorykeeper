@@ -1,8 +1,10 @@
+using System.Globalization;
 using System.Text;
 using MemoryKeeper.Application.DTOs;
 using MemoryKeeper.Application.DTOs.Gallery;
 using MemoryKeeper.Application.Interfaces;
 using MemoryKeeper.Application.Services;
+using GalleryPhotoDetailDto = MemoryKeeper.Application.DTOs.Gallery.PhotoDetailDto;
 
 namespace MemoryKeeper.Tests.UnitTests;
 
@@ -33,6 +35,156 @@ public sealed class PhotoExportServiceTests
             Assert.Equal(original, source.Bytes["one"]);
             Assert.Equal(2, result.ExportedCount);
             Assert.Equal(2, Assert.Single(progress.TakeLast(1)).Completed);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Export_UsesUserCorrectedEffectiveDatetimeWithoutChangingTheOriginal()
+    {
+        var root = NewTempDirectory();
+        try
+        {
+            var source = new FakeSource(Item("corrected", "selected-abc.jpg"));
+            var original = source.Bytes["corrected"].ToArray();
+            var corrected = new DateTimeOffset(2026, 10, 8, 14, 18, 17, TimeSpan.FromHours(9));
+            source.Details["corrected"] = Detail("corrected", "selected-abc.jpg", ".jpg", corrected);
+
+            var result = await new PhotoExportService(source).ExportAsync(root);
+
+            var directory = ExportDirectory(root);
+            var name = corrected.ToLocalTime().ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture) + ".jpg";
+            Assert.Equal(original, await File.ReadAllBytesAsync(Path.Combine(directory, name)));
+            Assert.Equal(original, source.Bytes["corrected"]);
+            Assert.Equal(corrected, source.Details["corrected"].EffectiveCaptureDatetime);
+            Assert.Equal(1, result.ExportedCount);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Export_UsesEffectiveDatetimeWhenNoUserCorrectionExists()
+    {
+        var root = NewTempDirectory();
+        try
+        {
+            var capture = new DateTimeOffset(2026, 10, 8, 9, 30, 5, TimeSpan.FromHours(9));
+            var source = new FakeSource(Item("one", "selected-abc.jpg"));
+            source.Details["one"] = new GalleryPhotoDetailDto
+            {
+                FileId = "one",
+                Filename = "selected-abc.jpg",
+                Extension = ".jpg",
+                RawCaptureDatetime = capture,
+                EffectiveCaptureDatetime = capture,
+                EffectiveCapturePrecision = "DATETIME",
+            };
+
+            await new PhotoExportService(source).ExportAsync(root);
+
+            var name = capture.ToLocalTime().ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture) + ".jpg";
+            Assert.True(File.Exists(Path.Combine(ExportDirectory(root), name)));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Export_SameSecondUsesStableFileIdOrderAndNeverOverwritesExistingNames()
+    {
+        var root = NewTempDirectory();
+        try
+        {
+            var capture = new DateTimeOffset(2026, 10, 8, 14, 18, 17, TimeSpan.FromHours(9));
+            var source = new FakeSource(Item("b", "b.jpg"), Item("a", "a.jpg"));
+            source.Details["a"] = Detail("a", "a.jpg", ".jpg", capture);
+            source.Details["b"] = Detail("b", "b.jpg", ".jpg", capture);
+            var directory = ExportDirectory(root);
+            Directory.CreateDirectory(directory);
+            var stem = capture.ToLocalTime().ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
+            var existing = Path.Combine(directory, stem + ".jpg");
+            await File.WriteAllTextAsync(existing, "existing file");
+
+            var result = await new PhotoExportService(source).ExportAsync(root);
+
+            Assert.Equal("existing file", await File.ReadAllTextAsync(existing));
+            Assert.Equal(source.Bytes["a"], await File.ReadAllBytesAsync(Path.Combine(directory, stem + "_001.jpg")));
+            Assert.Equal(source.Bytes["b"], await File.ReadAllBytesAsync(Path.Combine(directory, stem + "_002.jpg")));
+            Assert.Equal(2, result.ExportedCount);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("selected-a.jpg", ".jpg")]
+    [InlineData("selected-a.png", ".png")]
+    [InlineData("selected-a.heic", ".heic")]
+    public async Task Export_DateNameRetainsOriginalFormatExtension(string storedName, string extension)
+    {
+        var root = NewTempDirectory();
+        try
+        {
+            var capture = new DateTimeOffset(2026, 10, 8, 9, 30, 5, TimeSpan.FromHours(9));
+            var source = new FakeSource(Item("one", storedName));
+            source.Details["one"] = Detail("one", storedName, extension, capture);
+
+            await new PhotoExportService(source).ExportAsync(root);
+
+            var name = capture.ToLocalTime().ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture) + extension;
+            Assert.True(File.Exists(Path.Combine(ExportDirectory(root), name)));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("DATE")]
+    [InlineData("YEAR")]
+    [InlineData(null)]
+    public async Task Export_UnknownTimePrecisionKeepsStoredName(string? precision)
+    {
+        var root = NewTempDirectory();
+        try
+        {
+            var source = new FakeSource(Item("one", "selected-abc.jpg"));
+            source.Details["one"] = Detail("one", "selected-abc.jpg", ".jpg",
+                new DateTimeOffset(2026, 10, 8, 0, 0, 0, TimeSpan.FromHours(9)), precision);
+
+            await new PhotoExportService(source).ExportAsync(root);
+
+            Assert.True(File.Exists(Path.Combine(ExportDirectory(root), "selected-abc.jpg")));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Export_MissingEffectiveDatetimeKeepsStoredName()
+    {
+        var root = NewTempDirectory();
+        try
+        {
+            var source = new FakeSource(Item("one", "selected-abc.jpg"));
+            source.Details["one"] = Detail("one", "selected-abc.jpg", ".jpg", null);
+
+            await new PhotoExportService(source).ExportAsync(root);
+
+            Assert.True(File.Exists(Path.Combine(ExportDirectory(root), "selected-abc.jpg")));
         }
         finally
         {
@@ -84,6 +236,21 @@ public sealed class PhotoExportServiceTests
         Longitude = 127.5,
     };
 
+    private static GalleryPhotoDetailDto Detail(string fileId, string filename, string extension,
+        DateTimeOffset? effective, string? precision = "DATETIME") => new()
+    {
+        FileId = fileId,
+        Filename = filename,
+        Extension = extension,
+        RawCaptureDatetime = new DateTimeOffset(2020, 1, 2, 3, 4, 5, TimeSpan.FromHours(9)),
+        UserCaptureDatetime = effective,
+        EffectiveCaptureDatetime = effective,
+        EffectiveCapturePrecision = precision,
+    };
+
+    private static string ExportDirectory(string root) =>
+        Path.Combine(root, "2026", "대한민국", "구례군", "피아골");
+
     private static string NewTempDirectory()
     {
         var path = Path.Combine(Path.GetTempPath(), "MemoryKeeper.Tests", Guid.NewGuid().ToString("N"));
@@ -98,6 +265,7 @@ public sealed class PhotoExportServiceTests
 
     private sealed class FakeSource(params PhotoExportCatalogItemDto[] items) : IPhotoExportSource
     {
+        public Dictionary<string, GalleryPhotoDetailDto> Details { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, byte[]> Bytes { get; } = items.ToDictionary(
             item => item.FileId,
             item => Encoding.UTF8.GetBytes($"original-{item.FileId}"));
@@ -110,7 +278,7 @@ public sealed class PhotoExportServiceTests
             Task.FromResult(new PhotoExportSourceDetailDto
             {
                 OriginalUrl = $"/original/{fileId}",
-                Detail = new MemoryKeeper.Application.DTOs.Gallery.PhotoDetailDto
+                Detail = Details.TryGetValue(fileId, out var detail) ? detail : new GalleryPhotoDetailDto
                 {
                     FileId = fileId,
                     Filename = items.Single(item => item.FileId == fileId).Filename,

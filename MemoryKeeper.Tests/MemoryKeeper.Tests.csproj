@@ -40,6 +40,8 @@
     <Compile Include="..\MemoryKeeper.Mobile\Images\IMobilePreviewSourceFactory.cs" Link="Mobile\Images\IMobilePreviewSourceFactory.cs" />
     <Compile Include="..\MemoryKeeper.Mobile\Images\MobilePreviewDiagnostics.cs" Link="Mobile\Images\MobilePreviewDiagnostics.cs" />
     <Compile Include="..\MemoryKeeper.Mobile\Images\MobilePreviewLoadResult.cs" Link="Mobile\Images\MobilePreviewLoadResult.cs" />
+    <Compile Include="..\MemoryKeeper.Mobile\Diagnostics\MobileDiagnosticLog.cs" Link="Mobile\Diagnostics\MobileDiagnosticLog.cs" />
+    <Compile Include="..\MemoryKeeper.Mobile\Diagnostics\MobileOriginalReadProbe.cs" Link="Mobile\Diagnostics\MobileOriginalReadProbe.cs" />
     <Compile Include="..\MemoryKeeper.Mobile\Images\MobilePreviewSourceFactory.cs" Link="Mobile\Images\MobilePreviewSourceFactory.cs" />
     <Compile Include="..\MemoryKeeper.Mobile\Controls\MobileViewerGestureDecision.cs" Link="Mobile\Controls\MobileViewerGestureDecision.cs" />
     <Compile Include="..\MemoryKeeper.Mobile\Controls\MobileViewerPosition.cs" Link="Mobile\Controls\MobileViewerPosition.cs" />
