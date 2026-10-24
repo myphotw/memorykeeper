@@ -864,6 +864,40 @@ public sealed class GalleryPageLayoutTests
         Assert.Contains("node.BuildQuery(SearchText)", viewModel, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void GallerySelectedExport_ReusesNativeSelectionWithoutReloadingOrClearingEditState()
+    {
+        var xaml = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Views", "GalleryPage.xaml"));
+        var page = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "Views", "GalleryPage.xaml.cs"));
+        var viewModel = File.ReadAllText(FindSourceFile("MemoryKeeper.App", "ViewModels", "GalleryViewModel.cs"));
+        var service = File.ReadAllText(FindSourceFile("MemoryKeeper.Application", "Services", "PhotoExportService.cs"));
+        var handlerStart = page.IndexOf("private async void ExportSelectedPhotos_OnClick", StringComparison.Ordinal);
+        var handlerEnd = page.IndexOf("private async Task<IReadOnlyDictionary<Guid, int>?> LoadLatestPhotoCategoryRevisionsAsync", handlerStart, StringComparison.Ordinal);
+        Assert.True(handlerStart >= 0 && handlerEnd > handlerStart);
+        var handler = page[handlerStart..handlerEnd];
+
+        Assert.Contains("Content=\"선택 사진 내보내기\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("IsEnabled=\"{Binding CanExportSelected}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"ExportSelectedPhotos_OnClick\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("CanExportSelected => IsEditing && !IsMutating && SelectedCount > 0", viewModel, StringComparison.Ordinal);
+        Assert.Contains("var selected = GetSelectedMutationItems();", handler, StringComparison.Ordinal);
+        Assert.Contains("selected.Select(item => item.BackendFileId)", handler, StringComparison.Ordinal);
+        Assert.Contains("_folderPickerService.PickFolderAsync", handler, StringComparison.Ordinal);
+        Assert.Contains("_isExportFolderPickerOpen", handler, StringComparison.Ordinal);
+        Assert.Contains("_photoExportService.ExportSelectedAsync", handler, StringComparison.Ordinal);
+        Assert.Contains("result.TotalCount != selected.Count", handler, StringComparison.Ordinal);
+        Assert.Contains("result.DuplicateSkippedCount", handler, StringComparison.Ordinal);
+        Assert.Contains("value.DuplicateSkipped", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("_catalogInvalidation", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("LoadCommand", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("ExitEditMode", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("SelectionMode", handler, StringComparison.Ordinal);
+        Assert.Contains("requestedFileIds.Contains(item.FileId)", service, StringComparison.Ordinal);
+        Assert.True(
+            service.IndexOf("requestedFileIds.Contains(item.FileId)", StringComparison.Ordinal)
+            < service.IndexOf("_source.GetDetailAsync", StringComparison.Ordinal));
+    }
+
     private static int CountOccurrences(string source, string value)
     {
         var count = 0;

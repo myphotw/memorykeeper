@@ -42,6 +42,8 @@ public sealed partial class GalleryPage : Page
     private readonly GalleryPlaceAssignmentWorkflow _placeAssignmentWorkflow;
     private readonly IGalleryApiRepository _galleryApiRepository;
     private readonly MemoryKeeperWriteService _writeService;
+    private readonly PhotoExportService _photoExportService;
+    private readonly IFolderPickerService _folderPickerService;
     private readonly ILocationResolver _locationResolver;
     private readonly ILoggerFactory _loggerFactory;
     private readonly ISettingRepository _settingRepository;
@@ -49,6 +51,7 @@ public sealed partial class GalleryPage : Page
     private bool _detailViewHosted;
     private bool _photoScrollViewerAttachQueued;
     private bool _isGalleryPageLoaded;
+    private bool _isExportFolderPickerOpen;
 
     public event EventHandler? OpenImportRequested;
 
@@ -69,6 +72,8 @@ public sealed partial class GalleryPage : Page
         GalleryPlaceAssignmentWorkflow placeAssignmentWorkflow,
         IGalleryApiRepository galleryApiRepository,
         MemoryKeeperWriteService writeService,
+        PhotoExportService photoExportService,
+        IFolderPickerService folderPickerService,
         ILocationResolver locationResolver,
         ILoggerFactory loggerFactory,
         ISettingRepository settingRepository)
@@ -82,6 +87,8 @@ public sealed partial class GalleryPage : Page
         _placeAssignmentWorkflow = placeAssignmentWorkflow;
         _galleryApiRepository = galleryApiRepository;
         _writeService = writeService;
+        _photoExportService = photoExportService;
+        _folderPickerService = folderPickerService;
         _locationResolver = locationResolver;
         _loggerFactory = loggerFactory;
         _settingRepository = settingRepository;
@@ -934,6 +941,95 @@ public sealed partial class GalleryPage : Page
             .Where(item => item.MediaId != Guid.Empty && !string.IsNullOrWhiteSpace(item.BackendFileId))
             .DistinctBy(item => item.BackendFileId, StringComparer.OrdinalIgnoreCase)
             .ToList();
+
+    private async void ExportSelectedPhotos_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (!ViewModel.CanExportSelected || _isExportFolderPickerOpen)
+        {
+            return;
+        }
+
+        var selected = GetSelectedMutationItems();
+        if (selected.Count == 0)
+        {
+            ViewModel.CompleteMutation(false, "내보낼 사진을 선택하세요.");
+            return;
+        }
+
+        if (selected.Count != PhotoGrid.SelectedItems.Count)
+        {
+            ViewModel.CompleteMutation(false, "선택한 사진의 파일 정보를 확인할 수 없습니다. 사진첩을 새로 고친 뒤 다시 시도해 주세요.");
+            return;
+        }
+
+        string? destination;
+        _isExportFolderPickerOpen = true;
+        try
+        {
+            destination = await _folderPickerService.PickFolderAsync("선택 사진 내보내기 폴더 선택");
+        }
+        catch (Exception ex)
+        {
+            GalleryDiagnostics.WriteException("GalleryPage.ExportSelected.PickFolder", ex);
+            ViewModel.CompleteMutation(false, "내보낼 폴더를 선택하지 못했습니다. 다시 시도해 주세요.");
+            return;
+        }
+        finally
+        {
+            _isExportFolderPickerOpen = false;
+        }
+
+        if (string.IsNullOrWhiteSpace(destination))
+        {
+            return;
+        }
+
+        ViewModel.BeginMutation(
+            $"선택한 사진 {selected.Count:N0}장을 내보낼 준비를 하고 있습니다.",
+            "사진 정보와 저장 위치를 확인하고 있습니다.");
+        var progress = new Progress<PhotoExportProgressDto>(value =>
+        {
+            ViewModel.UpdateMutationStatus(
+                $"선택한 사진을 내보내고 있습니다. {value.Completed:N0} / {value.Total:N0}",
+                string.IsNullOrWhiteSpace(value.CurrentFileName)
+                    ? $"사진 정보를 확인하고 있습니다. 중복 건너뜀 {value.DuplicateSkipped:N0}장"
+                    : $"{value.CurrentFileName} · 중복 건너뜀 {value.DuplicateSkipped:N0}장");
+        });
+
+        try
+        {
+            var result = await _photoExportService.ExportSelectedAsync(
+                destination,
+                selected.Select(item => item.BackendFileId).ToList(),
+                progress);
+            if (result.TotalCount != selected.Count)
+            {
+                ViewModel.CompleteMutation(false, "선택한 사진 수와 내보내기 처리 수가 일치하지 않습니다. 다시 시도해 주세요.");
+                return;
+            }
+
+            var summary = $"{result.ExportedCount:N0}장 내보냄 · 중복 건너뜀 {result.DuplicateSkippedCount:N0}장 · 메타데이터 일부 미기록 {result.MetadataPartialCount:N0}장 · 복사 실패 {result.CopyFailedCount:N0}장";
+            if (result.TotalCount > 0
+                && result.ExportedCount == 0
+                && result.DuplicateSkippedCount == 0)
+            {
+                ViewModel.CompleteMutation(false, summary);
+            }
+            else
+            {
+                ViewModel.CompleteMutation(true, summary);
+                if (result.MetadataPartialCount > 0 || result.CopyFailedCount > 0)
+                {
+                    ViewModel.MutationInfoSeverity = InfoBarSeverity.Warning;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            GalleryDiagnostics.WriteException("GalleryPage.ExportSelected", ex);
+            ViewModel.CompleteMutation(false, "선택한 사진을 내보내지 못했습니다. 저장 위치와 네트워크 연결을 확인해 주세요.");
+        }
+    }
 
     private async Task<IReadOnlyDictionary<Guid, int>?> LoadLatestPhotoCategoryRevisionsAsync(
         IReadOnlyList<GalleryItem> selected)

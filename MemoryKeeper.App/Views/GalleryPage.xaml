@@ -272,6 +272,11 @@
                         Style="{StaticResource MkPrimaryButtonStyle}"
                         IsEnabled="{Binding CanChangeCaptureDate}"
                         Click="ChangeCaptureDate_OnClick" />
+                    <Button
+                        Content="선택 사진 내보내기"
+                        Style="{StaticResource MkPrimaryButtonStyle}"
+                        IsEnabled="{Binding CanExportSelected}"
+                        Click="ExportSelectedPhotos_OnClick" />
                     <TextBlock
                         Text="{Binding SelectedCountText}"
                         VerticalAlignment="Center"

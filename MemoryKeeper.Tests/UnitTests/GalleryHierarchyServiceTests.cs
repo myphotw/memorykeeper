@@ -620,6 +620,31 @@ public sealed class GalleryHierarchyServiceTests
     }
 
     [Fact]
+    public async Task ExportCatalog_CarriesAuthoritativeEffectiveDateAndPrecision()
+    {
+        var effectiveDatetime = new DateTimeOffset(2026, 10, 8, 14, 18, 30, TimeSpan.FromHours(9));
+        var service = CreateService(new PhotoDto
+        {
+            FileId = "effective-date",
+            Filename = "photo.heic",
+            Extension = ".heic",
+            CaptureDatetime = new DateTimeOffset(2020, 1, 2, 3, 4, 5, TimeSpan.Zero),
+            EffectiveCaptureDatetime = effectiveDatetime,
+            EffectiveCaptureDate = "2026-10-08",
+            EffectiveCaptureYear = 2026,
+            EffectiveCapturePrecision = "DATETIME",
+        });
+
+        var item = Assert.Single(await service.GetExportCatalogAsync());
+
+        Assert.Equal(".heic", item.Extension);
+        Assert.Equal(effectiveDatetime, item.EffectiveCaptureDatetime);
+        Assert.Equal(new DateOnly(2026, 10, 8), item.EffectiveCaptureDate);
+        Assert.Equal(2026, item.EffectiveCaptureYear);
+        Assert.Equal("DATETIME", item.EffectiveCapturePrecision);
+    }
+
+    [Fact]
     public async Task Years_PreferEffectiveYearOverCaptureAndImportFallbacks()
     {
         var service = CreateService(new PhotoDto

@@ -104,6 +104,18 @@ public sealed class SettingsPageLayoutTests
     }
 
     [Fact]
+    public void PhotoExport_ResultShowsDuplicateSkippedCount()
+    {
+        var xaml = LoadSource("MemoryKeeper.App", "Views", "SettingsPage.xaml");
+        var viewModel = LoadSource("MemoryKeeper.App", "ViewModels", "SettingsViewModel.cs");
+
+        Assert.Contains("Text=\"중복 건너뜀\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Text=\"{Binding ExportDuplicateSkippedCount}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("result.DuplicateSkippedCount", viewModel, StringComparison.Ordinal);
+        Assert.Contains("value.DuplicateSkipped", viewModel, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Embedded_Features_Reuse_UserControls_And_Existing_ViewModels()
     {
         var settingsCode = LoadSource("MemoryKeeper.App", "Views", "SettingsPage.xaml.cs");

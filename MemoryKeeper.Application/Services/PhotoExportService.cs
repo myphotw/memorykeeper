@@ -16,10 +16,37 @@ public sealed class PhotoExportService
     public PhotoExportService(IPhotoExportSource source) =>
         _source = source ?? throw new ArgumentNullException(nameof(source));
 
-    public async Task<PhotoExportResultDto> ExportAsync(
+    public Task<PhotoExportResultDto> ExportAsync(
         string destinationRoot,
         IProgress<PhotoExportProgressDto>? progress = null,
+        CancellationToken cancellationToken = default) =>
+        ExportCoreAsync(destinationRoot, null, progress, cancellationToken);
+
+    public Task<PhotoExportResultDto> ExportSelectedAsync(
+        string destinationRoot,
+        IReadOnlyCollection<string> fileIds,
+        IProgress<PhotoExportProgressDto>? progress = null,
         CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(fileIds);
+        var selectedFileIds = fileIds
+            .Where(fileId => !string.IsNullOrWhiteSpace(fileId))
+            .Select(fileId => fileId.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (selectedFileIds.Length == 0)
+        {
+            throw new ArgumentException("내보낼 사진을 선택해 주세요.", nameof(fileIds));
+        }
+
+        return ExportCoreAsync(destinationRoot, selectedFileIds, progress, cancellationToken);
+    }
+
+    private async Task<PhotoExportResultDto> ExportCoreAsync(
+        string destinationRoot,
+        IReadOnlyCollection<string>? selectedFileIds,
+        IProgress<PhotoExportProgressDto>? progress,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(destinationRoot))
         {
@@ -27,28 +54,95 @@ public sealed class PhotoExportService
         }
 
         Directory.CreateDirectory(destinationRoot);
-        var items = await _source.GetCatalogAsync(cancellationToken).ConfigureAwait(false);
+        var catalog = await _source.GetCatalogAsync(cancellationToken).ConfigureAwait(false);
+        var requestedFileIds = selectedFileIds?.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var items = requestedFileIds is null
+            ? catalog.ToList()
+            : catalog
+                .Where(item => requestedFileIds.Contains(item.FileId))
+                .DistinctBy(item => item.FileId, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        var resolvedFileIds = items
+            .Select(item => item.FileId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var unresolvedCount = requestedFileIds is null
+            ? 0
+            : requestedFileIds.Count(fileId => !resolvedFileIds.Contains(fileId));
+        var totalCount = requestedFileIds?.Count ?? items.Count;
         var exported = 0;
+        var duplicateSkipped = 0;
         var metadataPartial = 0;
-        var copyFailed = 0;
-        var completed = 0;
+        var copyFailed = unresolvedCount;
+        var completed = unresolvedCount;
 
-        // A stable order also makes suffix assignment stable when several files share a second.
-        foreach (var item in items.OrderBy(item => item.FileId, StringComparer.Ordinal))
+        if (unresolvedCount > 0)
+        {
+            progress?.Report(new PhotoExportProgressDto
+            {
+                Total = totalCount,
+                Completed = completed,
+                Failed = copyFailed,
+                DuplicateSkipped = duplicateSkipped,
+            });
+        }
+
+        var manifest = await PhotoExportManifestStore.OpenAsync(
+            destinationRoot,
+            cancellationToken).ConfigureAwait(false);
+        var existingFileIds = await manifest.FindExistingAsync(
+            items.Select(item => item.FileId),
+            cancellationToken).ConfigureAwait(false);
+        duplicateSkipped = existingFileIds.Count;
+        completed += duplicateSkipped;
+        if (duplicateSkipped > 0)
+        {
+            progress?.Report(new PhotoExportProgressDto
+            {
+                Total = totalCount,
+                Completed = completed,
+                Failed = copyFailed,
+                DuplicateSkipped = duplicateSkipped,
+            });
+        }
+
+        var pendingItems = items
+            .Where(item => !existingFileIds.Contains(item.FileId))
+            .ToList();
+        var resolvedItems = new List<ResolvedExportItem>(pendingItems.Count);
+        foreach (var item in pendingItems.OrderBy(item => item.FileId, StringComparer.Ordinal))
         {
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
                 var detail = await _source.GetDetailAsync(item.FileId, cancellationToken).ConfigureAwait(false);
-                var directory = Path.Combine(
-                    destinationRoot,
-                    SafeSegment(item.Year, GalleryHierarchyService.UnclassifiedTitle),
-                    SafeSegment(item.Country, GalleryHierarchyService.OtherTitle),
-                    SafeSegment(item.Region, GalleryHierarchyService.OtherTitle),
-                    SafeSegment(item.Place, GalleryHierarchyService.UnclassifiedTitle));
-                Directory.CreateDirectory(directory);
-                var (exportFileName, usesCaptureDate) = ResolveExportFileName(item, detail.Detail);
-                var targetPath = ResolveCollisionPath(directory, exportFileName, usesCaptureDate);
+                resolvedItems.Add(new ResolvedExportItem(item, detail));
+            }
+            catch (Exception) when (!cancellationToken.IsCancellationRequested)
+            {
+                copyFailed++;
+                completed++;
+                progress?.Report(new PhotoExportProgressDto
+                {
+                    Total = totalCount,
+                    Completed = completed,
+                    Failed = copyFailed,
+                    DuplicateSkipped = duplicateSkipped,
+                    CurrentFileName = item.Filename,
+                });
+            }
+        }
+
+        var plans = BuildExportPlans(destinationRoot, resolvedItems);
+        foreach (var plan in plans)
+        {
+            var item = plan.Item;
+            var detail = plan.SourceDetail;
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                Directory.CreateDirectory(plan.Directory);
+                var targetPath = plan.TargetPath
+                                 ?? ResolveCollisionPath(plan.Directory, item.Filename);
                 var temporaryPath = targetPath + ".partial";
                 try
                 {
@@ -67,7 +161,12 @@ public sealed class PhotoExportService
                             cancellationToken).ConfigureAwait(false);
                     }
 
+                    var exportedSha256 = await PhotoExportManifestStore.ComputeSha256Async(
+                        temporaryPath,
+                        cancellationToken).ConfigureAwait(false);
+                    var exportedFileSize = new FileInfo(temporaryPath).Length;
                     File.Move(temporaryPath, targetPath, overwrite: false);
+                    manifest.Record(item.FileId, targetPath, exportedSha256, exportedFileSize);
                     exported++;
                 }
                 catch
@@ -79,10 +178,18 @@ public sealed class PhotoExportService
                 try
                 {
                     var sidecarPath = Path.ChangeExtension(targetPath, ".xmp");
-                    await File.WriteAllTextAsync(
+                    await using var sidecar = new FileStream(
                         sidecarPath,
-                        BuildXmp(item, detail.Detail),
-                        new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+                        FileMode.CreateNew,
+                        FileAccess.Write,
+                        FileShare.None,
+                        81920,
+                        useAsync: true);
+                    await using var writer = new StreamWriter(
+                        sidecar,
+                        new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+                    await writer.WriteAsync(
+                        BuildXmp(item, detail.Detail).AsMemory(),
                         cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception) when (!cancellationToken.IsCancellationRequested)
@@ -99,50 +206,139 @@ public sealed class PhotoExportService
                 completed++;
                 progress?.Report(new PhotoExportProgressDto
                 {
-                    Total = items.Count,
+                    Total = totalCount,
                     Completed = completed,
                     Failed = copyFailed,
+                    DuplicateSkipped = duplicateSkipped,
                     CurrentFileName = item.Filename,
                 });
             }
         }
 
+        await manifest.SaveIfChangedAsync(cancellationToken).ConfigureAwait(false);
         return new PhotoExportResultDto
         {
-            TotalCount = items.Count,
+            TotalCount = totalCount,
             ExportedCount = exported,
+            DuplicateSkippedCount = duplicateSkipped,
             MetadataPartialCount = metadataPartial,
             CopyFailedCount = copyFailed,
             DestinationPath = Path.GetFullPath(destinationRoot),
         };
     }
 
-    private static (string FileName, bool UsesCaptureDate) ResolveExportFileName(
-        PhotoExportCatalogItemDto item,
-        MemoryKeeper.Application.DTOs.Gallery.PhotoDetailDto detail)
+    private static IReadOnlyList<PhotoExportPlan> BuildExportPlans(
+        string destinationRoot,
+        IReadOnlyList<ResolvedExportItem> items)
     {
-        // A DATE value may contain a synthetic midnight. Never turn that into an invented time.
-        if (detail.EffectiveCaptureDatetime is not { } capture
-            || !string.Equals(detail.EffectiveCapturePrecision, "DATETIME", StringComparison.OrdinalIgnoreCase))
+        var dated = items
+            .Select(item => new
+            {
+                Item = item,
+                Date = ResolveEffectiveDate(item),
+                Datetime = ResolveEffectiveDatetime(item),
+                Precision = ResolveEffectivePrecision(item),
+                Extension = ResolveOriginalExtension(item),
+            })
+            .Where(candidate => candidate.Date.HasValue && candidate.Extension is not null)
+            .ToList();
+        var datedFileIds = dated
+            .Select(candidate => candidate.Item.Item.FileId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var plans = new List<PhotoExportPlan>(items.Count);
+        var reservedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var dateGroup in dated
+                     .GroupBy(candidate => candidate.Date!.Value)
+                     .OrderBy(group => group.Key))
         {
-            return (item.Filename, false);
+            var sequence = 1;
+            foreach (var candidate in dateGroup
+                         .OrderBy(candidate => IsDateTimePrecision(candidate.Precision) ? 0 : 1)
+                         .ThenBy(candidate => candidate.Datetime.HasValue ? 0 : 1)
+                         .ThenBy(candidate => candidate.Datetime?.TimeOfDay ?? TimeSpan.Zero)
+                         .ThenBy(candidate => candidate.Item.Item.FileId, StringComparer.Ordinal))
+            {
+                var directory = ResolveExportDirectory(destinationRoot, candidate.Item.Item);
+                string targetPath;
+                do
+                {
+                    var filename = $"{dateGroup.Key:yyyyMMdd}_{sequence:000}{candidate.Extension}";
+                    targetPath = Path.Combine(directory, filename);
+                    sequence++;
+                }
+                while (HasExportPathCollision(targetPath, reservedPaths));
+
+                ReserveExportPaths(targetPath, reservedPaths);
+                plans.Add(new PhotoExportPlan(
+                    candidate.Item.Item,
+                    candidate.Item.Detail,
+                    directory,
+                    targetPath));
+            }
         }
 
-        var extension = ResolveOriginalExtension(item, detail);
-        return extension is null
-            ? (item.Filename, false)
-            : (capture.ToLocalTime().ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture) + extension, true);
+        plans.AddRange(items
+            .Where(item => !datedFileIds.Contains(item.Item.FileId))
+            .OrderBy(item => item.Item.FileId, StringComparer.Ordinal)
+            .Select(item => new PhotoExportPlan(
+                item.Item,
+                item.Detail,
+                ResolveExportDirectory(destinationRoot, item.Item),
+                null)));
+        return plans;
     }
 
-    private static string? ResolveOriginalExtension(
-        PhotoExportCatalogItemDto item,
-        MemoryKeeper.Application.DTOs.Gallery.PhotoDetailDto detail)
+    private static DateOnly? ResolveEffectiveDate(ResolvedExportItem item)
+    {
+        var precision = ResolveEffectivePrecision(item);
+        var date = ParseEffectiveCaptureDate(item.Detail.Detail.EffectiveCaptureDate)
+                   ?? item.Item.EffectiveCaptureDate;
+        return date.HasValue
+               && (IsDateTimePrecision(precision)
+                   || string.Equals(precision, "DATE", StringComparison.OrdinalIgnoreCase))
+            ? date
+            : null;
+    }
+
+    private static string? ResolveEffectivePrecision(ResolvedExportItem item) =>
+        !string.IsNullOrWhiteSpace(item.Detail.Detail.EffectiveCapturePrecision)
+            ? item.Detail.Detail.EffectiveCapturePrecision
+            : item.Item.EffectiveCapturePrecision;
+
+    private static DateTimeOffset? ResolveEffectiveDatetime(ResolvedExportItem item) =>
+        item.Detail.Detail.EffectiveCaptureDatetime
+        ?? item.Item.EffectiveCaptureDatetime;
+
+    private static DateOnly? ParseEffectiveCaptureDate(string? value) =>
+        DateOnly.TryParseExact(
+            value,
+            "yyyy-MM-dd",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.None,
+            out var date)
+            ? date
+            : null;
+
+    private static bool IsDateTimePrecision(string? precision) =>
+        string.Equals(precision, "DATETIME", StringComparison.OrdinalIgnoreCase);
+
+    private static string ResolveExportDirectory(string destinationRoot, PhotoExportCatalogItemDto item) =>
+        Path.Combine(
+            destinationRoot,
+            SafeSegment(item.Year, GalleryHierarchyService.UnclassifiedTitle),
+            SafeSegment(item.Country, GalleryHierarchyService.OtherTitle),
+            SafeSegment(item.Region, GalleryHierarchyService.OtherTitle),
+            SafeSegment(item.Place, GalleryHierarchyService.UnclassifiedTitle));
+
+    private static string? ResolveOriginalExtension(ResolvedExportItem item)
     {
         foreach (var candidate in new[]
                  {
-                     detail.Extension,
-                     Path.GetExtension(detail.Filename),
-                     Path.GetExtension(item.Filename),
+                     item.Detail.Detail.Extension,
+                     Path.GetExtension(item.Detail.Detail.Filename),
+                     item.Item.Extension,
+                     Path.GetExtension(item.Item.Filename),
                  })
         {
             if (string.IsNullOrWhiteSpace(candidate))
@@ -158,31 +354,68 @@ public sealed class PhotoExportService
 
             if (extension.Length > 1 && extension.Skip(1).All(char.IsAsciiLetterOrDigit))
             {
-                return extension.ToLowerInvariant();
+                return extension;
             }
         }
 
         return null;
     }
 
-    internal static string ResolveCollisionPath(string directory, string filename, bool usesCaptureDate = false)
+    private static bool HasExportPathCollision(string targetPath, ISet<string> reservedPaths) =>
+        File.Exists(targetPath)
+        || Directory.Exists(targetPath)
+        || File.Exists(targetPath + ".partial")
+        || Directory.Exists(targetPath + ".partial")
+        || File.Exists(Path.ChangeExtension(targetPath, ".xmp"))
+        || Directory.Exists(Path.ChangeExtension(targetPath, ".xmp"))
+        || reservedPaths.Contains(targetPath)
+        || reservedPaths.Contains(targetPath + ".partial")
+        || reservedPaths.Contains(Path.ChangeExtension(targetPath, ".xmp"))
+        || HasExistingStemCollision(targetPath);
+
+    private static bool HasExistingStemCollision(string targetPath)
+    {
+        var directory = Path.GetDirectoryName(targetPath);
+        var stem = Path.GetFileNameWithoutExtension(targetPath);
+        return !string.IsNullOrWhiteSpace(directory)
+               && Directory.Exists(directory)
+               && Directory.EnumerateFileSystemEntries(directory, stem + ".*").Any();
+    }
+
+    private static void ReserveExportPaths(string targetPath, ISet<string> reservedPaths)
+    {
+        reservedPaths.Add(targetPath);
+        reservedPaths.Add(targetPath + ".partial");
+        reservedPaths.Add(Path.ChangeExtension(targetPath, ".xmp"));
+    }
+
+    internal static string ResolveCollisionPath(string directory, string filename)
     {
         var safeName = SafeSegment(Path.GetFileName(filename), "photo");
         var extension = Path.GetExtension(safeName);
         var stem = Path.GetFileNameWithoutExtension(safeName);
         var candidate = Path.Combine(directory, safeName);
-        var suffix = usesCaptureDate ? 1 : 2;
+        var suffix = 2;
         while (File.Exists(candidate)
                || File.Exists(candidate + ".partial")
                || File.Exists(Path.ChangeExtension(candidate, ".xmp")))
         {
-            var numberedStem = usesCaptureDate ? $"{stem}_{suffix:000}" : $"{stem}_{suffix}";
-            candidate = Path.Combine(directory, numberedStem + extension);
+            candidate = Path.Combine(directory, $"{stem}_{suffix}{extension}");
             suffix++;
         }
 
         return candidate;
     }
+
+    private sealed record ResolvedExportItem(
+        PhotoExportCatalogItemDto Item,
+        PhotoExportSourceDetailDto Detail);
+
+    private sealed record PhotoExportPlan(
+        PhotoExportCatalogItemDto Item,
+        PhotoExportSourceDetailDto SourceDetail,
+        string Directory,
+        string? TargetPath);
 
     private static string BuildXmp(
         PhotoExportCatalogItemDto item,

@@ -208,6 +208,9 @@ public partial class SettingsViewModel : ObservableObject
     private int exportSucceededCount;
 
     [ObservableProperty]
+    private int exportDuplicateSkippedCount;
+
+    [ObservableProperty]
     private int exportMetadataPartialCount;
 
     [ObservableProperty]
@@ -508,6 +511,7 @@ public partial class SettingsViewModel : ObservableObject
         ExportProgressMaximum = 1;
         ExportProgressText = string.Empty;
         ExportSucceededCount = 0;
+        ExportDuplicateSkippedCount = 0;
         ExportMetadataPartialCount = 0;
         ExportCopyFailedCount = 0;
         HasExportActivity = true;
@@ -521,20 +525,23 @@ public partial class SettingsViewModel : ObservableObject
             ExportProgressMaximum = Math.Max(1, value.Total);
             ExportProgressText = value.Total <= 0
                 ? "내보낼 사진을 확인하고 있습니다."
-                : $"{value.Completed:N0} / {value.Total:N0}";
+                : $"{value.Completed:N0} / {value.Total:N0} · 중복 건너뜀 {value.DuplicateSkipped:N0}";
         });
 
         await RunBusyAsync(async () =>
         {
             var result = await _photoExportService.ExportAsync(destination, progress);
-            ExportSummary = $"{result.ExportedCount:N0}장 내보냄 · 메타데이터 일부 미기록 {result.MetadataPartialCount:N0}장 · 복사 실패 {result.CopyFailedCount:N0}장";
+            ExportSummary = $"{result.ExportedCount:N0}장 내보냄 · 중복 건너뜀 {result.DuplicateSkippedCount:N0}장 · 메타데이터 일부 미기록 {result.MetadataPartialCount:N0}장 · 복사 실패 {result.CopyFailedCount:N0}장";
             ExportSucceededCount = result.ExportedCount;
+            ExportDuplicateSkippedCount = result.DuplicateSkippedCount;
             ExportMetadataPartialCount = result.MetadataPartialCount;
             ExportCopyFailedCount = result.CopyFailedCount;
             ExportProgressMaximum = Math.Max(1, result.TotalCount);
             ExportProgressText = $"{result.TotalCount:N0} / {result.TotalCount:N0}";
             HasExportResult = true;
-            if (result.TotalCount > 0 && result.ExportedCount == 0)
+            if (result.TotalCount > 0
+                && result.ExportedCount == 0
+                && result.DuplicateSkippedCount == 0)
             {
                 ShowError("사진을 내보내지 못했습니다. 저장 위치와 네트워크 연결을 확인한 뒤 다시 시도해 주세요.");
             }

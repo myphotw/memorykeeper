@@ -127,6 +127,8 @@ public partial class GalleryViewModel : ObservableObject
 
     public bool CanChangeCaptureDate => IsEditing && !IsMutating && SelectedCount > 0;
 
+    public bool CanExportSelected => IsEditing && !IsMutating && SelectedCount > 0;
+
     public string SelectedCountText => $"{SelectedCount}장 선택";
 
     /// <summary>Infinite-scroll prep: more pages available from Backend.</summary>
@@ -286,6 +288,7 @@ public partial class GalleryViewModel : ObservableObject
         OnPropertyChanged(nameof(CanDirectAssignPlace));
         OnPropertyChanged(nameof(CanChangePhotoCategory));
         OnPropertyChanged(nameof(CanChangeCaptureDate));
+        OnPropertyChanged(nameof(CanExportSelected));
     }
 
     partial void OnIsMutatingChanged(bool value)
@@ -296,6 +299,7 @@ public partial class GalleryViewModel : ObservableObject
         OnPropertyChanged(nameof(CanDirectAssignPlace));
         OnPropertyChanged(nameof(CanChangePhotoCategory));
         OnPropertyChanged(nameof(CanChangeCaptureDate));
+        OnPropertyChanged(nameof(CanExportSelected));
     }
 
     partial void OnSelectedCountChanged(int value)
@@ -304,6 +308,7 @@ public partial class GalleryViewModel : ObservableObject
         OnPropertyChanged(nameof(CanDirectAssignPlace));
         OnPropertyChanged(nameof(CanChangePhotoCategory));
         OnPropertyChanged(nameof(CanChangeCaptureDate));
+        OnPropertyChanged(nameof(CanExportSelected));
         OnPropertyChanged(nameof(SelectedCountText));
     }
 

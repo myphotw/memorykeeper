@@ -334,16 +334,19 @@
                                     <TextBlock Text="{Binding ExportCurrentFile}" Style="{StaticResource MkCaptionTextStyle}" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{Binding ExportCurrentFile}" />
                                 </StackPanel>
                                 <Grid
-                                    ColumnDefinitions="*,*,*"
+                                    ColumnDefinitions="*,*,*,*"
                                     ColumnSpacing="12"
                                     Visibility="{Binding HasExportResult, Converter={StaticResource BoolToVisibilityConverter}}">
                                     <Border Padding="12" CornerRadius="12" Background="{ThemeResource MkBrushSurfaceMuted}">
                                         <StackPanel Spacing="4"><TextBlock Text="완료" Style="{StaticResource MkCaptionTextStyle}" /><TextBlock Text="{Binding ExportSucceededCount}" Style="{StaticResource MkCardTitleStyle}" Margin="0" /></StackPanel>
                                     </Border>
                                     <Border Grid.Column="1" Padding="12" CornerRadius="12" Background="{ThemeResource MkBrushSurfaceMuted}">
-                                        <StackPanel Spacing="4"><TextBlock Text="정보 일부 미기록" Style="{StaticResource MkCaptionTextStyle}" /><TextBlock Text="{Binding ExportMetadataPartialCount}" Style="{StaticResource MkCardTitleStyle}" Margin="0" /></StackPanel>
+                                        <StackPanel Spacing="4"><TextBlock Text="중복 건너뜀" Style="{StaticResource MkCaptionTextStyle}" /><TextBlock Text="{Binding ExportDuplicateSkippedCount}" Style="{StaticResource MkCardTitleStyle}" Margin="0" /></StackPanel>
                                     </Border>
                                     <Border Grid.Column="2" Padding="12" CornerRadius="12" Background="{ThemeResource MkBrushSurfaceMuted}">
+                                        <StackPanel Spacing="4"><TextBlock Text="정보 일부 미기록" Style="{StaticResource MkCaptionTextStyle}" /><TextBlock Text="{Binding ExportMetadataPartialCount}" Style="{StaticResource MkCardTitleStyle}" Margin="0" /></StackPanel>
+                                    </Border>
+                                    <Border Grid.Column="3" Padding="12" CornerRadius="12" Background="{ThemeResource MkBrushSurfaceMuted}">
                                         <StackPanel Spacing="4"><TextBlock Text="복사 실패" Style="{StaticResource MkCaptionTextStyle}" /><TextBlock Text="{Binding ExportCopyFailedCount}" Style="{StaticResource MkCardTitleStyle}" Margin="0" /></StackPanel>
                                     </Border>
                                 </Grid>

@@ -105,17 +105,32 @@ public sealed class GalleryHierarchyService
             {
                 FileId = photo.Photo.FileId,
                 Filename = photo.Photo.Filename,
+                Extension = photo.Photo.Extension,
                 Year = ResolveYear(photo.Photo)?.ToString(System.Globalization.CultureInfo.InvariantCulture)
                        ?? UnclassifiedTitle,
                 Country = hasPlace ? CountryLabel(photo) : UnclassifiedTitle,
                 Region = hasPlace ? CityLabel(photo) : UnclassifiedTitle,
                 Place = hasPlace ? PlaceDisplayName(photo) : UnclassifiedTitle,
                 CaptureDatetime = photo.Photo.CaptureDatetime,
+                EffectiveCaptureDatetime = photo.Photo.EffectiveCaptureDatetime,
+                EffectiveCaptureDate = ParseEffectiveCaptureDate(photo.Photo.EffectiveCaptureDate),
+                EffectiveCaptureYear = photo.Photo.EffectiveCaptureYear,
+                EffectiveCapturePrecision = photo.Photo.EffectiveCapturePrecision ?? string.Empty,
                 Latitude = photo.Latitude,
                 Longitude = photo.Longitude,
             };
         }).ToList();
     }
+
+    private static DateOnly? ParseEffectiveCaptureDate(string? value) =>
+        DateOnly.TryParseExact(
+            value,
+            "yyyy-MM-dd",
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None,
+            out var date)
+            ? date
+            : null;
 
     public async Task<IReadOnlyList<GalleryTreeChildDto>> GetCitiesAsync(
         int year,
