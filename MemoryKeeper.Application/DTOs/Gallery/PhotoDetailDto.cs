@@ -121,6 +121,21 @@ public sealed class PhotoDetailDto
     [JsonPropertyName("place_canonical_name")]
     public string? PlaceCanonicalName { get; init; }
 
+    [JsonPropertyName("canonical_country")]
+    public string? CanonicalCountry { get; init; }
+
+    [JsonPropertyName("canonical_region")]
+    public string? CanonicalRegion { get; init; }
+
+    [JsonPropertyName("canonical_place")]
+    public string? CanonicalPlace { get; init; }
+
+    [JsonPropertyName("location_hierarchy_complete")]
+    public bool? LocationHierarchyComplete { get; init; }
+
+    [JsonPropertyName("location_cleanup_reason")]
+    public string? LocationCleanupReason { get; init; }
+
     [JsonPropertyName("geocoded_place_name")]
     public string? GeocodedPlaceName { get; init; }
 

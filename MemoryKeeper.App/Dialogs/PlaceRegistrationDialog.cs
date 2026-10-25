@@ -319,6 +319,13 @@ public static class PlaceRegistrationDialog
             CreateSectionLabel("즐겨찾기 장소"),
             favoritePanel,
             CreateSectionLabel("기존 장소 선택"),
+            new TextBlock
+            {
+                Text = "사진첩과 같은 국가 > 지역 > 장소 경로입니다. '같은 등록 장소'가 여러 경로에 보이면 어느 경로를 선택해도 같은 장소로 연결되지만, 이 선택만으로 경로가 통합되지는 않습니다. 경로 자체는 설정 > 장소 관리에서 수정합니다.",
+                Opacity = 0.7,
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap
+            },
             existingSearchBox,
             existingTree,
             existingSearchResultsHost,
@@ -705,7 +712,7 @@ public static class PlaceRegistrationDialog
                 var regionNode = new TreeViewNode { Content = region.Title };
                 foreach (var place in region.Places)
                 {
-                    var placeNode = new TreeViewNode { Content = place.DisplayName };
+                    var placeNode = new TreeViewNode { Content = place.TreeDisplayText };
                     placeNodes[placeNode] = place;
                     regionNode.Children.Add(placeNode);
                 }

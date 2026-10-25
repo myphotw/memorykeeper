@@ -221,54 +221,6 @@
                     </Grid>
                 </Border>
 
-                <Grid
-                    BackgroundColor="{StaticResource MemoryKeeperSurface}"
-                    IsVisible="{Binding IsStartupLoadingVisible}"
-                    Padding="32"
-                    ZIndex="20">
-                    <VerticalStackLayout
-                        HorizontalOptions="Center"
-                        MaximumWidthRequest="360"
-                        Spacing="14"
-                        VerticalOptions="Center">
-                        <Border
-                            BackgroundColor="#EAF4FF"
-                            HeightRequest="76"
-                            HorizontalOptions="Center"
-                            Stroke="#CFE4FA"
-                            StrokeShape="RoundRectangle 24"
-                            WidthRequest="76">
-                            <Label
-                                FontSize="34"
-                                HorizontalTextAlignment="Center"
-                                Text="&#x25A3;"
-                                TextColor="#2878C8"
-                                VerticalTextAlignment="Center" />
-                        </Border>
-                        <Label
-                            FontAttributes="Bold"
-                            FontSize="28"
-                            HorizontalTextAlignment="Center"
-                            Text="MemoryKeeper"
-                            TextColor="{StaticResource MemoryKeeperText}" />
-                        <Label
-                            FontSize="14"
-                            HorizontalTextAlignment="Center"
-                            Text="소중한 사진과 추억을 준비하고 있어요."
-                            TextColor="{StaticResource MemoryKeeperSecondaryText}" />
-                        <ActivityIndicator
-                            HeightRequest="34"
-                            HorizontalOptions="Center"
-                            IsRunning="{Binding IsStartupLoadingVisible}"
-                            WidthRequest="34" />
-                        <Label
-                            FontSize="14"
-                            HorizontalTextAlignment="Center"
-                            Text="{Binding StartupStageText}"
-                            TextColor="#2878C8" />
-                    </VerticalStackLayout>
-                </Grid>
-
                 <VerticalStackLayout
                     Margin="32"
                     IsVisible="{Binding IsEmptyStateVisible}"
@@ -948,6 +900,20 @@
                     </DataTemplate>
                 </CollectionView.ItemTemplate>
             </CollectionView>
+        </Grid>
+
+        <!-- Cold-start only. The artwork already contains the brand and tagline. -->
+        <Grid
+            x:Name="StartupLoadingOverlay"
+            BackgroundColor="#F6F4EF"
+            IsVisible="True"
+            ZIndex="1000">
+            <Image
+                Aspect="AspectFit"
+                HorizontalOptions="Fill"
+                SemanticProperties.Description="MemoryKeeper 시작 화면"
+                Source="memorykeeper_loading.png"
+                VerticalOptions="Fill" />
         </Grid>
     </Grid>
 </ContentPage>

@@ -323,6 +323,8 @@ public sealed class MobileGalleryHttpFoundationTests
             "MemoryKeeper.Mobile", "ViewModels", "HomeViewModel.cs");
         var page = ReadSource(
             "MemoryKeeper.Mobile", "Views", "HomePage.xaml");
+        var pageCode = ReadSource(
+            "MemoryKeeper.Mobile", "Views", "HomePage.xaml.cs");
         var project = ReadSource(
             "MemoryKeeper.Mobile", "MemoryKeeper.Mobile.csproj");
 
@@ -330,7 +332,11 @@ public sealed class MobileGalleryHttpFoundationTests
         Assert.Contains("Take(InitialThumbnailPreloadCount)", viewModel, StringComparison.Ordinal);
         Assert.Contains("IsInitialLoading && !HasItems", viewModel, StringComparison.Ordinal);
         Assert.Contains("TimeSpan.FromMilliseconds(400)", viewModel, StringComparison.Ordinal);
-        Assert.Contains("IsStartupLoadingVisible", page, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"StartupLoadingOverlay\"", page, StringComparison.Ordinal);
+        Assert.Contains("Source=\"memorykeeper_loading.png\"", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("StartupStageText", page, StringComparison.Ordinal);
+        Assert.Contains("TimeSpan.FromMilliseconds(1500)", pageCode, StringComparison.Ordinal);
+        Assert.Contains("_startupOverlayDismissed", pageCode, StringComparison.Ordinal);
         Assert.Contains("서버에 다시 연결하는 중...", viewModel, StringComparison.Ordinal);
         Assert.Contains("<MauiSplashScreen", project, StringComparison.Ordinal);
     }

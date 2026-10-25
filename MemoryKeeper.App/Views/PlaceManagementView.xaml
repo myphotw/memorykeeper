@@ -38,6 +38,66 @@
         <!-- Left panel -->
         <ScrollViewer Grid.Row="1" Grid.Column="0" VerticalScrollBarVisibility="Auto" Padding="0,0,6,0">
             <StackPanel Spacing="8">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                    <StackPanel>
+                        <TextBlock Text="등록 장소" FontSize="18" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding HierarchySummary}" FontSize="12" Opacity="0.65" />
+                    </StackPanel>
+                    <ComboBox
+                        Grid.Column="1"
+                        Width="130"
+                        ItemsSource="{Binding FilterOptions}"
+                        DisplayMemberPath="Label"
+                        SelectedItem="{Binding SelectedFilter, Mode=TwoWay}" />
+                </Grid>
+                <TextBox
+                    Header="국가·지역·장소 검색"
+                    Text="{Binding ListSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                    PlaceholderText="전체 경로, 이름, 주소" />
+                <Border
+                    Padding="6"
+                    MaxHeight="300"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="6">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <ItemsControl ItemsSource="{Binding PlaceHierarchy}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Expander Header="{Binding Title}" IsExpanded="True" Margin="0,2">
+                                        <ItemsControl ItemsSource="{Binding Regions}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Expander Header="{Binding Title}" IsExpanded="True" Margin="12,1,0,1">
+                                                        <ItemsControl ItemsSource="{Binding Places}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <Button
+                                                                        HorizontalAlignment="Stretch"
+                                                                        HorizontalContentAlignment="Left"
+                                                                        Margin="18,1,0,1"
+                                                                        Padding="8,4"
+                                                                        Click="HierarchyPlace_OnClick"
+                                                                        Tag="{Binding}">
+                                                                        <StackPanel>
+                                                                            <TextBlock Text="{Binding TreeDisplayText}" TextTrimming="CharacterEllipsis" />
+                                                                            <TextBlock Text="{Binding FullPath}" FontSize="11" Opacity="0.58" TextTrimming="CharacterEllipsis" />
+                                                                        </StackPanel>
+                                                                    </Button>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </Expander>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </Expander>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Border>
                 <!-- Search -->
                 <TextBox
                     x:Name="PlaceSearchBox"
@@ -109,7 +169,7 @@
                             </ListView.ItemTemplate>
                         </ListView>
                     </StackPanel>
-                    <StackPanel Grid.Column="1">
+                    <StackPanel Grid.Column="1" Visibility="Collapsed">
                         <TextBox
                             Header="목록 검색"
                             Text="{Binding ListSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
@@ -138,8 +198,10 @@
                 </Grid>
 
                 <!-- Detail form (compact, visible while dragging) -->
-                <TextBlock Text="장소 상세" FontWeight="SemiBold" Margin="0,4,0,0" />
-                <StackPanel Spacing="6" MaxWidth="{StaticResource MkInputMaxWidth}" HorizontalAlignment="Left">
+                <TextBlock Text="장소 상세" FontWeight="SemiBold" Margin="0,4,0,0" Visibility="Collapsed" />
+                <TextBlock Text="{Binding SelectedPathText}" FontSize="11" Opacity="0.65" TextWrapping="Wrap" Visibility="Collapsed" />
+                <TextBlock Text="{Binding CleanupReasonText}" FontSize="11" Foreground="{ThemeResource SystemFillColorCautionBrush}" TextWrapping="Wrap" Visibility="Collapsed" />
+                <StackPanel Spacing="6" MaxWidth="{StaticResource MkInputMaxWidth}" HorizontalAlignment="Left" Visibility="Collapsed">
                 <TextBox
                     Style="{StaticResource MkTextBoxStyle}"
                     Header="장소명"
@@ -149,10 +211,11 @@
                     Header="주소"
                     Text="{Binding Address, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
 
-                <Grid ColumnDefinitions="*,*,*" ColumnSpacing="6">
+                <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="6">
                     <TextBox Header="국가" Text="{Binding Country, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MinHeight="40" />
                     <TextBox Grid.Column="1" Header="시/도" Text="{Binding Province, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MinHeight="40" />
-                    <TextBox Grid.Column="2" Header="시군구" Text="{Binding City, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MinHeight="40" />
+                    <TextBox Grid.Column="2" Header="도시" Text="{Binding City, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MinHeight="40" />
+                    <TextBox Grid.Column="3" Header="시군구" Text="{Binding District, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MinHeight="40" />
                 </Grid>
 
                 <Grid ColumnDefinitions="*,*,*" ColumnSpacing="6">
@@ -209,22 +272,138 @@
                 <StackPanel Orientation="Horizontal" Spacing="6">
                     <Button Content="새로 작성" Command="{Binding ClearFormCommand}" Padding="10,4" />
                     <Button Content="저장" Style="{StaticResource AccentButtonStyle}" Command="{Binding SaveCommand}" Padding="14,4" />
+                    <Button Content="현재 좌표로 주소 다시 조회" Command="{Binding ReverseGeocodeCurrentCoordinatesCommand}" Padding="10,4" />
+                    <Button Content="연결 사진 보기" Command="{Binding ShowLinkedPhotosCommand}" Padding="10,4" />
                     <Button Content="삭제" Command="{Binding DeleteCommand}" Padding="10,4" />
                     <Button Content="새로고침" Command="{Binding LoadCommand}" Padding="10,4" />
                 </StackPanel>
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                    <ComboBox
+                        Header="병합 Target (유지할 장소)"
+                        ItemsSource="{Binding MergeTargets}"
+                        SelectedItem="{Binding SelectedMergeTarget, Mode=TwoWay}"
+                        DisplayMemberPath="DisplayName"
+                        IsEditable="True"
+                        IsTextSearchEnabled="True"
+                        HorizontalAlignment="Stretch" />
+                    <Button
+                        Grid.Column="1"
+                        VerticalAlignment="Bottom"
+                        Content="다른 장소와 병합"
+                        Command="{Binding MergeIntoSelectedTargetCommand}"
+                        Padding="10,4" />
+                </Grid>
                 </StackPanel>
             </StackPanel>
         </ScrollViewer>
 
-        <!-- Right: map -->
-        <Border
-            Grid.Row="1"
-            Grid.Column="1"
-            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-            BorderThickness="1"
-            CornerRadius="8">
-            <WebView2 x:Name="MapWebView" />
-        </Border>
+        <!-- Right: map and actual UUID-linked photos. -->
+        <Grid Grid.Row="1" Grid.Column="1" RowDefinitions="Auto,*,Auto" RowSpacing="10">
+            <Border
+                Padding="12"
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="8">
+                <StackPanel Spacing="7">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                        <StackPanel>
+                            <TextBlock Text="장소 상세" FontSize="18" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding SelectedPathText}" FontSize="11" Opacity="0.65" TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding CleanupReasonText}" FontSize="11" Foreground="{ThemeResource SystemFillColorCautionBrush}" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                            <Button Content="새 장소" Command="{Binding ClearFormCommand}" />
+                            <Button Content="저장" Style="{StaticResource AccentButtonStyle}" Command="{Binding SaveCommand}" />
+                        </StackPanel>
+                    </Grid>
+                    <Grid ColumnDefinitions="2*,3*" ColumnSpacing="8">
+                        <TextBox Header="장소명" Text="{Binding DisplayName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBox Grid.Column="1" Header="상세 주소" Text="{Binding Address, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="8">
+                        <TextBox Header="국가" Text="{Binding Country, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBox Grid.Column="1" Header="시/도" Text="{Binding Province, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBox Grid.Column="2" Header="도시" Text="{Binding City, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBox Grid.Column="3" Header="시군구" Text="{Binding District, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="8">
+                        <TextBox Header="위도" Text="{Binding LatitudeText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBox Grid.Column="1" Header="경도" Text="{Binding LongitudeText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBox Grid.Column="2" Header="반경 (m)" Text="{Binding RadiusText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        <ComboBox Grid.Column="3" Header="유형" ItemsSource="{Binding CategoryOptions}" SelectedItem="{Binding Category, Mode=TwoWay}" />
+                    </Grid>
+                    <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*" ColumnSpacing="8">
+                        <CheckBox Content="활성" IsChecked="{Binding IsActive, Mode=TwoWay}" />
+                        <CheckBox Grid.Column="1" Content="즐겨찾기" IsChecked="{Binding IsFavorite, Mode=TwoWay}" />
+                        <TextBlock Grid.Column="2" VerticalAlignment="Center" FontWeight="SemiBold" Text="{Binding LinkedPhotoCountText}" />
+                        <TextBlock Grid.Column="3" VerticalAlignment="Center" FontWeight="SemiBold" Text="{Binding IncludedPhotoCountText}" />
+                        <StackPanel Grid.Column="4" HorizontalAlignment="Right" Orientation="Horizontal" Spacing="6">
+                            <Button Content="주소 다시 조회" Command="{Binding ReverseGeocodeCurrentCoordinatesCommand}" />
+                            <Button Content="연결 사진" Command="{Binding ShowLinkedPhotosCommand}" />
+                            <Button Content="삭제" Command="{Binding DeleteCommand}" />
+                        </StackPanel>
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                        <ComboBox
+                            Header="병합 Target (유지할 장소)"
+                            ItemsSource="{Binding MergeTargets}"
+                            SelectedItem="{Binding SelectedMergeTarget, Mode=TwoWay}"
+                            DisplayMemberPath="DisplayName"
+                            IsEditable="True"
+                            IsTextSearchEnabled="True"
+                            HorizontalAlignment="Stretch" />
+                        <Button Grid.Column="1" VerticalAlignment="Bottom" Content="다른 장소와 병합" Command="{Binding MergeIntoSelectedTargetCommand}" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+            <Border
+                Grid.Row="1"
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="8">
+                <WebView2 x:Name="MapWebView" />
+            </Border>
+            <Border
+                Grid.Row="2"
+                Padding="10"
+                Visibility="{Binding AreLinkedPhotosVisible, Converter={StaticResource BoolToVisibilityConverter}}"
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="8">
+                <Grid RowDefinitions="Auto,Auto" RowSpacing="6">
+                    <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="12">
+                        <TextBlock Text="{Binding LinkedPhotoCountText}" FontWeight="SemiBold" />
+                        <TextBlock Grid.Column="1" Text="{Binding IncludedPhotoCountText}" FontWeight="SemiBold" />
+                        <Button
+                            Grid.Column="3"
+                            Content="더 보기"
+                            Command="{Binding LoadMoreLinkedPhotosCommand}"
+                            Visibility="{Binding HasMoreLinkedPhotos, Converter={StaticResource BoolToVisibilityConverter}}" />
+                    </Grid>
+                    <GridView
+                        Grid.Row="1"
+                        ItemsSource="{Binding LinkedPhotos}"
+                        IsItemClickEnabled="True"
+                        ItemClick="LinkedPhoto_OnItemClick"
+                        SelectionMode="None"
+                        MaxHeight="220">
+                        <GridView.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Width="112" Spacing="3">
+                                    <Border Width="112" Height="82" Background="{ThemeResource ControlFillColorSecondaryBrush}" CornerRadius="4">
+                                        <Image Source="{Binding ThumbnailImage}" Stretch="UniformToFill" />
+                                    </Border>
+                                    <TextBlock Text="{Binding Filename}" FontSize="11" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding CaptureDateText}" FontSize="11" Opacity="0.62" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </GridView.ItemTemplate>
+                    </GridView>
+                </Grid>
+            </Border>
+        </Grid>
     </Grid>
 </UserControl>

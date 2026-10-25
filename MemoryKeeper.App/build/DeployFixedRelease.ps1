@@ -39,7 +39,6 @@ New-Item -ItemType Directory -Path $stagingPath -Force | Out-Null
 try {
     Get-ChildItem -LiteralPath $sourcePath -Force |
         Where-Object {
-            $_.Name -ne "Diagnostics" -and
             $_.Name -notlike "*.WebView2"
         } |
         ForEach-Object {
@@ -54,6 +53,7 @@ try {
         "resources.pri",
         "App.xaml",
         "appsettings.json",
+        "Diagnostics\ErrorDialogWindow.xaml",
         "Microsoft.ui.xaml.dll",
         "WebView2Loader.dll",
         "Views"

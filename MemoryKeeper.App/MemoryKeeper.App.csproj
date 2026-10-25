@@ -24,6 +24,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    <!-- A project-local publish directory contains generated loose XAML and must never become XAML compiler input. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);$(MSBuildProjectDirectory)\publish\**</DefaultItemExcludes>
     <!-- GenXbf Pass2 crashes locally; sanitize loose XAML after compile. -->
     <DisableXbfGeneration>true</DisableXbfGeneration>
     <MemoryKeeperMapsCredentialFileName>MemoryKeeper.maps.key</MemoryKeeperMapsCredentialFileName>
@@ -53,6 +55,11 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </None>
+    <Content Include="..\MemoryKeeper.Mobile\Resources\Images\memorykeeper_loading.png"
+             Link="Assets\memorykeeper_loading.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
   </ItemGroup>
 
   <!-- DisableXbfGeneration can emit invalid closings like </StackPanel x:ConnectionId='n'>. -->

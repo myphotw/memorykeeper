@@ -26,6 +26,7 @@ public partial class GalleryPlaceEditSessionViewModel : ObservableObject, IPlace
     private readonly IReadOnlyList<GalleryItem> _selectedItems;
     private IReadOnlyList<MemoryKeeperFilePlaceStateDto> _placeStates = [];
     private IReadOnlyList<PlaceDto> _places = [];
+    private IReadOnlyList<PlacePickerItemDto> _placePickerItems = [];
     private string _diagnosticStage = "initial-state-query";
     private GalleryPlaceAssignmentDiagnosticSnapshot? _workflowDiagnostic;
 
@@ -167,14 +168,12 @@ public partial class GalleryPlaceEditSessionViewModel : ObservableObject, IPlace
     public Task SearchExistingPlacesAsync()
     {
         var query = ExistingPlaceSearchText.Trim();
-        FilteredExistingPlaces = new ObservableCollection<PlacePickerItemDto>(_places
-            .Where(place => query.Length == 0
-                || place.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase)
-                || place.Country.Contains(query, StringComparison.OrdinalIgnoreCase)
-                || place.City.Contains(query, StringComparison.OrdinalIgnoreCase)
-                || place.Address.Contains(query, StringComparison.OrdinalIgnoreCase))
-            .OrderBy(place => place.DisplayName, StringComparer.OrdinalIgnoreCase)
-            .Select(ToPickerItem));
+        var placesById = _places.ToDictionary(place => place.Id);
+        FilteredExistingPlaces = new ObservableCollection<PlacePickerItemDto>(_placePickerItems
+            .Where(item => placesById.TryGetValue(item.Id, out var place)
+                           && PlacePickerHierarchyProjection.Matches(item, place, query))
+            .OrderBy(item => item.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(item => item.FullPath, StringComparer.Ordinal));
         PlaceDialogStatus = FilteredExistingPlaces.Count == 0 ? "검색 결과가 없습니다." : $"기존 장소 검색 결과 {FilteredExistingPlaces.Count}건";
         return Task.CompletedTask;
     }
@@ -258,7 +257,9 @@ public partial class GalleryPlaceEditSessionViewModel : ObservableObject, IPlace
         var dto = await _placeService.GetPlaceAsync(place.Id);
         SelectedLocation = PlaceLocationPreview.FromPlaceDto(dto, PlaceLocationSource.Existing);
         RegistrationGpsText = $"{dto.Latitude:F6}, {dto.Longitude:F6}";
-        PlaceDialogStatus = $"기존 장소 선택: {dto.DisplayName}";
+        PlaceDialogStatus = place.HasMultipleHierarchyPaths
+            ? $"기존 장소 선택: {place.FullPath} · 같은 등록 장소이며, 이 선택만으로 경로는 통합되지 않습니다."
+            : $"기존 장소 선택: {place.FullPath}";
         NotifyPreviewChanged();
     }
 
@@ -556,14 +557,21 @@ public partial class GalleryPlaceEditSessionViewModel : ObservableObject, IPlace
 
     private async Task LoadPlacesAsync()
     {
-        _places = (await _placeService.GetPlaceListAsync()).Where(place => place.IsActive).ToList();
+        var placesTask = _placeService.GetPlaceListAsync();
+        var hierarchyTask = _placeService.GetPlaceHierarchyAsync();
+        await Task.WhenAll(placesTask, hierarchyTask);
+        _places = (await placesTask).Where(place => place.IsActive).ToList();
+        var picker = PlacePickerHierarchyProjection.Build(_places, await hierarchyTask);
+        _placePickerItems = picker.AllPathItems;
         RecentPlaces = new ObservableCollection<PlacePickerItemDto>(_places
             .Where(place => place.LastUsedAt.HasValue || place.UsageCount > 0)
             .OrderByDescending(place => place.LastUsedAt)
             .Take(5)
-            .Select(ToPickerItem));
-        FavoritePlaces = new ObservableCollection<PlacePickerItemDto>(_places.Where(place => place.IsFavorite).Select(ToPickerItem));
-        PlaceHierarchy = new ObservableCollection<PlacePickerCountryNode>(BuildHierarchy(_places));
+            .Select(place => picker.PrimaryItemByPlaceId[place.Id]));
+        FavoritePlaces = new ObservableCollection<PlacePickerItemDto>(_places
+            .Where(place => place.IsFavorite)
+            .Select(place => picker.PrimaryItemByPlaceId[place.Id]));
+        PlaceHierarchy = new ObservableCollection<PlacePickerCountryNode>(picker.Hierarchy);
     }
 
     private void ResetPickerState()
@@ -655,31 +663,6 @@ public partial class GalleryPlaceEditSessionViewModel : ObservableObject, IPlace
         OnPropertyChanged(nameof(CanApplyPlaceChange));
         PlacePreviewChanged?.Invoke(this, EventArgs.Empty);
     }
-
-    private static PlacePickerItemDto ToPickerItem(PlaceDto place) => new()
-    {
-        Id = place.Id,
-        DisplayName = place.DisplayName,
-        Country = place.Country,
-        City = place.City,
-        CanonicalName = place.CanonicalName,
-        IsFavorite = place.IsFavorite,
-    };
-
-    private static IReadOnlyList<PlacePickerCountryNode> BuildHierarchy(IReadOnlyList<PlaceDto> places) =>
-        places.GroupBy(place => string.IsNullOrWhiteSpace(place.Country) ? "기타" : place.Country)
-            .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
-            .Select(country => new PlacePickerCountryNode
-            {
-                Title = country.Key,
-                Regions = country.GroupBy(place => string.IsNullOrWhiteSpace(place.City) ? "기타" : place.City)
-                    .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
-                    .Select(region => new PlacePickerRegionNode
-                    {
-                        Title = region.Key,
-                        Places = region.OrderBy(place => place.DisplayName, StringComparer.OrdinalIgnoreCase).Select(ToPickerItem).ToList(),
-                    }).ToList(),
-            }).ToList();
 
     private static PlaceLocationPreview Clone(PlaceLocationPreview source) => new()
     {

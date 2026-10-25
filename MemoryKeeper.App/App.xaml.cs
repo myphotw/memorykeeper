@@ -21,8 +21,13 @@ namespace MemoryKeeper.App;
 
 public partial class App : Microsoft.UI.Xaml.Application
 {
+    private static readonly TimeSpan StartupImageReadyTimeout = TimeSpan.FromSeconds(2);
+
     private IHost? _host;
     private Window? _mainWindow;
+    private StartupWindow? _startupWindow;
+    private bool _isClosingStartupWindow;
+    private bool _startupClosedByUser;
 
     public Window? MainWindow => _mainWindow;
 
@@ -91,7 +96,28 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
     }
 
-    protected override async void OnLaunched(LaunchActivatedEventArgs args)
+    protected override void OnLaunched(LaunchActivatedEventArgs args)
+    {
+        ShowStartupWindow();
+        if (_startupClosedByUser)
+        {
+            return;
+        }
+
+        // Return from the launch callback before constructing DI/DB services. This gives the
+        // activated StartupWindow a compositor turn instead of blocking its first frame.
+        var uiDispatcher = DispatcherQueue.GetForCurrentThread();
+        if (uiDispatcher is null || !uiDispatcher.TryEnqueue(
+                DispatcherQueuePriority.Low,
+                async () => await InitializeApplicationAsync()))
+        {
+            StartupDiagnostics.WriteStep("[StartupWindow] initialization dispatch failed.");
+            CloseStartupWindow();
+            Exit();
+        }
+    }
+
+    private async Task InitializeApplicationAsync()
     {
         try
         {
@@ -112,6 +138,11 @@ public partial class App : Microsoft.UI.Xaml.Application
                 var initializationResult = await DatabaseInitializer.InitializeAsync(
                     _host.Services,
                     DatabaseDirectory);
+                if (_startupClosedByUser)
+                {
+                    return;
+                }
+
                 StartupDiagnostics.WriteStep($"[3.1] Database Initialize 완료: {initializationResult.Summary}");
                 logger.LogInformation("Database status: {Summary}", initializationResult.Summary);
 
@@ -120,6 +151,11 @@ public partial class App : Microsoft.UI.Xaml.Application
                 {
                     var setupWizard = scope.ServiceProvider.GetRequiredService<SetupWizardService>();
                     LaunchSetupStatus = await setupWizard.GetStatusAsync();
+                    if (_startupClosedByUser)
+                    {
+                        return;
+                    }
+
                     StartupDiagnostics.WriteStep(
                         $"[4] SetupWizardService 완료 NeedsSetup={LaunchSetupStatus.NeedsSetup}, HasHomeLocation={LaunchSetupStatus.HasHomeLocation}");
 
@@ -136,6 +172,7 @@ public partial class App : Microsoft.UI.Xaml.Application
                 catch (Exception ex)
                 {
                     StartupDiagnostics.WriteException("[5] MainWindow 생성", ex);
+                    CloseStartupWindow();
                     ErrorDialog.Show(
                         ErrorReportSource.Startup,
                         "Memory Keeper — MainWindow 생성 실패",
@@ -149,7 +186,14 @@ public partial class App : Microsoft.UI.Xaml.Application
                 // the first Home render.
                 _mainWindow = mainWindow;
                 ErrorDialog.RegisterUiDispatcher(DispatcherQueue.GetForCurrentThread());
+                AlignMainWindowWithStartup(mainWindow);
+                if (_startupClosedByUser)
+                {
+                    return;
+                }
+
                 _mainWindow.Activate();
+                CloseStartupWindow();
                 StartupDiagnostics.WriteStep("[6] MainWindow Activate 완료");
 
                 try
@@ -185,6 +229,7 @@ public partial class App : Microsoft.UI.Xaml.Application
             catch (Exception ex)
             {
                 StartupDiagnostics.WriteException("OnLaunched (post-DI)", ex);
+                CloseStartupWindow();
                 ErrorDialog.Show(
                     ErrorReportSource.Startup,
                     "Memory Keeper — 시작 실패",
@@ -195,11 +240,78 @@ public partial class App : Microsoft.UI.Xaml.Application
         catch (Exception ex)
         {
             StartupDiagnostics.WriteException("[3] DI Container 생성", ex);
+            CloseStartupWindow();
             ErrorDialog.Show(
                 ErrorReportSource.Startup,
                 "Memory Keeper — DI 실패",
                 ex,
                 stage: "[3] DI Container 생성");
+        }
+    }
+
+    private void ShowStartupWindow()
+    {
+        try
+        {
+            _startupWindow = new StartupWindow();
+            _startupWindow.Closed += StartupWindow_OnClosed;
+            _startupWindow.Activate();
+            _ = ObserveStartupImageAsync(_startupWindow);
+        }
+        catch (Exception ex)
+        {
+            // The branded artwork is optional UI; startup must continue if it cannot be shown.
+            StartupDiagnostics.WriteException("StartupWindow", ex);
+            CloseStartupWindow();
+        }
+    }
+
+    private static async Task ObserveStartupImageAsync(StartupWindow startupWindow)
+    {
+        try
+        {
+            var result = await startupWindow.WaitForImageReadyAsync(StartupImageReadyTimeout);
+            StartupDiagnostics.WriteStep($"[StartupWindow] image state: {result}.");
+        }
+        catch (Exception ex)
+        {
+            // Artwork diagnostics are best-effort and never gate application initialization.
+            StartupDiagnostics.WriteException("StartupWindow image observer", ex);
+        }
+    }
+
+    private void CloseStartupWindow()
+    {
+        var startupWindow = _startupWindow;
+        _startupWindow = null;
+        if (startupWindow is null)
+        {
+            return;
+        }
+
+        _isClosingStartupWindow = true;
+        startupWindow.Closed -= StartupWindow_OnClosed;
+        startupWindow.Close();
+    }
+
+    private void StartupWindow_OnClosed(object sender, WindowEventArgs args)
+    {
+        if (_isClosingStartupWindow)
+        {
+            return;
+        }
+
+        _startupWindow = null;
+        _startupClosedByUser = true;
+        Exit();
+    }
+
+    private void AlignMainWindowWithStartup(MainWindow mainWindow)
+    {
+        if (_startupWindow?.AppWindow is { } startupAppWindow
+            && mainWindow.AppWindow is { } mainAppWindow)
+        {
+            mainAppWindow.Move(startupAppWindow.Position);
         }
     }
 

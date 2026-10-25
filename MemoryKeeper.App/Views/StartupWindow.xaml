@@ -1,0 +1,16 @@
+<Window
+    x:Class="MemoryKeeper.App.Views.StartupWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Grid Background="#F6F4EF">
+        <Image
+            x:Name="StartupImage"
+            HorizontalAlignment="Center"
+            ImageFailed="StartupImage_OnFailed"
+            ImageOpened="StartupImage_OnOpened"
+            Source="ms-appx:///Assets/memorykeeper_loading.png"
+            Stretch="Uniform"
+            VerticalAlignment="Center" />
+    </Grid>
+</Window>

@@ -36,6 +36,7 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
     private IReadOnlyList<PendingMemoryMediaItem> _loadedMediaItems = [];
     private IReadOnlyDictionary<Guid, PlaceDto> _registeredPlacesById =
         new Dictionary<Guid, PlaceDto>();
+    private IReadOnlyList<PlacePickerItemDto> _placePickerItems = [];
     private int _cleanupPage;
     private string? _placeGroupCursor;
     private string? _captureDateGroupCursor;
@@ -830,12 +831,12 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
     public async Task SearchExistingPlacesAsync()
     {
         var query = ExistingPlaceSearchText.Trim();
-        var results = (await _placeService.GetPlaceListAsync())
-            .Where(place => place.IsActive)
-            .Where(place => string.IsNullOrWhiteSpace(query)
-                            || PlaceMatches(place, query))
-            .OrderBy(place => place.DisplayName, StringComparer.OrdinalIgnoreCase)
-            .Select(ToPickerItem)
+        var placesById = Places.ToDictionary(place => place.Id);
+        var results = _placePickerItems
+            .Where(item => placesById.TryGetValue(item.Id, out var place)
+                           && PlacePickerHierarchyProjection.Matches(item, place, query))
+            .OrderBy(item => item.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(item => item.FullPath, StringComparer.Ordinal)
             .ToList();
         FilteredExistingPlaces = new ObservableCollection<PlacePickerItemDto>(results);
         PlaceDialogStatus = string.IsNullOrWhiteSpace(ExistingPlaceSearchText)
@@ -860,7 +861,9 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
             RegistrationGpsText = SelectedLocation.HasCoordinates
                 ? $"{SelectedLocation.LatitudeText}, {SelectedLocation.LongitudeText}"
                 : string.Empty;
-            PlaceDialogStatus = $"기존 장소 선택: {dto.DisplayName}";
+            PlaceDialogStatus = place.HasMultipleHierarchyPaths
+                ? $"기존 장소 선택: {place.FullPath} · 같은 등록 장소이며, 이 선택만으로 경로는 통합되지 않습니다."
+                : $"기존 장소 선택: {place.FullPath}";
         }
         catch (Exception ex)
         {
@@ -976,19 +979,26 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
 
     private async Task LoadPlacePickerDataAsync()
     {
-        var places = (await _placeService.GetPlaceListAsync())
+        var placesTask = _placeService.GetPlaceListAsync();
+        var hierarchyTask = _placeService.GetPlaceHierarchyAsync();
+        await Task.WhenAll(placesTask, hierarchyTask);
+        var places = (await placesTask)
             .Where(place => place.IsActive)
             .OrderBy(place => place.DisplayName, StringComparer.OrdinalIgnoreCase)
             .ToList();
+        var picker = PlacePickerHierarchyProjection.Build(places, await hierarchyTask);
+        Places = new ObservableCollection<PlaceDto>(places);
+        _placePickerItems = picker.AllPathItems;
         RecentPlaces = new ObservableCollection<PlacePickerItemDto>(
             places.Where(place => place.LastUsedAt.HasValue || place.UsageCount > 0)
                 .OrderByDescending(place => place.LastUsedAt)
                 .ThenByDescending(place => place.UpdatedAt)
                 .Take(5)
-                .Select(ToPickerItem));
+                .Select(place => picker.PrimaryItemByPlaceId[place.Id]));
         FavoritePlaces = new ObservableCollection<PlacePickerItemDto>(
-            places.Where(place => place.IsFavorite).Select(ToPickerItem));
-        PlaceHierarchy = new ObservableCollection<PlacePickerCountryNode>(BuildPlaceHierarchy(places));
+            places.Where(place => place.IsFavorite)
+                .Select(place => picker.PrimaryItemByPlaceId[place.Id]));
+        PlaceHierarchy = new ObservableCollection<PlacePickerCountryNode>(picker.Hierarchy);
         FilteredExistingPlaces = [];
     }
 
@@ -1096,40 +1106,6 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
         CanonicalName = place.CanonicalName,
         IsFavorite = place.IsFavorite,
     };
-
-    private static IReadOnlyList<PlacePickerCountryNode> BuildPlaceHierarchy(IReadOnlyList<PlaceDto> places) =>
-        places
-            .GroupBy(place => string.IsNullOrWhiteSpace(place.Country) ? "기타" : place.Country.Trim())
-            .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
-            .Select(country => new PlacePickerCountryNode
-            {
-                Title = country.Key,
-                Regions = country
-                    .GroupBy(place => string.IsNullOrWhiteSpace(place.City) ? "기타" : place.City.Trim())
-                    .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
-                    .Select(region => new PlacePickerRegionNode
-                    {
-                        Title = region.Key,
-                        Places = region.Select(ToPickerItem)
-                            .OrderBy(place => place.DisplayName, StringComparer.OrdinalIgnoreCase)
-                            .ToList(),
-                    })
-                    .ToList(),
-            })
-            .ToList();
-
-    private static bool PlaceMatches(PlaceDto place, string query) =>
-        new[]
-        {
-            place.DisplayName,
-            place.CanonicalName,
-            place.Country,
-            place.Province,
-            place.City,
-            place.District,
-            place.Address,
-        }.Any(value => !string.IsNullOrWhiteSpace(value)
-                       && value.Contains(query, StringComparison.OrdinalIgnoreCase));
 
     public async Task SearchPlaceSuggestionsAsync()
     {
@@ -1979,7 +1955,8 @@ public partial class PendingMemoryViewModel : ObservableObject, IPlaceRegistrati
         }
 
         var place = SelectedPlace;
-        SelectedExistingPlace = ToPickerItem(place);
+        SelectedExistingPlace = _placePickerItems.FirstOrDefault(item => item.Id == place.Id)
+                                ?? ToPickerItem(place);
         SelectedNearbyCandidate = null;
         SelectedPlaceSuggestion = null;
         HasMapPickSelection = false;

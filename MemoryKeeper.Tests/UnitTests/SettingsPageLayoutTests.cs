@@ -285,7 +285,8 @@ public sealed class SettingsPageLayoutTests
         Assert.Contains("Places.FirstOrDefault(place => place.Id == requestedPlaceId)", placeViewModel, StringComparison.Ordinal);
         Assert.Contains("FilteredPlaces.FirstOrDefault(place => place.Id == requestedPlaceId)", placeViewModel, StringComparison.Ordinal);
         Assert.Contains("ListSearchText = requestedPlace.DisplayName", placeViewModel, StringComparison.Ordinal);
-        Assert.Contains("ListSearchText = place.DisplayName", placeViewModel, StringComparison.Ordinal);
+        Assert.Contains("var place = Places.FirstOrDefault(item => item.Id == placeId)", placeViewModel, StringComparison.Ordinal);
+        Assert.Contains("FilteredPlaces.FirstOrDefault(item => item.Id == placeId) ?? place", placeViewModel, StringComparison.Ordinal);
         Assert.DoesNotContain("FirstOrDefault(place => place.DisplayName ==", placeViewModel, StringComparison.Ordinal);
         Assert.Contains("SelectedPlace = FilteredPlaces.FirstOrDefault() ?? Places.FirstOrDefault()", placeViewModel, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"PlaceList\"", placeView, StringComparison.Ordinal);

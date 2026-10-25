@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using MemoryKeeper.Mobile.Controls;
 using MemoryKeeper.Mobile.Diagnostics;
 using MemoryKeeper.Mobile.Models;
@@ -10,6 +11,12 @@ namespace MemoryKeeper.Mobile.Views;
 public partial class HomePage : ContentPage
 {
     private const double TileSpacing = 2;
+    private static readonly TimeSpan MinimumStartupDisplayDuration = TimeSpan.FromMilliseconds(1500);
+    private const uint StartupFadeDurationMilliseconds = 200;
+
+    private long _startupDisplayStartedAt;
+    private bool _startupOverlayDismissed;
+    private bool _isInitializing;
 
     public HomePage(HomeViewModel viewModel)
     {
@@ -49,7 +56,10 @@ public partial class HomePage : ContentPage
     protected override void OnAppearing()
     {
         base.OnAppearing();
-        _ = InitializeSafelyAsync();
+        if (!_isInitializing)
+        {
+            _ = InitializeSafelyAsync();
+        }
     }
 
     protected override void OnDisappearing()
@@ -113,6 +123,12 @@ public partial class HomePage : ContentPage
 
     private async Task InitializeSafelyAsync()
     {
+        _isInitializing = true;
+        if (_startupDisplayStartedAt == 0)
+        {
+            _startupDisplayStartedAt = Stopwatch.GetTimestamp();
+        }
+
         try
         {
             await ViewModel.InitializeAsync();
@@ -120,6 +136,42 @@ public partial class HomePage : ContentPage
         catch (Exception exception)
         {
             ViewModel.HandleUnexpectedLoadFailure(exception);
+        }
+        finally
+        {
+            _isInitializing = false;
+            await DismissStartupOverlayAsync(skipMinimumDuration: ViewModel.IsErrorStateVisible);
+        }
+    }
+
+    private async Task DismissStartupOverlayAsync(bool skipMinimumDuration)
+    {
+        if (_startupOverlayDismissed)
+        {
+            return;
+        }
+
+        _startupOverlayDismissed = true;
+        try
+        {
+            if (!skipMinimumDuration)
+            {
+                var elapsed = Stopwatch.GetElapsedTime(_startupDisplayStartedAt);
+                var remaining = MinimumStartupDisplayDuration - elapsed;
+                if (remaining > TimeSpan.Zero)
+                {
+                    await Task.Delay(remaining);
+                }
+
+                await StartupLoadingOverlay.FadeTo(
+                    0,
+                    StartupFadeDurationMilliseconds,
+                    Easing.CubicOut);
+            }
+        }
+        finally
+        {
+            StartupLoadingOverlay.IsVisible = false;
         }
     }
 }

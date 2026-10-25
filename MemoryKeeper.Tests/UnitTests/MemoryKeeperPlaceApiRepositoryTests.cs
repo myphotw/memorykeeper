@@ -25,6 +25,7 @@ public sealed class MemoryKeeperPlaceApiRepositoryTests
             Responses =
             {
                 ["GET /api/memorykeeper/places?limit=500&offset=0"] = $"{{\"items\":[{PlaceJson}],\"total\":1,\"limit\":500,\"offset\":0}}",
+                ["GET /api/memorykeeper/places/hierarchy"] = $"{{\"items\":[{{\"memorykeeper_place_id\":\"{PlaceId:D}\",\"location_key\":\"registered:v1:{PlaceId:D}\",\"country\":\"대한민국\",\"region\":\"전라남도\",\"display_name\":\"피아골\",\"location_path\":[\"대한민국\",\"전라남도\"],\"full_path\":\"대한민국 > 전라남도 > 피아골\",\"photo_count\":3,\"location_hierarchy_complete\":true,\"location_cleanup_reason\":null}}],\"total_places\":1,\"total_paths\":1}}",
                 ["POST /api/memorykeeper/places"] = PlaceJson,
                 [$"PATCH /api/memorykeeper/places/{PlaceId:D}"] = PlaceJson,
             },
@@ -38,6 +39,16 @@ public sealed class MemoryKeeperPlaceApiRepositoryTests
         Assert.Equal("토지면", listed.District);
         Assert.Equal(250, listed.RadiusM);
         Assert.Equal(4, listed.Revision);
+
+        var hierarchy = await repository.GetPlaceHierarchyAsync();
+        var path = Assert.Single(hierarchy.Items);
+        Assert.Equal(PlaceId, path.MemorykeeperPlaceId);
+        Assert.Equal("전라남도", path.Region);
+        Assert.Equal(new[] { "대한민국", "전라남도" }, path.LocationPath);
+        Assert.Equal(3, path.PhotoCount);
+        Assert.True(path.LocationHierarchyComplete);
+        Assert.Equal(1, hierarchy.TotalPlaces);
+        Assert.Equal(1, hierarchy.TotalPaths);
 
         await repository.CreatePlaceAsync(new MemoryKeeperPlaceCreateApiRequest
         {
@@ -117,11 +128,52 @@ public sealed class MemoryKeeperPlaceApiRepositoryTests
     }
 
     [Fact]
+    public async Task LinkedPhotos_DuplicateCandidates_AndMerge_UseDeployedContracts()
+    {
+        var targetId = Guid.Parse("99999999-8888-7777-6666-555555555555");
+        var photosKey = $"GET /api/memorykeeper/places/{PlaceId:D}/photos?limit=50&offset=0";
+        var previewKey = $"GET /api/memorykeeper/places/merge-preview?source_place_id={PlaceId:D}&target_place_id={targetId:D}";
+        const string duplicateKey = "GET /api/memorykeeper/places/duplicate-candidates";
+        const string mergeKey = "POST /api/memorykeeper/places/merge";
+        var handler = new RecordingHandler
+        {
+            Responses =
+            {
+                [photosKey] = "{\"items\":[{\"file_id\":\"photo-a\",\"filename\":\"a.jpg\",\"thumbnail_url\":\"/api/common/gallery/photo-a/thumbnail\",\"effective_capture_date\":\"2026-02-14\",\"effective_capture_precision\":\"DATE\"}],\"total\":1,\"limit\":50,\"offset\":0}",
+                [duplicateKey] = $"{{\"items\":[{{\"source_place_id\":\"{PlaceId:D}\",\"target_place_id\":\"{targetId:D}\",\"reason\":\"NEARBY_NAME\"}}]}}",
+                [previewKey] = $"{{\"source_path\":\"몰디브 > Lot > 해변\",\"target_path\":\"몰디브 > 말레 > 해변\",\"source_linked_photo_count\":1,\"target_linked_photo_count\":11,\"moved_photo_count\":1,\"source_revision\":4,\"target_revision\":8}}",
+                [mergeKey] = $"{{\"source_place_id\":\"{PlaceId:D}\",\"target_place_id\":\"{targetId:D}\",\"moved_photo_count\":1}}",
+            },
+        };
+        using var provider = BuildProvider(handler);
+        var repository = provider.GetRequiredService<IMemoryKeeperPlaceApiRepository>();
+
+        var photos = await repository.GetPlacePhotosAsync(PlaceId, 50, 0);
+        var duplicates = await repository.GetDuplicateCandidatesAsync();
+        var preview = await repository.GetMergePreviewAsync(PlaceId, targetId);
+        var merged = await repository.MergePlacesAsync(new MemoryKeeperPlaceMergeApiRequest
+        {
+            SourcePlaceId = PlaceId,
+            TargetPlaceId = targetId,
+            ExpectedSourceRevision = preview.SourceRevision,
+            ExpectedTargetRevision = preview.TargetRevision,
+        });
+
+        Assert.Equal("photo-a", Assert.Single(photos.Items).FileId);
+        Assert.Equal(targetId, Assert.Single(duplicates.Items).TargetPlaceId);
+        Assert.Equal(11, preview.TargetLinkedPhotoCount);
+        Assert.Equal(1, merged.MovedPhotoCount);
+        using var payload = JsonDocument.Parse(handler.Bodies[mergeKey]);
+        Assert.Equal(4, payload.RootElement.GetProperty("expected_source_revision").GetInt32());
+        Assert.Equal(8, payload.RootElement.GetProperty("expected_target_revision").GetInt32());
+    }
+
+    [Fact]
     public async Task ClearAssignment_SendsExplicitNull_AndDeleteUsesNasEndpoint()
     {
         const string fileId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
         var patchKey = $"PATCH /api/memorykeeper/files/{fileId}/place";
-        var deleteKey = $"DELETE /api/memorykeeper/places/{PlaceId:D}";
+        var deleteKey = $"DELETE /api/memorykeeper/places/{PlaceId:D}?expected_revision=4";
         var handler = new RecordingHandler
         {
             Responses =
@@ -135,7 +187,7 @@ public sealed class MemoryKeeperPlaceApiRepositoryTests
         var repository = provider.GetRequiredService<IMemoryKeeperPlaceApiRepository>();
 
         var cleared = await repository.AssignFilePlaceAsync(fileId, null, 8);
-        await repository.DeletePlaceAsync(PlaceId);
+        await repository.DeletePlaceAsync(PlaceId, 4);
 
         using var payload = JsonDocument.Parse(handler.Bodies[patchKey]);
         Assert.Equal(JsonValueKind.Null, payload.RootElement.GetProperty("memorykeeper_place_id").ValueKind);

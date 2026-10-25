@@ -39,6 +39,7 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
     private readonly ISettingRepository _settingRepository;
     private readonly ILogger<PhotoDetailViewModel> _logger;
     private IMapController? _mapController;
+    private IReadOnlyList<PlacePickerItemDto> _placePickerItems = [];
 
     [ObservableProperty] private Guid mediaId;
     [ObservableProperty] private string fileName = string.Empty;
@@ -53,6 +54,9 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
     [ObservableProperty] private string district = string.Empty;
     [ObservableProperty] private string address = string.Empty;
     [ObservableProperty] private string canonicalName = string.Empty;
+    [ObservableProperty] private string canonicalLocationPath = "-";
+    [ObservableProperty] private bool hasLocationHierarchyWarning;
+    [ObservableProperty] private string locationHierarchyWarningText = string.Empty;
     [ObservableProperty] private string googlePlaceIdText = string.Empty;
     [ObservableProperty] private string gpsText = "-";
     [ObservableProperty] private string gpsStatusText = "❌ GPS 없음";
@@ -731,14 +735,12 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
     public Task SearchExistingPlacesAsync()
     {
         var term = ExistingPlaceSearchText?.Trim() ?? string.Empty;
-        var results = Places
-            .Where(place => term.Length == 0
-                            || place.DisplayName.Contains(term, StringComparison.OrdinalIgnoreCase)
-                            || place.Country.Contains(term, StringComparison.OrdinalIgnoreCase)
-                            || place.City.Contains(term, StringComparison.OrdinalIgnoreCase)
-                            || place.Address.Contains(term, StringComparison.OrdinalIgnoreCase))
-            .Select(ToPickerItem)
+        var placesById = Places.ToDictionary(place => place.Id);
+        var results = _placePickerItems
+            .Where(item => placesById.TryGetValue(item.Id, out var place)
+                           && PlacePickerHierarchyProjection.Matches(item, place, term))
             .OrderBy(place => place.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(place => place.FullPath, StringComparer.Ordinal)
             .ToList();
         FilteredExistingPlaces = new ObservableCollection<PlacePickerItemDto>(results);
         PlaceDialogStatus = string.IsNullOrWhiteSpace(ExistingPlaceSearchText)
@@ -764,7 +766,9 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
             RegistrationGpsText = SelectedLocation.HasCoordinates
                 ? $"{SelectedLocation.LatitudeText}, {SelectedLocation.LongitudeText}"
                 : string.Empty;
-            PlaceDialogStatus = $"기존 장소 선택: {dto.DisplayName}";
+            PlaceDialogStatus = place.HasMultipleHierarchyPaths
+                ? $"기존 장소 선택: {place.FullPath} · 같은 등록 장소이며, 이 선택만으로 경로는 통합되지 않습니다."
+                : $"기존 장소 선택: {place.FullPath}";
         }
         catch (Exception ex)
         {
@@ -794,17 +798,22 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
 
     private async Task LoadPlacePickerDataAsync()
     {
-        var active = (await _placeService.GetPlaceListAsync()).Where(place => place.IsActive).ToList();
+        var placesTask = _placeService.GetPlaceListAsync();
+        var hierarchyTask = _placeService.GetPlaceHierarchyAsync();
+        await Task.WhenAll(placesTask, hierarchyTask);
+        var active = (await placesTask).Where(place => place.IsActive).ToList();
+        var picker = PlacePickerHierarchyProjection.Build(active, await hierarchyTask);
         Places = new ObservableCollection<PlaceDto>(active);
+        _placePickerItems = picker.AllPathItems;
         RecentPlaces = new ObservableCollection<PlacePickerItemDto>(active
             .Where(place => place.LastUsedAt.HasValue || place.UsageCount > 0)
             .OrderByDescending(place => place.LastUsedAt)
             .Take(5)
-            .Select(ToPickerItem));
+            .Select(place => picker.PrimaryItemByPlaceId[place.Id]));
         FavoritePlaces = new ObservableCollection<PlacePickerItemDto>(active
             .Where(place => place.IsFavorite)
-            .Select(ToPickerItem));
-        PlaceHierarchy = new ObservableCollection<PlacePickerCountryNode>(BuildPickerHierarchy(active));
+            .Select(place => picker.PrimaryItemByPlaceId[place.Id]));
+        PlaceHierarchy = new ObservableCollection<PlacePickerCountryNode>(picker.Hierarchy);
         FilteredExistingPlaces = [];
     }
 
@@ -1614,38 +1623,6 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
         });
     }
 
-    private static PlacePickerItemDto ToPickerItem(PlaceDto place) => new()
-    {
-        Id = place.Id,
-        DisplayName = place.DisplayName,
-        Country = place.Country,
-        City = place.City,
-        CanonicalName = place.CanonicalName,
-        IsFavorite = place.IsFavorite,
-    };
-
-    private static IReadOnlyList<PlacePickerCountryNode> BuildPickerHierarchy(IReadOnlyList<PlaceDto> places) =>
-        places
-            .GroupBy(place => string.IsNullOrWhiteSpace(place.Country) ? "기타" : place.Country.Trim())
-            .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
-            .Select(country => new PlacePickerCountryNode
-            {
-                Title = country.Key,
-                Regions = country
-                    .GroupBy(place => string.IsNullOrWhiteSpace(place.City) ? "기타" : place.City.Trim())
-                    .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
-                    .Select(region => new PlacePickerRegionNode
-                    {
-                        Title = region.Key,
-                        Places = region
-                            .OrderBy(place => place.DisplayName, StringComparer.OrdinalIgnoreCase)
-                            .Select(ToPickerItem)
-                            .ToList(),
-                    })
-                    .ToList(),
-            })
-            .ToList();
-
     private async Task TryAutoAdvanceAfterPlaceRegisterAsync()
     {
         if (!_photoNavigationState.AutoAdvanceAfterPlaceRegister)
@@ -1780,6 +1757,14 @@ public partial class PhotoDetailViewModel : ObservableObject, IPlaceRegistration
         District = string.IsNullOrWhiteSpace(geography.District) ? "-" : geography.District;
         Address = geography.Address;
         CanonicalName = string.IsNullOrWhiteSpace(detail.CanonicalName) ? "-" : detail.CanonicalName!;
+        CanonicalLocationPath = LocationHierarchyDisplay.BuildCanonicalPath(
+            detail.CanonicalCountry,
+            detail.CanonicalRegion,
+            detail.CanonicalPlace);
+        LocationHierarchyWarningText = LocationHierarchyDisplay.GetWarning(
+            detail.LocationHierarchyComplete,
+            detail.LocationCleanupReason) ?? string.Empty;
+        HasLocationHierarchyWarning = LocationHierarchyWarningText.Length > 0;
         GooglePlaceIdText = string.IsNullOrWhiteSpace(detail.GooglePlaceId) ? "-" : detail.GooglePlaceId!;
         Latitude = detail.Latitude;
         Longitude = detail.Longitude;

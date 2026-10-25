@@ -8,9 +8,11 @@ using MemoryKeeper.Application;
 using MemoryKeeper.Application.DTOs;
 using MemoryKeeper.Application.Interfaces;
 using MemoryKeeper.Application.Services;
+using MemoryKeeper.Infrastructure.Services.Api;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media.Imaging;
 
 namespace MemoryKeeper.App.ViewModels;
 
@@ -21,18 +23,23 @@ public partial class PlaceManagementViewModel : ObservableObject
     private readonly ILocationResolver _locationResolver;
     private readonly ISettingRepository _settingRepository;
     private readonly IPlaceEditorSeedState _seedState;
+    private readonly IPhotoNavigationState _photoNavigationState;
+    private readonly BaseApiClient _apiClient;
     private readonly ILogger<PlaceManagementViewModel> _logger;
 
     private IMapController? _mapController;
     private CancellationTokenSource? _suggestCts;
     private CancellationTokenSource? _photoCountCts;
     private CancellationTokenSource? _mapPointCts;
+    private CancellationTokenSource? _linkedPhotosCts;
     private int _suggestVersion;
     private int _photoCountVersion;
     private bool _suppressFormHandlers;
     private bool _applyingLocation;
     private List<Guid> _seedMediaIds = [];
     private Guid? _requestedPlaceId;
+    private IReadOnlyList<PlacePickerItemDto> _allHierarchyPaths = [];
+    private IReadOnlyList<MemoryKeeperPlaceDuplicateCandidateApiDto> _duplicateCandidates = [];
 
     [ObservableProperty]
     private ObservableCollection<PlaceDto> places = [];
@@ -45,6 +52,21 @@ public partial class PlaceManagementViewModel : ObservableObject
 
     [ObservableProperty]
     private ObservableCollection<PlaceDto> recentPlaces = [];
+
+    [ObservableProperty]
+    private ObservableCollection<PlacePickerCountryNode> placeHierarchy = [];
+
+    [ObservableProperty]
+    private ObservableCollection<PlaceLinkedPhotoItem> linkedPhotos = [];
+
+    [ObservableProperty]
+    private ObservableCollection<PlaceDto> mergeTargets = [];
+
+    [ObservableProperty]
+    private PlaceDto? selectedMergeTarget;
+
+    [ObservableProperty]
+    private PlaceManagementFilterOption selectedFilter;
 
     [ObservableProperty]
     private ObservableCollection<PlaceSuggestionDto> placeSuggestions = [];
@@ -72,6 +94,9 @@ public partial class PlaceManagementViewModel : ObservableObject
 
     [ObservableProperty]
     private string city = string.Empty;
+
+    [ObservableProperty]
+    private string district = string.Empty;
 
     [ObservableProperty]
     private string address = string.Empty;
@@ -113,7 +138,28 @@ public partial class PlaceManagementViewModel : ObservableObject
     private int includedPhotoCount;
 
     [ObservableProperty]
-    private string includedPhotoCountText = "포함 사진 0장";
+    private string includedPhotoCountText = "반경 내 사진 0장";
+
+    [ObservableProperty]
+    private int linkedPhotoCount;
+
+    [ObservableProperty]
+    private string linkedPhotoCountText = "실제 연결 사진 0장";
+
+    [ObservableProperty]
+    private bool hasMoreLinkedPhotos;
+
+    [ObservableProperty]
+    private bool areLinkedPhotosVisible;
+
+    [ObservableProperty]
+    private string hierarchySummary = "전체 장소 0개";
+
+    [ObservableProperty]
+    private string selectedPathText = string.Empty;
+
+    [ObservableProperty]
+    private string cleanupReasonText = string.Empty;
 
     [ObservableProperty]
     private string statusMessage = "장소를 선택하거나 새로 등록하세요.";
@@ -133,6 +179,16 @@ public partial class PlaceManagementViewModel : ObservableObject
     public IReadOnlyList<string> CategoryOptions { get; } =
         PlaceCategoryDefaults.Items.Select(item => item.Category).ToList();
 
+    public IReadOnlyList<PlaceManagementFilterOption> FilterOptions { get; } =
+    [
+        new(PlaceManagementFilterKind.All, "전체 장소"),
+        new(PlaceManagementFilterKind.Duplicates, "중복 후보"),
+        new(PlaceManagementFilterKind.Incomplete, "정보 부족"),
+        new(PlaceManagementFilterKind.ZeroPhotos, "사진 0장"),
+        new(PlaceManagementFilterKind.Recent, "최근 장소"),
+        new(PlaceManagementFilterKind.Favorites, "즐겨찾기"),
+    ];
+
     public XamlRoot? HostXamlRoot { get; set; }
 
     public event EventHandler? BackRequested;
@@ -151,6 +207,8 @@ public partial class PlaceManagementViewModel : ObservableObject
         ILocationResolver locationResolver,
         ISettingRepository settingRepository,
         IPlaceEditorSeedState seedState,
+        IPhotoNavigationState photoNavigationState,
+        BaseApiClient apiClient,
         ILogger<PlaceManagementViewModel> logger)
     {
         _placeService = placeService;
@@ -158,7 +216,10 @@ public partial class PlaceManagementViewModel : ObservableObject
         _locationResolver = locationResolver;
         _settingRepository = settingRepository;
         _seedState = seedState;
+        _photoNavigationState = photoNavigationState;
+        _apiClient = apiClient;
         _logger = logger;
+        selectedFilter = FilterOptions[0];
     }
 
     public void AttachMap(IMapController mapController)
@@ -186,17 +247,32 @@ public partial class PlaceManagementViewModel : ObservableObject
 
     partial void OnSelectedPlaceChanged(PlaceDto? value)
     {
-        if (_suppressFormHandlers || value is null)
+        if (_suppressFormHandlers)
         {
             return;
         }
 
+        if (value is null)
+        {
+            _linkedPhotosCts?.Cancel();
+            LinkedPhotos.Clear();
+            LinkedPhotoCount = 0;
+            LinkedPhotoCountText = "실제 연결 사진 0장";
+            SelectedPathText = string.Empty;
+            CleanupReasonText = string.Empty;
+            return;
+        }
+
         ApplyPlaceToForm(value);
+        UpdateSelectedPlaceContext(value);
         _ = SyncEditablePinAsync();
         _ = RefreshIncludedPhotoCountAsync();
+        _ = LoadLinkedPhotosAsync(reset: true);
     }
 
     partial void OnListSearchTextChanged(string value) => ApplyListFilter();
+
+    partial void OnSelectedFilterChanged(PlaceManagementFilterOption value) => ApplyListFilter();
 
     partial void OnPlaceSearchTextChanged(string value) => _ = SuggestPlacesAsync(value);
 
@@ -293,6 +369,7 @@ public partial class PlaceManagementViewModel : ObservableObject
     {
         await RunBusyAsync(async () =>
         {
+            var previousSelection = SelectedPlace?.Id;
             await ReloadListsAsync();
 
             if (TryApplyRequestedSelection())
@@ -308,6 +385,12 @@ public partial class PlaceManagementViewModel : ObservableObject
                 StatusMessage = _seedMediaIds.Count > 0
                     ? $"선택한 사진 {_seedMediaIds.Count}장만 이 장소에 연결됩니다. 저장하세요."
                     : "선택한 사진 위치에서 새 장소를 등록하세요.";
+                return;
+            }
+
+            if (previousSelection.HasValue && SelectedPlace?.Id == previousSelection.Value)
+            {
+                StatusMessage = $"장소 {Places.Count}개를 새로 고쳤습니다.";
                 return;
             }
 
@@ -354,7 +437,7 @@ public partial class PlaceManagementViewModel : ObservableObject
         ClearFormInternal();
         _ = ClearMapPinAsync();
         IncludedPhotoCount = 0;
-        IncludedPhotoCountText = "포함 사진 0장";
+        IncludedPhotoCountText = "반경 내 사진 0장";
         StatusMessage = "새 장소 입력 모드입니다.";
     }
 
@@ -400,6 +483,142 @@ public partial class PlaceManagementViewModel : ObservableObject
 
     [RelayCommand]
     private void SelectRecent(PlaceDto? place) => SelectFavorite(place);
+
+    [RelayCommand]
+    private void SelectHierarchyPlace(PlacePickerItemDto? item)
+    {
+        if (item is null)
+        {
+            return;
+        }
+
+        SelectedPlace = Places.FirstOrDefault(place => place.Id == item.Id);
+        SelectedPathText = item.FullPath;
+    }
+
+    [RelayCommand]
+    private async Task ReverseGeocodeCurrentCoordinatesAsync()
+    {
+        if (!TryParseDouble(LatitudeText, out var latitude)
+            || !TryParseDouble(LongitudeText, out var longitude))
+        {
+            ShowError("주소를 조회할 위도·경도를 확인하세요.");
+            return;
+        }
+
+        await RunBusyAsync(async () =>
+        {
+            var originalName = DisplayName;
+            var originalLatitude = LatitudeText;
+            var originalLongitude = LongitudeText;
+            var originalRadius = RadiusText;
+            var location = await _locationResolver.ResolveAsync(latitude, longitude);
+            if (location is null)
+            {
+                ShowError("현재 좌표의 주소를 찾지 못했습니다. 기존 정보는 유지됩니다.");
+                return;
+            }
+
+            _suppressFormHandlers = true;
+            Country = FirstNotBlank(location.Country, Country);
+            Province = FirstNotBlank(location.Province, Province);
+            City = FirstNotBlank(location.City, City);
+            District = FirstNotBlank(location.District, District);
+            Address = FirstNotBlank(location.Address, Address);
+            PostalCode = FirstNotBlank(location.PostalCode, PostalCode);
+            DisplayName = originalName;
+            LatitudeText = originalLatitude;
+            LongitudeText = originalLongitude;
+            RadiusText = originalRadius;
+            _suppressFormHandlers = false;
+            StatusMessage = "현재 좌표에서 주소를 다시 조회했습니다. 내용을 확인한 뒤 저장하세요.";
+        });
+    }
+
+    [RelayCommand]
+    private async Task ShowLinkedPhotosAsync()
+    {
+        if (SelectedPlace is null)
+        {
+            ShowError("연결 사진을 확인할 장소를 선택하세요.");
+            return;
+        }
+
+        AreLinkedPhotosVisible = true;
+        await LoadLinkedPhotosAsync(reset: true);
+    }
+
+    [RelayCommand]
+    private Task LoadMoreLinkedPhotosAsync() => LoadLinkedPhotosAsync(reset: false);
+
+    [RelayCommand]
+    private void OpenLinkedPhoto(PlaceLinkedPhotoItem? item)
+    {
+        if (item is null || item.MediaId == Guid.Empty)
+        {
+            return;
+        }
+
+        _photoNavigationState.RequestOpenViewer(
+            item.MediaId,
+            LinkedPhotos.Select(photo => photo.MediaId).Where(id => id != Guid.Empty).ToList(),
+            "place-management");
+    }
+
+    [RelayCommand]
+    private async Task MergeIntoSelectedTargetAsync()
+    {
+        var source = SelectedPlace;
+        var target = SelectedMergeTarget;
+        if (source is null || target is null)
+        {
+            ShowError("병합할 Source 장소와 유지할 Target 장소를 선택하세요.");
+            return;
+        }
+
+        if (source.Id == target.Id)
+        {
+            ShowError("동일한 등록 장소 UUID의 여러 경로는 중복 장소가 아닙니다. 서로 다른 장소를 선택하세요.");
+            return;
+        }
+
+        await RunBusyAsync(async () =>
+        {
+            var preview = await _placeService.GetMergePreviewAsync(source.Id, target.Id);
+            var sourcePath = FirstNotBlank(preview.SourcePath, FindPrimaryPath(source.Id), source.DisplayName);
+            var targetPath = FirstNotBlank(preview.TargetPath, FindPrimaryPath(target.Id), target.DisplayName);
+            var movedCount = preview.MovedPhotoCount > 0
+                ? preview.MovedPhotoCount
+                : preview.SourceLinkedPhotoCount;
+            var sourceRevision = preview.SourceRevision > 0 ? preview.SourceRevision : source.Revision;
+            var targetRevision = preview.TargetRevision > 0 ? preview.TargetRevision : target.Revision;
+            var confirmed = await UserFeedback.ConfirmAsync(
+                HostXamlRoot,
+                "장소 병합 최종 확인",
+                $"Source (병합 후 비활성화)\n{sourcePath}\n좌표 {source.Latitude:F6}, {source.Longitude:F6} · 연결 {Math.Max(movedCount, source.MediaCount)}장 · Revision {sourceRevision}\n\n"
+                + $"Target (유지)\n{targetPath}\n좌표 {target.Latitude:F6}, {target.Longitude:F6} · 연결 {Math.Max(preview.TargetLinkedPhotoCount, target.MediaCount)}장 · Revision {targetRevision}\n\n"
+                + "Source의 연결 사진만 Target으로 이동합니다. Target 장소 정보는 유지되며 Source 정보로 덮어쓰지 않습니다.",
+                primaryText: "병합");
+            if (!confirmed)
+            {
+                StatusMessage = "장소 병합이 취소되었습니다.";
+                return;
+            }
+
+            var result = await _placeService.MergePlacesAsync(new MemoryKeeperPlaceMergeApiRequest
+            {
+                SourcePlaceId = source.Id,
+                TargetPlaceId = target.Id,
+                ExpectedSourceRevision = sourceRevision,
+                ExpectedTargetRevision = targetRevision,
+            });
+            var targetId = result.TargetPlaceId == Guid.Empty ? target.Id : result.TargetPlaceId;
+            ShowSuccess($"'{source.DisplayName}'을(를) '{target.DisplayName}'에 병합했습니다. 사진 {result.MovedPhotoCount:N0}장이 이동했습니다.");
+            SelectedFilter = FilterOptions[0];
+            ListSearchText = string.Empty;
+            await ReloadAndSelectAsync(targetId);
+        });
+    }
 
     [RelayCommand]
     private async Task ToggleFavoriteAsync()
@@ -492,6 +711,13 @@ public partial class PlaceManagementViewModel : ObservableObject
         {
             var original = SelectedPlace;
             var request = BuildUpdateRequest(original.Id);
+            if (PlaceHierarchyChangePolicy.HasCanonicalGeographyChanged(original, request)
+                && !await ConfirmHierarchyImpactAsync(original))
+            {
+                StatusMessage = "등록 장소의 위치 정보 수정이 취소되었습니다.";
+                return;
+            }
+
             var operation = await _placeService.UpdateWithRadiusImpactAsync(
                 original,
                 request,
@@ -522,6 +748,29 @@ public partial class PlaceManagementViewModel : ObservableObject
             ShowSuccess(message);
             await ReloadAndSelectAsync(updated.Id);
         });
+    }
+
+    private async Task<bool> ConfirmHierarchyImpactAsync(PlaceDto place)
+    {
+        // The page assigns XamlRoot before commands can run. Without it we cannot satisfy the
+        // explicit-confirmation contract, so do not mutate the registered place.
+        if (HostXamlRoot is null)
+        {
+            _logger.LogWarning("Place hierarchy impact prompt unavailable. PlaceId={PlaceId}", place.Id);
+            ShowError("위치 정보 변경 확인 창을 열 수 없습니다. 화면을 다시 연 뒤 시도하세요.");
+            return false;
+        }
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = HostXamlRoot,
+            Title = "등록 장소 위치 정보 수정",
+            Content = PlaceHierarchyChangePolicy.BuildImpactMessage(place.DisplayName, place.MediaCount),
+            PrimaryButtonText = "수정",
+            CloseButtonText = "취소",
+            DefaultButton = ContentDialogButton.Close,
+        };
+        return await dialog.ShowAsync() == ContentDialogResult.Primary;
     }
 
     private static string BuildSaveSuccessMessage(
@@ -598,10 +847,16 @@ public partial class PlaceManagementViewModel : ObservableObject
         }
 
         var place = SelectedPlace;
+        if (LinkedPhotoCount > 0 || place.MediaCount > 0)
+        {
+            ShowError($"'{place.DisplayName}'에는 실제 연결 사진 {Math.Max(LinkedPhotoCount, place.MediaCount)}장이 있어 삭제할 수 없습니다. 다른 장소와 병합하세요.");
+            return;
+        }
+
         var confirmed = await UserFeedback.ConfirmAsync(
             HostXamlRoot,
             "장소 삭제",
-            $"이 장소는 사진 {place.MediaCount}장에서 사용 중입니다.\n삭제하시겠습니까?",
+            $"사용하지 않는 장소 '{place.DisplayName}'을(를) 삭제하시겠습니까?\n이 작업은 장소 자체만 삭제하며 사진 연결을 자동으로 해제하지 않습니다.",
             primaryText: "삭제");
 
         if (!confirmed)
@@ -611,7 +866,17 @@ public partial class PlaceManagementViewModel : ObservableObject
 
         await RunBusyAsync(async () =>
         {
-            var result = await _placeService.DeletePlaceAsync(place.Id);
+            (bool Succeeded, string Message, int MediaCount) result;
+            try
+            {
+                result = await _placeService.DeletePlaceAsync(place.Id, place.Revision);
+            }
+            catch (ApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Conflict)
+            {
+                ShowError(BuildDeleteBlockedMessage(ex));
+                return;
+            }
+
             ShowSuccess(result.Message);
             await ReloadListsAsync();
             SelectedPlace = FilteredPlaces.FirstOrDefault();
@@ -637,7 +902,7 @@ public partial class PlaceManagementViewModel : ObservableObject
             Country = Country,
             Province = Province,
             City = City,
-            District = string.Empty,
+            District = District,
             Address = Address,
             PostalCode = PostalCode,
             GooglePlaceId = string.IsNullOrWhiteSpace(GooglePlaceId) ? null : GooglePlaceId,
@@ -659,7 +924,7 @@ public partial class PlaceManagementViewModel : ObservableObject
             Country = Country,
             Province = Province,
             City = City,
-            District = SelectedPlace?.District ?? string.Empty,
+            District = District,
             Address = Address,
             PostalCode = PostalCode,
             GooglePlaceId = string.IsNullOrWhiteSpace(GooglePlaceId) ? null : GooglePlaceId,
@@ -679,6 +944,7 @@ public partial class PlaceManagementViewModel : ObservableObject
         Country = place.Country;
         Province = place.Province;
         City = place.City;
+        District = place.District;
         Address = place.Address;
         PostalCode = place.PostalCode;
         GooglePlaceId = place.GooglePlaceId ?? string.Empty;
@@ -703,6 +969,7 @@ public partial class PlaceManagementViewModel : ObservableObject
         Country = location.Country;
         Province = location.Province;
         City = location.City;
+        District = location.District;
         Address = string.IsNullOrWhiteSpace(location.Address) ? location.DisplayName : location.Address;
         PostalCode = location.PostalCode;
         GooglePlaceId = location.PlaceId ?? string.Empty;
@@ -720,6 +987,7 @@ public partial class PlaceManagementViewModel : ObservableObject
         Country = string.Empty;
         Province = string.Empty;
         City = string.Empty;
+        District = string.Empty;
         Address = string.Empty;
         PostalCode = string.Empty;
         GooglePlaceId = string.Empty;
@@ -733,19 +1001,46 @@ public partial class PlaceManagementViewModel : ObservableObject
         PlaceSearchText = string.Empty;
         PlaceSuggestions.Clear();
         HasPlaceSuggestions = false;
+        AreLinkedPhotosVisible = false;
+        _linkedPhotosCts?.Cancel();
+        LinkedPhotos.Clear();
+        LinkedPhotoCount = 0;
+        LinkedPhotoCountText = "실제 연결 사진 0장";
         _suppressFormHandlers = false;
     }
 
     private async Task ReloadListsAsync()
     {
-        var items = await _placeService.GetPlaceListAsync();
-        var favorites = await _placeService.GetFavoritePlacesAsync();
-        var recent = await _placeService.GetRecentPlacesAsync(10);
+        var selectedId = SelectedPlace?.Id;
+        var itemsTask = _placeService.GetPlaceListAsync();
+        var hierarchyTask = _placeService.GetPlaceHierarchyCatalogAsync();
+        var duplicateTask = _placeService.GetDuplicateCandidatesAsync();
+        await Task.WhenAll(itemsTask, hierarchyTask, duplicateTask);
+
+        var items = await itemsTask;
+        var hierarchy = await hierarchyTask;
+        var duplicates = await duplicateTask;
 
         Places = new ObservableCollection<PlaceDto>(items);
-        FavoritePlaces = new ObservableCollection<PlaceDto>(favorites);
-        RecentPlaces = new ObservableCollection<PlaceDto>(recent);
+        FavoritePlaces = new ObservableCollection<PlaceDto>(items.Where(place => place.IsFavorite));
+        RecentPlaces = new ObservableCollection<PlaceDto>(items
+            .Where(place => place.LastUsedAt.HasValue)
+            .OrderByDescending(place => place.LastUsedAt)
+            .Take(10));
+        _duplicateCandidates = duplicates.Items;
+        var projection = PlacePickerHierarchyProjection.Build(items, hierarchy.Items, includeInactive: true);
+        _allHierarchyPaths = projection.AllPathItems;
+        var totalPlaces = hierarchy.TotalPlaces > 0 ? hierarchy.TotalPlaces : items.Count;
+        var totalPaths = hierarchy.TotalPaths > 0 ? hierarchy.TotalPaths : projection.AllPathItems.Count;
+        HierarchySummary = totalPaths == totalPlaces
+            ? $"전체 장소 {totalPlaces:N0}개"
+            : $"전체 장소 {totalPlaces:N0}개 · 경로 {totalPaths:N0}개";
         ApplyListFilter();
+
+        if (selectedId.HasValue)
+        {
+            SelectedPlace = Places.FirstOrDefault(place => place.Id == selectedId.Value);
+        }
     }
 
     private async Task ReloadAndSelectAsync(Guid placeId)
@@ -754,7 +1049,6 @@ public partial class PlaceManagementViewModel : ObservableObject
         var place = Places.FirstOrDefault(item => item.Id == placeId);
         if (place is not null)
         {
-            ListSearchText = place.DisplayName;
             SelectedPlace = FilteredPlaces.FirstOrDefault(item => item.Id == placeId) ?? place;
             await SyncEditablePinAsync();
             await RefreshIncludedPhotoCountAsync();
@@ -768,6 +1062,41 @@ public partial class PlaceManagementViewModel : ObservableObject
     private void ApplyListFilter()
     {
         IEnumerable<PlaceDto> query = Places;
+        var duplicateIds = _duplicateCandidates
+            .Where(candidate =>
+                (candidate.SourcePlace?.Id ?? candidate.SourcePlaceId) !=
+                (candidate.TargetPlace?.Id ?? candidate.TargetPlaceId))
+            .SelectMany(candidate => new[]
+            {
+                candidate.SourcePlace?.Id ?? candidate.SourcePlaceId,
+                candidate.TargetPlace?.Id ?? candidate.TargetPlaceId,
+            })
+            .Where(id => id != Guid.Empty)
+            .ToHashSet();
+        var incompleteIds = _allHierarchyPaths
+            .Where(path => !path.LocationHierarchyComplete || !string.IsNullOrWhiteSpace(path.LocationCleanupReason))
+            .Select(path => path.Id)
+            .ToHashSet();
+        foreach (var placeId in _allHierarchyPaths.GroupBy(path => path.Id)
+                     .Where(group => group.Count() > 1)
+                     .Select(group => group.Key))
+        {
+            incompleteIds.Add(placeId);
+        }
+        var photoCounts = _allHierarchyPaths
+            .GroupBy(path => path.Id)
+            .ToDictionary(group => group.Key, group => group.Sum(path => Math.Max(0, path.PhotoCount)));
+        query = SelectedFilter.Kind switch
+        {
+            PlaceManagementFilterKind.Duplicates => query.Where(place => duplicateIds.Contains(place.Id)),
+            PlaceManagementFilterKind.Incomplete => query.Where(place => incompleteIds.Contains(place.Id)),
+            PlaceManagementFilterKind.ZeroPhotos => query.Where(place =>
+                !photoCounts.TryGetValue(place.Id, out var count) ? place.MediaCount == 0 : count == 0),
+            PlaceManagementFilterKind.Recent => query.Where(place => place.LastUsedAt.HasValue),
+            PlaceManagementFilterKind.Favorites => query.Where(place => place.IsFavorite),
+            _ => query,
+        };
+
         if (!string.IsNullOrWhiteSpace(ListSearchText))
         {
             var term = ListSearchText.Trim();
@@ -775,11 +1104,222 @@ public partial class PlaceManagementViewModel : ObservableObject
                 place.DisplayName.Contains(term, StringComparison.OrdinalIgnoreCase)
                 || place.Address.Contains(term, StringComparison.OrdinalIgnoreCase)
                 || place.City.Contains(term, StringComparison.OrdinalIgnoreCase)
-                || place.Province.Contains(term, StringComparison.OrdinalIgnoreCase));
+                || place.Province.Contains(term, StringComparison.OrdinalIgnoreCase)
+                || place.District.Contains(term, StringComparison.OrdinalIgnoreCase)
+                || _allHierarchyPaths.Any(path => path.Id == place.Id
+                                                   && (path.FullPath.Contains(term, StringComparison.OrdinalIgnoreCase)
+                                                       || path.Country.Contains(term, StringComparison.OrdinalIgnoreCase)
+                                                       || path.Region.Contains(term, StringComparison.OrdinalIgnoreCase))));
         }
 
-        FilteredPlaces = new ObservableCollection<PlaceDto>(query);
+        var filtered = (SelectedFilter.Kind == PlaceManagementFilterKind.Recent
+                ? query.OrderByDescending(place => place.LastUsedAt)
+                : query.OrderBy(place => place.DisplayName, StringComparer.CurrentCultureIgnoreCase))
+            .ToList();
+        var filteredIds = filtered.Select(place => place.Id).ToHashSet();
+        FilteredPlaces = new ObservableCollection<PlaceDto>(filtered);
+        MergeTargets = new ObservableCollection<PlaceDto>(Places.Where(place =>
+            SelectedPlace is null || place.Id != SelectedPlace.Id));
+        PlaceHierarchy = new ObservableCollection<PlacePickerCountryNode>(BuildHierarchy(
+            _allHierarchyPaths.Where(path => filteredIds.Contains(path.Id)).ToList()));
     }
+
+    private void UpdateSelectedPlaceContext(PlaceDto place)
+    {
+        var paths = _allHierarchyPaths.Where(path => path.Id == place.Id).ToList();
+        var primary = paths
+            .OrderByDescending(path => path.LocationHierarchyComplete)
+            .ThenByDescending(path => path.PhotoCount)
+            .ThenBy(path => path.FullPath, StringComparer.Ordinal)
+            .FirstOrDefault();
+        SelectedPathText = primary?.FullPath ?? place.DisplayName;
+        CleanupReasonText = BuildCleanupReasonText(paths);
+        var duplicate = _duplicateCandidates.FirstOrDefault(candidate =>
+            (candidate.SourcePlace?.Id ?? candidate.SourcePlaceId) == place.Id
+            || (candidate.TargetPlace?.Id ?? candidate.TargetPlaceId) == place.Id);
+        if (duplicate is not null)
+        {
+            var distance = duplicate.DistanceM.HasValue ? $" · 거리 {duplicate.DistanceM.Value:N0}m" : string.Empty;
+            CleanupReasonText += $" · 중복 후보: {FirstNotBlank(duplicate.Reason, "서버 후보")}{distance}";
+        }
+        LinkedPhotoCount = Math.Max(0, place.MediaCount);
+        LinkedPhotoCountText = $"실제 연결 사진 {LinkedPhotoCount:N0}장";
+        MergeTargets = new ObservableCollection<PlaceDto>(Places.Where(candidate => candidate.Id != place.Id));
+        SelectedMergeTarget = SuggestedMergeTarget(place.Id);
+    }
+
+    private PlaceDto? SuggestedMergeTarget(Guid sourceId)
+    {
+        var candidate = _duplicateCandidates.FirstOrDefault(item =>
+            (item.SourcePlace?.Id ?? item.SourcePlaceId) == sourceId
+            && (item.TargetPlace?.Id ?? item.TargetPlaceId) != sourceId);
+        var targetId = candidate?.TargetPlace?.Id ?? candidate?.TargetPlaceId ?? Guid.Empty;
+        return targetId == Guid.Empty ? null : Places.FirstOrDefault(place => place.Id == targetId);
+    }
+
+    private async Task LoadLinkedPhotosAsync(bool reset)
+    {
+        var place = SelectedPlace;
+        if (place is null || (!reset && !HasMoreLinkedPhotos))
+        {
+            return;
+        }
+
+        if (reset)
+        {
+            _linkedPhotosCts?.Cancel();
+            _linkedPhotosCts?.Dispose();
+            _linkedPhotosCts = new CancellationTokenSource();
+            LinkedPhotos.Clear();
+            HasMoreLinkedPhotos = false;
+        }
+
+        var token = _linkedPhotosCts?.Token ?? CancellationToken.None;
+        var expectedPlaceId = place.Id;
+        try
+        {
+            var page = await _placeService.GetLinkedPhotosAsync(
+                place.Id,
+                limit: 50,
+                offset: reset ? 0 : LinkedPhotos.Count,
+                token);
+            if (token.IsCancellationRequested || SelectedPlace?.Id != expectedPlaceId)
+            {
+                return;
+            }
+
+            foreach (var raw in page.Items)
+            {
+                var mediaId = BackendFileIdCodec.ToGuid(raw.FileId);
+                var thumbnail = BackendMediaUrlResolver.ResolveThumbnailUrl(
+                    _apiClient.ApiBaseUrl,
+                    raw.FileId,
+                    raw.ThumbnailUrl);
+                var preview = BackendMediaUrlResolver.ToAbsoluteUrl(_apiClient.ApiBaseUrl, raw.PreviewUrl);
+                LinkedPhotos.Add(new PlaceLinkedPhotoItem
+                {
+                    MediaId = mediaId,
+                    FileId = raw.FileId,
+                    Filename = raw.Filename,
+                    ThumbnailUrl = thumbnail ?? preview,
+                    CaptureDateText = FormatCaptureDate(raw),
+                });
+            }
+
+            LinkedPhotoCount = Math.Max(page.TotalCount, LinkedPhotos.Count);
+            LinkedPhotoCountText = $"실제 연결 사진 {LinkedPhotoCount:N0}장";
+            HasMoreLinkedPhotos = page.HasMore || LinkedPhotos.Count < page.TotalCount;
+            if (AreLinkedPhotosVisible)
+            {
+                await LoadLinkedPhotoImagesAsync(page.Items.Count, token);
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            // Selection changed; do not apply stale photo rows.
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to load linked photos for place {PlaceId}.", place.Id);
+            ShowError($"연결 사진을 불러오지 못했습니다: {ex.Message}");
+        }
+    }
+
+    private async Task LoadLinkedPhotoImagesAsync(int addedCount, CancellationToken cancellationToken)
+    {
+        if (addedCount <= 0)
+        {
+            return;
+        }
+
+        var items = LinkedPhotos.Skip(Math.Max(0, LinkedPhotos.Count - addedCount)).ToList();
+        foreach (var item in items)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            item.ThumbnailImage = await HttpImageLoader.LoadAsync(
+                item.ThumbnailUrl,
+                _logger,
+                "place-linked-photo",
+                cancellationToken);
+        }
+    }
+
+    private static string FormatCaptureDate(MemoryKeeperPlacePhotoApiDto photo)
+    {
+        if (string.Equals(photo.EffectiveCapturePrecision, "YEAR", StringComparison.OrdinalIgnoreCase)
+            && photo.EffectiveCaptureYear is > 0)
+        {
+            return $"{photo.EffectiveCaptureYear}년";
+        }
+
+        if (photo.EffectiveCaptureDate is DateOnly date)
+        {
+            return date.ToString("yyyy.MM.dd", CultureInfo.InvariantCulture);
+        }
+
+        return photo.EffectiveCaptureDatetime?.ToString("yyyy.MM.dd HH:mm", CultureInfo.InvariantCulture) ?? "-";
+    }
+
+    private string FindPrimaryPath(Guid placeId) =>
+        _allHierarchyPaths
+            .Where(path => path.Id == placeId)
+            .OrderByDescending(path => path.LocationHierarchyComplete)
+            .ThenByDescending(path => path.PhotoCount)
+            .Select(path => path.FullPath)
+            .FirstOrDefault() ?? string.Empty;
+
+    private static IReadOnlyList<PlacePickerCountryNode> BuildHierarchy(IReadOnlyList<PlacePickerItemDto> items) =>
+        items
+            .GroupBy(item => item.Country, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(group => group.Key, StringComparer.CurrentCultureIgnoreCase)
+            .Select(country => new PlacePickerCountryNode
+            {
+                Title = country.Key,
+                Regions = country
+                    .GroupBy(item => item.Region, StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(group => group.Key, StringComparer.CurrentCultureIgnoreCase)
+                    .Select(region => new PlacePickerRegionNode
+                    {
+                        Title = region.Key,
+                        Places = region
+                            .OrderBy(item => item.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+                            .ThenBy(item => item.FullPath, StringComparer.Ordinal)
+                            .ToList(),
+                    })
+                    .ToList(),
+            })
+            .ToList();
+
+    private static string BuildCleanupReasonText(IReadOnlyList<PlacePickerItemDto> paths)
+    {
+        var reasons = paths
+            .Where(path => !path.LocationHierarchyComplete || !string.IsNullOrWhiteSpace(path.LocationCleanupReason))
+            .Select(path => path.LocationCleanupReason switch
+            {
+                "COUNTRY_MISSING" => "국가 정보 없음",
+                "REGION_MISSING" => "지역 정보 없음",
+                "PLACE_NAME_MISSING" or "PLACE_MISSING" => "장소명 없음",
+                _ => string.IsNullOrWhiteSpace(path.LocationCleanupReason) ? "위치 계층 확인 필요" : path.LocationCleanupReason,
+            })
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (paths.Count > 1)
+        {
+            reasons.Add($"동일 UUID의 canonical 경로 {paths.Count}개");
+        }
+
+        return reasons.Count == 0 ? "위치 계층 정보 정상" : string.Join(" · ", reasons.Distinct());
+    }
+
+    private static string BuildDeleteBlockedMessage(ApiException exception) =>
+        exception.DetailCode switch
+        {
+            "PLACE_HAS_LINKED_PHOTOS" or "PLACE_IN_USE" =>
+                "이 장소는 사진 또는 다른 데이터에서 사용 중이므로 삭제할 수 없습니다. 연결 사진을 확인하고 필요하면 다른 장소와 병합하세요.",
+            "REVISION_CONFLICT" =>
+                "다른 기기에서 장소 정보가 변경되었습니다. 목록을 새로 고친 뒤 다시 시도하세요.",
+            _ => "이 장소는 다른 데이터에서 참조 중이어서 삭제할 수 없습니다. 연결 항목을 확인한 뒤 다시 시도하세요.",
+        };
 
     private async Task SuggestPlacesAsync(string input)
     {
@@ -973,7 +1513,7 @@ public partial class PlaceManagementViewModel : ObservableObject
                 || radius <= 0)
             {
                 IncludedPhotoCount = 0;
-                IncludedPhotoCountText = "포함 사진 0장";
+                IncludedPhotoCountText = "반경 내 사진 0장";
                 return;
             }
 
@@ -989,7 +1529,7 @@ public partial class PlaceManagementViewModel : ObservableObject
             }
 
             IncludedPhotoCount = impact.MatchedFileCount;
-            IncludedPhotoCountText = $"포함 사진 {impact.MatchedFileCount}장";
+            IncludedPhotoCountText = $"반경 내 사진 {impact.MatchedFileCount:N0}장";
         }
         catch (OperationCanceledException)
         {
@@ -1114,6 +1654,9 @@ public partial class PlaceManagementViewModel : ObservableObject
         double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value)
         || double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out value);
 
+    private static string FirstNotBlank(params string?[] values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? string.Empty;
+
     private static double ParseCoordinate(string text, string fieldName)
     {
         if (!TryParseDouble(text, out var value))
@@ -1156,4 +1699,32 @@ public partial class PlaceManagementViewModel : ObservableObject
             IsBusy = false;
         }
     }
+}
+
+public enum PlaceManagementFilterKind
+{
+    All,
+    Duplicates,
+    Incomplete,
+    ZeroPhotos,
+    Recent,
+    Favorites,
+}
+
+public sealed record PlaceManagementFilterOption(PlaceManagementFilterKind Kind, string Label);
+
+public partial class PlaceLinkedPhotoItem : ObservableObject
+{
+    public Guid MediaId { get; init; }
+
+    public string FileId { get; init; } = string.Empty;
+
+    public string Filename { get; init; } = string.Empty;
+
+    public string? ThumbnailUrl { get; init; }
+
+    public string CaptureDateText { get; init; } = "-";
+
+    [ObservableProperty]
+    private BitmapImage? thumbnailImage;
 }

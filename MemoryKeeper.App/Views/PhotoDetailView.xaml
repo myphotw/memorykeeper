@@ -114,11 +114,18 @@
                         <TextBlock Text="{Binding GpsStatusText, Mode=OneWay}" FontWeight="SemiBold" />
                         <TextBlock Opacity="0.85"><Run Text="현재 장소: "/><Run Text="{Binding PlaceName, Mode=OneWay}"/> (<Run Text="{Binding PlaceStatusText, Mode=OneWay}"/>)</TextBlock>
                         <TextBlock Opacity="0.85"><Run Text="Canonical: "/><Run Text="{Binding CanonicalName, Mode=OneWay}"/></TextBlock>
+                        <TextBlock Opacity="0.85" TextWrapping="Wrap"><Run Text="사진첩 위치: "/><Run Text="{Binding CanonicalLocationPath, Mode=OneWay}"/></TextBlock>
                         <TextBlock Opacity="0.85"><Run Text="국가/지역: "/><Run Text="{Binding Country, Mode=OneWay}"/> / <Run Text="{Binding Province, Mode=OneWay}"/> / <Run Text="{Binding City, Mode=OneWay}"/></TextBlock>
                         <TextBlock Opacity="0.85"><Run Text="상세지역: "/><Run Text="{Binding District, Mode=OneWay}"/></TextBlock>
                         <TextBlock Opacity="0.85"><Run Text="Google Place: "/><Run Text="{Binding GooglePlaceIdText, Mode=OneWay}"/></TextBlock>
                         <TextBlock Opacity="0.85" TextWrapping="Wrap"><Run Text="GPS: "/><Run Text="{Binding GpsText, Mode=OneWay}"/></TextBlock>
                         <TextBlock Opacity="0.85" TextWrapping="Wrap" Text="{Binding Address, Mode=OneWay}" />
+                        <InfoBar
+                            IsOpen="{Binding HasLocationHierarchyWarning, Mode=OneWay}"
+                            IsClosable="False"
+                            Severity="Warning"
+                            Title="사진첩 위치 정리가 필요합니다"
+                            Message="{Binding LocationHierarchyWarningText, Mode=OneWay}" />
                     </StackPanel>
 
                     <StackPanel Spacing="6">

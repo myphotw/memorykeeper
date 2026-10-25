@@ -110,8 +110,14 @@ public static class GalleryBackendMapper
             PlaceName = displayPlaceName,
             GeocodedPlaceName = rawPlaceName,
             CanonicalName = FirstNotEmpty(
+                detail.CanonicalPlace,
                 detail.PlaceCanonicalName,
                 GetString(metadata, "place_canonical_name")),
+            CanonicalCountry = detail.CanonicalCountry,
+            CanonicalRegion = detail.CanonicalRegion,
+            CanonicalPlace = detail.CanonicalPlace,
+            LocationHierarchyComplete = detail.LocationHierarchyComplete,
+            LocationCleanupReason = detail.LocationCleanupReason,
             PlaceMatchSource = detail.PlaceMatchSource ?? GetString(metadata, "place_match_source"),
             PlaceMatchDistanceM = detail.PlaceMatchDistanceM ?? GetDouble(metadata, "place_match_distance_m"),
             PlaceRevision = detail.PlaceRevision is > 0

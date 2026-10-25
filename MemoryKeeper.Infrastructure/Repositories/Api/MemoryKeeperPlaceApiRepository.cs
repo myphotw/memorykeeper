@@ -43,6 +43,12 @@ public sealed class MemoryKeeperPlaceApiRepository : IMemoryKeeperPlaceApiReposi
         };
     }
 
+    public async Task<MemoryKeeperPlaceHierarchyListApiDto> GetPlaceHierarchyAsync(
+        CancellationToken cancellationToken = default) =>
+        (await _apiClient.GetAsync<MemoryKeeperPlaceHierarchyListApiDto>(
+            $"{PlacesRoot}/hierarchy", cancellationToken).ConfigureAwait(false)).Data
+        ?? new MemoryKeeperPlaceHierarchyListApiDto();
+
     public async Task<MemoryKeeperPlaceApiDto> GetPlaceAsync(Guid placeId, CancellationToken cancellationToken = default) =>
         Require((await _apiClient.GetAsync<MemoryKeeperPlaceApiDto>(PlacePath(placeId), cancellationToken)
             .ConfigureAwait(false)).Data, "장소 상세 응답이 비어 있습니다.");
@@ -64,15 +70,67 @@ public sealed class MemoryKeeperPlaceApiRepository : IMemoryKeeperPlaceApiReposi
                 PlacePath(placeId), request, cancellationToken).ConfigureAwait(false)).Data,
                 "장소 수정 응답이 비어 있습니다.");
         }
-        catch (ApiException ex) when (ex.StatusCode == HttpStatusCode.Conflict)
+        catch (ApiException ex) when (
+            ex.StatusCode == HttpStatusCode.Conflict
+            && IsRevisionConflict(ex))
         {
             throw RevisionConflict(ex);
         }
     }
 
-    public async Task DeletePlaceAsync(Guid placeId, CancellationToken cancellationToken = default)
+    public async Task DeletePlaceAsync(Guid placeId, int expectedRevision, CancellationToken cancellationToken = default)
     {
-        await _apiClient.DeleteAsync<object>(PlacePath(placeId), cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await _apiClient.DeleteAsync<object>(
+                $"{PlacePath(placeId)}?expected_revision={expectedRevision}", cancellationToken).ConfigureAwait(false);
+        }
+        catch (ApiException ex) when (
+            ex.StatusCode == HttpStatusCode.Conflict
+            && IsRevisionConflict(ex))
+        {
+            throw RevisionConflict(ex);
+        }
+    }
+
+    public async Task<MemoryKeeperPlacePhotoPageApiDto> GetPlacePhotosAsync(
+        Guid placeId,
+        int limit,
+        int offset,
+        CancellationToken cancellationToken = default) =>
+        (await _apiClient.GetAsync<MemoryKeeperPlacePhotoPageApiDto>(
+            $"{PlacePath(placeId)}/photos?limit={Math.Clamp(limit, 1, 200)}&offset={Math.Max(0, offset)}",
+            cancellationToken).ConfigureAwait(false)).Data
+        ?? new MemoryKeeperPlacePhotoPageApiDto();
+
+    public async Task<MemoryKeeperPlaceDuplicateCandidateListApiDto> GetDuplicateCandidatesAsync(
+        CancellationToken cancellationToken = default) =>
+        (await _apiClient.GetAsync<MemoryKeeperPlaceDuplicateCandidateListApiDto>(
+            $"{PlacesRoot}/duplicate-candidates", cancellationToken).ConfigureAwait(false)).Data
+        ?? new MemoryKeeperPlaceDuplicateCandidateListApiDto();
+
+    public async Task<MemoryKeeperPlaceMergePreviewApiDto> GetMergePreviewAsync(
+        Guid sourcePlaceId,
+        Guid targetPlaceId,
+        CancellationToken cancellationToken = default) =>
+        Require((await _apiClient.GetAsync<MemoryKeeperPlaceMergePreviewApiDto>(
+            $"{PlacesRoot}/merge-preview?source_place_id={sourcePlaceId:D}&target_place_id={targetPlaceId:D}",
+            cancellationToken).ConfigureAwait(false)).Data, "장소 병합 미리보기 응답이 비어 있습니다.");
+
+    public async Task<MemoryKeeperPlaceMergeApiResult> MergePlacesAsync(
+        MemoryKeeperPlaceMergeApiRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return Require((await _apiClient.PostAsync<MemoryKeeperPlaceMergeApiResult>(
+                $"{PlacesRoot}/merge", request, cancellationToken).ConfigureAwait(false)).Data,
+                "장소 병합 응답이 비어 있습니다.");
+        }
+        catch (ApiException ex) when (ex.StatusCode == HttpStatusCode.Conflict)
+        {
+            throw RevisionConflict(ex);
+        }
     }
 
     public async Task<MemoryKeeperPlaceMatchApiResult> MatchAsync(
@@ -130,4 +188,8 @@ public sealed class MemoryKeeperPlaceApiRepository : IMemoryKeeperPlaceApiReposi
 
     private static MemoryKeeperPlaceRevisionConflictException RevisionConflict(ApiException inner) =>
         new("다른 기기에서 장소 정보가 변경되었습니다. 목록을 새로 고친 뒤 다시 시도하세요.", inner);
+
+    private static bool IsRevisionConflict(ApiException exception) =>
+        string.Equals(exception.DetailCode, "REVISION_CONFLICT", StringComparison.OrdinalIgnoreCase)
+        || exception.ServerMessage?.Contains("REVISION_CONFLICT", StringComparison.OrdinalIgnoreCase) == true;
 }

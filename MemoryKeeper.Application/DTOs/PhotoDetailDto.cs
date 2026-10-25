@@ -121,6 +121,16 @@ public sealed class PhotoDetailDto
 
     public string? CanonicalName { get; init; }
 
+    public string? CanonicalCountry { get; init; }
+
+    public string? CanonicalRegion { get; init; }
+
+    public string? CanonicalPlace { get; init; }
+
+    public bool? LocationHierarchyComplete { get; init; }
+
+    public string? LocationCleanupReason { get; init; }
+
     public string? GooglePlaceId { get; init; }
 
     public bool HasGps { get; init; }

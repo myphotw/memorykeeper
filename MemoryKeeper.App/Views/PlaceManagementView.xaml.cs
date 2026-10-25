@@ -101,4 +101,20 @@ public sealed partial class PlaceManagementView : UserControl
             ViewModel.SelectRecentCommand.Execute(place);
         }
     }
+
+    private void HierarchyPlace_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: MemoryKeeper.Application.DTOs.PlacePickerItemDto place })
+        {
+            ViewModel.SelectHierarchyPlaceCommand.Execute(place);
+        }
+    }
+
+    private void LinkedPhoto_OnItemClick(object sender, ItemClickEventArgs e)
+    {
+        if (e.ClickedItem is PlaceLinkedPhotoItem photo)
+        {
+            ViewModel.OpenLinkedPhotoCommand.Execute(photo);
+        }
+    }
 }

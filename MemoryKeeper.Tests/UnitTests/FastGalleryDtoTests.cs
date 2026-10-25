@@ -1,4 +1,5 @@
 using System.Text.Json;
+using MemoryKeeper.App.Services;
 using MemoryKeeper.Application;
 using MemoryKeeper.Application.DTOs;
 using MemoryKeeper.Application.Interfaces;
@@ -116,6 +117,27 @@ public sealed class FastGalleryDtoTests
         Assert.Equal(2018, detail.SourceCaptureYear);
         Assert.Equal("PATH", detail.SourceCaptureYearBasis);
         Assert.Equal("SOURCE_YEAR", detail.DateBasis);
+    }
+
+    [Fact]
+    public void CommonGalleryDetail_DeserializesCanonicalLocationHierarchyContract()
+    {
+        const string json = """{"file_id":"photo","canonical_country":"몰디브","canonical_region":"말레","canonical_place":"헐후메일 퍼블릭 비치","location_hierarchy_complete":false,"location_cleanup_reason":"REGION_MISSING"}""";
+
+        var detail = JsonSerializer.Deserialize<MemoryKeeper.Application.DTOs.Gallery.PhotoDetailDto>(json)!;
+
+        Assert.Equal("몰디브", detail.CanonicalCountry);
+        Assert.Equal("말레", detail.CanonicalRegion);
+        Assert.Equal("헐후메일 퍼블릭 비치", detail.CanonicalPlace);
+        Assert.Equal(false, detail.LocationHierarchyComplete);
+        Assert.Equal("REGION_MISSING", detail.LocationCleanupReason);
+
+        var mapped = GalleryBackendMapper.ToPhotoDetail(detail, "https://backend.example");
+        Assert.Equal("몰디브", mapped.CanonicalCountry);
+        Assert.Equal("말레", mapped.CanonicalRegion);
+        Assert.Equal("헐후메일 퍼블릭 비치", mapped.CanonicalPlace);
+        Assert.Equal(false, mapped.LocationHierarchyComplete);
+        Assert.Equal("REGION_MISSING", mapped.LocationCleanupReason);
     }
 
     [Fact]

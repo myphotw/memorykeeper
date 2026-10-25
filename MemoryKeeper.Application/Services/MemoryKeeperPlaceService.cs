@@ -27,6 +27,40 @@ public sealed class MemoryKeeperPlaceService
         .OrderBy(place => place.DisplayName, StringComparer.OrdinalIgnoreCase)
         .ToList();
 
+    public async Task<IReadOnlyList<MemoryKeeperPlaceHierarchyPathApiDto>> GetPlaceHierarchyAsync(
+        CancellationToken cancellationToken = default) =>
+        (await _repository.GetPlaceHierarchyAsync(cancellationToken).ConfigureAwait(false)).Items;
+
+    public Task<MemoryKeeperPlaceHierarchyListApiDto> GetPlaceHierarchyCatalogAsync(
+        CancellationToken cancellationToken = default) =>
+        _repository.GetPlaceHierarchyAsync(cancellationToken);
+
+    public Task<MemoryKeeperPlacePhotoPageApiDto> GetLinkedPhotosAsync(
+        Guid placeId,
+        int limit,
+        int offset,
+        CancellationToken cancellationToken = default) =>
+        _repository.GetPlacePhotosAsync(placeId, limit, offset, cancellationToken);
+
+    public Task<MemoryKeeperPlaceDuplicateCandidateListApiDto> GetDuplicateCandidatesAsync(
+        CancellationToken cancellationToken = default) =>
+        _repository.GetDuplicateCandidatesAsync(cancellationToken);
+
+    public Task<MemoryKeeperPlaceMergePreviewApiDto> GetMergePreviewAsync(
+        Guid sourcePlaceId,
+        Guid targetPlaceId,
+        CancellationToken cancellationToken = default) =>
+        _repository.GetMergePreviewAsync(sourcePlaceId, targetPlaceId, cancellationToken);
+
+    public async Task<MemoryKeeperPlaceMergeApiResult> MergePlacesAsync(
+        MemoryKeeperPlaceMergeApiRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _repository.MergePlacesAsync(request, cancellationToken).ConfigureAwait(false);
+        _invalidation.Invalidate(CatalogSurface.AllMemoryKeeper);
+        return result;
+    }
+
     public async Task<IReadOnlyList<PlaceDto>> GetFavoritePlacesAsync(CancellationToken cancellationToken = default) =>
         (await GetPlaceListAsync(cancellationToken).ConfigureAwait(false))
         .Where(place => place.IsFavorite)
@@ -223,11 +257,12 @@ public sealed class MemoryKeeperPlaceService
 
     public async Task<(bool Succeeded, string Message, int MediaCount)> DeletePlaceAsync(
         Guid placeId,
+        int expectedRevision,
         CancellationToken cancellationToken = default)
     {
-        await _repository.DeletePlaceAsync(placeId, cancellationToken).ConfigureAwait(false);
-        _invalidation.Invalidate();
-        return (true, "장소를 삭제했습니다. 연결된 사진은 원본 위치 정보가 유지된 미등록 상태로 전환됩니다.", 0);
+        await _repository.DeletePlaceAsync(placeId, expectedRevision, cancellationToken).ConfigureAwait(false);
+        _invalidation.Invalidate(CatalogSurface.AllMemoryKeeper);
+        return (true, "사용하지 않는 장소를 삭제했습니다.", 0);
     }
 
     public async Task<PlaceReclassificationResult> ReclassifyMediaAsync(

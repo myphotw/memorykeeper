@@ -113,6 +113,44 @@ public sealed class MemoryKeeperPlaceServiceTests
     }
 
     [Fact]
+    public async Task CanonicalGeographyChange_PatchesSameUuidAndInvalidatesGalleryWithoutReclassifyingGeometry()
+    {
+        var fake = new FakeRepository();
+        var invalidation = new CatalogInvalidation();
+        var service = new MemoryKeeperPlaceService(fake, invalidation);
+        var original = Place(radius: 100);
+        var request = Update(original, radius: original.Radius);
+        request = new UpdatePlaceRequest
+        {
+            Id = request.Id,
+            Revision = request.Revision,
+            DisplayName = request.DisplayName,
+            CanonicalName = request.CanonicalName,
+            Address = request.Address,
+            Country = request.Country,
+            Province = request.Province,
+            City = "신규 지역",
+            District = request.District,
+            Latitude = request.Latitude,
+            Longitude = request.Longitude,
+            Radius = request.Radius,
+            IsActive = request.IsActive,
+            IsFavorite = request.IsFavorite,
+        };
+        fake.UpdatedPlace = ApiPlace(original, revision: 4);
+
+        var result = await service.UpdateWithRadiusImpactAsync(
+            original,
+            request,
+            (_, _) => throw new InvalidOperationException("좌표/반경이 같으면 반경 확인이 실행되면 안 됩니다."));
+
+        Assert.Equal(["patch"], fake.Calls);
+        Assert.Equal(original.Id, result.UpdatedPlace!.Id);
+        Assert.Equal("신규 지역", fake.LastUpdate!.City);
+        Assert.True(invalidation.Consume(CatalogSurface.Gallery));
+    }
+
+    [Fact]
     public async Task GeometryChangeWhileDeactivating_RetainsRelationsBySkippingBackendReclassify()
     {
         var fake = new FakeRepository();
@@ -281,6 +319,9 @@ public sealed class MemoryKeeperPlaceServiceTests
             return Task.FromResult(List);
         }
 
+        public Task<MemoryKeeperPlaceHierarchyListApiDto> GetPlaceHierarchyAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(new MemoryKeeperPlaceHierarchyListApiDto());
+
         public Task<MemoryKeeperPlaceApiDto> UpdatePlaceAsync(Guid placeId, MemoryKeeperPlaceUpdateApiRequest request, CancellationToken cancellationToken = default)
         {
             Calls.Add("patch");
@@ -310,7 +351,11 @@ public sealed class MemoryKeeperPlaceServiceTests
             LastCreate = request;
             return Task.FromResult(CreatedPlace ?? ApiPlace(Place()));
         }
-        public Task DeletePlaceAsync(Guid placeId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task DeletePlaceAsync(Guid placeId, int expectedRevision, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<MemoryKeeperPlacePhotoPageApiDto> GetPlacePhotosAsync(Guid placeId, int limit, int offset, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<MemoryKeeperPlaceDuplicateCandidateListApiDto> GetDuplicateCandidatesAsync(CancellationToken cancellationToken = default) => Task.FromResult(new MemoryKeeperPlaceDuplicateCandidateListApiDto());
+        public Task<MemoryKeeperPlaceMergePreviewApiDto> GetMergePreviewAsync(Guid sourcePlaceId, Guid targetPlaceId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<MemoryKeeperPlaceMergeApiResult> MergePlacesAsync(MemoryKeeperPlaceMergeApiRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<MemoryKeeperPlaceMatchApiResult> MatchAsync(MemoryKeeperPlaceMatchApiRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<MemoryKeeperFilePlaceUpdateApiResult> AssignFilePlaceAsync(string fileId, Guid? placeId, int expectedRevision, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
