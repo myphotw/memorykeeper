@@ -17,3 +17,11 @@ public sealed class MobileBackendApiException : HttpRequestException
     {
     }
 }
+
+public sealed class MobileBackendContractException : InvalidOperationException
+{
+    public MobileBackendContractException(Exception innerException)
+        : base("Mobile Backend returned an invalid response.", innerException)
+    {
+    }
+}

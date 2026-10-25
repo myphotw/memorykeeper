@@ -36,6 +36,10 @@
     <MauiIcon Include="..\MemoryKeeper.App\Assets\MemoryKeeper.png"
               Link="Resources\AppIcon\memorykeeper.png"
               Color="#0B8BFB" />
+    <MauiSplashScreen Include="..\MemoryKeeper.App\Assets\MemoryKeeper.png"
+                      Link="Resources\Splash\splash.png"
+                      Color="#F5F9FF"
+                      BaseSize="256,256" />
   </ItemGroup>
 
   <ItemGroup>

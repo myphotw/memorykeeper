@@ -1,14 +1,18 @@
 using Microsoft.Extensions.DependencyInjection;
+using MemoryKeeper.Mobile.Configuration;
 using MemoryKeeper.Mobile.Diagnostics;
 
 namespace MemoryKeeper.Mobile;
 
 public partial class App : Microsoft.Maui.Controls.Application
 {
+    private readonly IMobileBackendConnectionMonitor? _connectionMonitor;
+
     public App(IServiceProvider services)
     {
         MobileStartupCheckpoint.Record("APP-CONSTRUCTOR");
         InitializeComponent();
+        _connectionMonitor = services.GetService<IMobileBackendConnectionMonitor>();
 
         try
         {
@@ -21,6 +25,38 @@ public partial class App : Microsoft.Maui.Controls.Application
             MobileStartupCheckpoint.Record("APP-SHELL-CAUGHT");
             MainPage = CreateStartupFailurePage(exception);
         }
+    }
+
+    protected override Window CreateWindow(IActivationState? activationState)
+    {
+        var window = base.CreateWindow(activationState);
+        window.Activated += OnWindowActivated;
+        window.Resumed += OnWindowResumed;
+        window.Stopped += OnWindowStopped;
+        window.Destroying += OnWindowDestroying;
+        return window;
+    }
+
+    private void OnWindowActivated(object? sender, EventArgs e) =>
+        _connectionMonitor?.SetForeground(true);
+
+    private void OnWindowResumed(object? sender, EventArgs e) =>
+        _connectionMonitor?.SetForeground(true);
+
+    private void OnWindowStopped(object? sender, EventArgs e) =>
+        _connectionMonitor?.SetForeground(false);
+
+    private void OnWindowDestroying(object? sender, EventArgs e)
+    {
+        if (sender is Window window)
+        {
+            window.Activated -= OnWindowActivated;
+            window.Resumed -= OnWindowResumed;
+            window.Stopped -= OnWindowStopped;
+            window.Destroying -= OnWindowDestroying;
+        }
+
+        _connectionMonitor?.SetForeground(false);
     }
 
     private static Page CreateStartupFailurePage(Exception exception)

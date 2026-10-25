@@ -87,7 +87,7 @@ public sealed class MobileViewerImagePolicyTests
         var preloadPage = Slice(
             viewModel,
             "private Task PreloadLoadMoreThumbnailsAsync(",
-            "private void ApplyContinuation(");
+            "private async Task PreloadInitialThumbnailsAsync(");
 
         var loadingStartIndex = loadMore.IndexOf("IsLoadingMore = true;", StringComparison.Ordinal);
         var preloadIndex = loadMore.IndexOf("await PreloadLoadMoreThumbnailsAsync(", StringComparison.Ordinal);

@@ -31,9 +31,21 @@ public sealed class MobileBackendEndpointFailureHandler : DelegatingHandler
         try
         {
             var response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
-            if (isBackendRequest && IsEndpointFailure(response.StatusCode))
+            if (isBackendRequest)
             {
-                _endpointResolver.Invalidate();
+                if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+                {
+                    ReportFailure(MobileBackendFailureKind.Authentication);
+                }
+                else if ((int)response.StatusCode >= 500)
+                {
+                    ReportFailure(MobileBackendFailureKind.Server);
+                }
+
+                if (MobileBackendRetryPolicy.IsRetryableStatus(response.StatusCode))
+                {
+                    _endpointResolver.Invalidate();
+                }
             }
 
             return response;
@@ -41,19 +53,23 @@ public sealed class MobileBackendEndpointFailureHandler : DelegatingHandler
         catch (OperationCanceledException) when (
             isBackendRequest && !cancellationToken.IsCancellationRequested)
         {
+            ReportFailure(MobileBackendFailureKind.Timeout);
             _endpointResolver.Invalidate();
             throw;
         }
-        catch (HttpRequestException) when (isBackendRequest)
+        catch (HttpRequestException exception) when (isBackendRequest)
         {
+            ReportFailure(MobileBackendRetryPolicy.ClassifyTransport(exception));
             _endpointResolver.Invalidate();
             throw;
         }
     }
 
-    private static bool IsEndpointFailure(HttpStatusCode statusCode) =>
-        statusCode is HttpStatusCode.RequestTimeout
-            or HttpStatusCode.BadGateway
-            or HttpStatusCode.ServiceUnavailable
-            or HttpStatusCode.GatewayTimeout;
+    private void ReportFailure(MobileBackendFailureKind failureKind)
+    {
+        if (_endpointResolver is IMobileBackendConnectionMonitor monitor)
+        {
+            monitor.ReportFailure(failureKind);
+        }
+    }
 }

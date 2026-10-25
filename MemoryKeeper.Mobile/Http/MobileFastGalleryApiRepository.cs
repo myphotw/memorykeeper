@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text.Json;
 using MemoryKeeper.Application;
 using MemoryKeeper.Application.DTOs;
@@ -53,6 +54,36 @@ public sealed class MobileFastGalleryApiRepository : IFastGalleryApiRepository
             throw new MobileBackendConfigurationException();
         }
 
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            try
+            {
+                return await SendGetAsync<T>(path, cancellationToken).ConfigureAwait(false);
+            }
+            catch (MobileBackendApiException exception) when (
+                attempt == 0
+                && exception.StatusCode is HttpStatusCode statusCode
+                && MobileBackendRetryPolicy.IsRetryableStatus(statusCode))
+            {
+            }
+            catch (HttpRequestException exception) when (
+                attempt == 0
+                && exception is not MobileBackendApiException
+                && exception is not MobileBackendConnectionException)
+            {
+            }
+            catch (OperationCanceledException) when (
+                attempt == 0 && !cancellationToken.IsCancellationRequested)
+            {
+            }
+        }
+
+        throw new InvalidOperationException("The Gallery GET retry loop completed unexpectedly.");
+    }
+
+    private async Task<T> SendGetAsync<T>(string path, CancellationToken cancellationToken)
+        where T : class, new()
+    {
         var baseUri = await _endpointResolver.ResolveAsync(cancellationToken).ConfigureAwait(false);
         var requestUri = new Uri(baseUri, path.TrimStart('/'));
         using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
@@ -78,7 +109,12 @@ public sealed class MobileFastGalleryApiRepository : IFastGalleryApiRepository
         }
         catch (JsonException ex)
         {
-            throw new HttpRequestException("Mobile Backend returned an invalid response.", ex);
+            if (_endpointResolver is IMobileBackendConnectionMonitor monitor)
+            {
+                monitor.ReportFailure(MobileBackendFailureKind.ApiContract);
+            }
+
+            throw new MobileBackendContractException(ex);
         }
     }
 }

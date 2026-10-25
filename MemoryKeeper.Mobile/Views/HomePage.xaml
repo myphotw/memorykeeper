@@ -188,13 +188,86 @@
                     </CollectionView>
                 </RefreshView>
 
-                <ActivityIndicator
-                    HeightRequest="44"
-                    HorizontalOptions="Center"
-                    IsRunning="{Binding IsInitialLoading}"
-                    IsVisible="{Binding IsInitialLoading}"
-                    VerticalOptions="Center"
-                    WidthRequest="44" />
+                <Border
+                    Margin="12,8"
+                    Padding="12,9"
+                    BackgroundColor="#F7FBFF"
+                    HorizontalOptions="Fill"
+                    IsVisible="{Binding IsConnectionBannerVisible}"
+                    Stroke="#C9DDF5"
+                    StrokeShape="RoundRectangle 12"
+                    VerticalOptions="Start"
+                    ZIndex="10">
+                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                        <ActivityIndicator
+                            HeightRequest="22"
+                            IsRunning="{Binding IsConnectionChecking}"
+                            IsVisible="{Binding IsConnectionChecking}"
+                            VerticalOptions="Center"
+                            WidthRequest="22" />
+                        <Label
+                            Grid.Column="1"
+                            FontSize="13"
+                            Text="{Binding ConnectionBannerMessage}"
+                            TextColor="{StaticResource MemoryKeeperText}"
+                            VerticalTextAlignment="Center" />
+                        <Button
+                            Grid.Column="2"
+                            Command="{Binding RetryConnectionCommand}"
+                            FontSize="12"
+                            IsVisible="{Binding IsConnectionRetryVisible}"
+                            Padding="9,3"
+                            Text="다시 시도" />
+                    </Grid>
+                </Border>
+
+                <Grid
+                    BackgroundColor="{StaticResource MemoryKeeperSurface}"
+                    IsVisible="{Binding IsStartupLoadingVisible}"
+                    Padding="32"
+                    ZIndex="20">
+                    <VerticalStackLayout
+                        HorizontalOptions="Center"
+                        MaximumWidthRequest="360"
+                        Spacing="14"
+                        VerticalOptions="Center">
+                        <Border
+                            BackgroundColor="#EAF4FF"
+                            HeightRequest="76"
+                            HorizontalOptions="Center"
+                            Stroke="#CFE4FA"
+                            StrokeShape="RoundRectangle 24"
+                            WidthRequest="76">
+                            <Label
+                                FontSize="34"
+                                HorizontalTextAlignment="Center"
+                                Text="&#x25A3;"
+                                TextColor="#2878C8"
+                                VerticalTextAlignment="Center" />
+                        </Border>
+                        <Label
+                            FontAttributes="Bold"
+                            FontSize="28"
+                            HorizontalTextAlignment="Center"
+                            Text="MemoryKeeper"
+                            TextColor="{StaticResource MemoryKeeperText}" />
+                        <Label
+                            FontSize="14"
+                            HorizontalTextAlignment="Center"
+                            Text="소중한 사진과 추억을 준비하고 있어요."
+                            TextColor="{StaticResource MemoryKeeperSecondaryText}" />
+                        <ActivityIndicator
+                            HeightRequest="34"
+                            HorizontalOptions="Center"
+                            IsRunning="{Binding IsStartupLoadingVisible}"
+                            WidthRequest="34" />
+                        <Label
+                            FontSize="14"
+                            HorizontalTextAlignment="Center"
+                            Text="{Binding StartupStageText}"
+                            TextColor="#2878C8" />
+                    </VerticalStackLayout>
+                </Grid>
 
                 <VerticalStackLayout
                     Margin="32"
@@ -225,7 +298,7 @@
                         Text="{Binding ErrorMessage}"
                         TextColor="{StaticResource MemoryKeeperSecondaryText}" />
                     <Button
-                        Command="{Binding RetryCommand}"
+                        Command="{Binding RetryConnectionCommand}"
                         HorizontalOptions="Center"
                         Text="다시 시도" />
                 </VerticalStackLayout>

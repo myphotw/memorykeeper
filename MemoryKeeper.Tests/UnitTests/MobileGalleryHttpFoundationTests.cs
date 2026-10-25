@@ -54,7 +54,15 @@ public sealed class MobileGalleryHttpFoundationTests
     }
 
     [Fact]
-    public async Task EndpointResolver_ExternalOnlySelectsExternalWithoutInternalProbe()
+    public void EndpointResolver_UsesBoundedProbeTimeoutPolicy()
+    {
+        Assert.Equal(TimeSpan.FromSeconds(1), MobileBackendEndpointResolver.InternalProbeTimeout);
+        Assert.Equal(TimeSpan.FromSeconds(2), MobileBackendEndpointResolver.ExternalProbeTimeout);
+        Assert.Equal(TimeSpan.FromSeconds(4), MobileBackendEndpointResolver.SingleEndpointProbeTimeout);
+    }
+
+    [Fact]
+    public async Task EndpointResolver_ExternalOnlyProbesAndSelectsSingleEndpoint()
     {
         var probe = new RecordingHandler();
         using var client = new HttpClient(probe);
@@ -66,7 +74,8 @@ public sealed class MobileGalleryHttpFoundationTests
 
         Assert.Equal(ExternalBackendUri, selected);
         Assert.Equal(ExternalBackendUri, resolver.CurrentBaseUri);
-        Assert.Equal(0, probe.RequestCount);
+        Assert.Equal(new Uri(ExternalBackendUri, "health"), Assert.Single(probe.RequestUris));
+        Assert.Equal(MobileBackendEndpointKind.Single, resolver.ConnectionState.EndpointKind);
     }
 
     [Fact]
@@ -139,20 +148,29 @@ public sealed class MobileGalleryHttpFoundationTests
     [Fact]
     public async Task EndpointResolver_InternalConnectionFailureSelectsExternal()
     {
-        var probe = new RecordingHandler { ThrowHttpRequestException = true };
+        var probe = new RecordingHandler
+        {
+            ThrowSelector = uri => uri.Host == InternalBackendUri.Host,
+        };
         using var client = new HttpClient(probe);
         using var resolver = CreateResolver(client);
 
         var selected = await resolver.ResolveAsync();
 
         Assert.Equal(ExternalBackendUri, selected);
-        Assert.Equal(1, probe.RequestCount);
+        Assert.Equal(2, probe.RequestCount);
+        Assert.Equal(new Uri(ExternalBackendUri, "health"), probe.RequestUris[1]);
     }
 
     [Fact]
     public async Task EndpointResolver_InternalTimeoutSelectsExternal()
     {
-        var probe = new RecordingHandler { Delay = TimeSpan.FromMilliseconds(100) };
+        var probe = new RecordingHandler
+        {
+            DelaySelector = uri => uri.Host == InternalBackendUri.Host
+                ? TimeSpan.FromMilliseconds(100)
+                : TimeSpan.Zero,
+        };
         using var client = new HttpClient(probe);
         using var resolver = CreateResolver(
             client,
@@ -161,7 +179,89 @@ public sealed class MobileGalleryHttpFoundationTests
         var selected = await resolver.ResolveAsync();
 
         Assert.Equal(ExternalBackendUri, selected);
-        Assert.Equal(1, probe.RequestCount);
+        Assert.Equal(2, probe.RequestCount);
+    }
+
+    [Fact]
+    public async Task EndpointResolver_WhenBothEndpointsFailPublishesFailedState()
+    {
+        var probe = new RecordingHandler { StatusCode = HttpStatusCode.ServiceUnavailable };
+        using var client = new HttpClient(probe);
+        using var resolver = CreateResolver(client);
+
+        var error = await Assert.ThrowsAsync<MobileBackendConnectionException>(() =>
+            resolver.ResolveAsync());
+
+        Assert.Equal(MobileBackendFailureKind.Server, error.FailureKind);
+        Assert.Equal(MobileBackendConnectionPhase.Failed, resolver.ConnectionState.Phase);
+        Assert.Equal(2, probe.RequestCount);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized, MobileBackendFailureKind.Authentication)]
+    [InlineData(HttpStatusCode.InternalServerError, MobileBackendFailureKind.Server)]
+    [InlineData(HttpStatusCode.NotFound, MobileBackendFailureKind.ApiContract)]
+    public async Task EndpointResolver_NonTransportInternalFailureDoesNotSwitchOrigin(
+        HttpStatusCode statusCode,
+        MobileBackendFailureKind expectedFailure)
+    {
+        var probe = new RecordingHandler
+        {
+            StatusCodeSelector = uri => uri.Host == InternalBackendUri.Host
+                ? statusCode
+                : HttpStatusCode.OK,
+        };
+        using var client = new HttpClient(probe);
+        using var resolver = CreateResolver(client);
+
+        var error = await Assert.ThrowsAsync<MobileBackendConnectionException>(() =>
+            resolver.ResolveAsync());
+
+        Assert.Equal(expectedFailure, error.FailureKind);
+        Assert.Single(probe.RequestUris);
+        Assert.Equal(InternalBackendUri.Host, probe.RequestUris[0].Host);
+    }
+
+    [Fact]
+    public async Task EndpointResolver_ConcurrentFailedRequestsShareOneProbeSequence()
+    {
+        var probe = new RecordingHandler
+        {
+            StatusCode = HttpStatusCode.ServiceUnavailable,
+            Delay = TimeSpan.FromMilliseconds(10),
+        };
+        using var client = new HttpClient(probe);
+        using var resolver = CreateResolver(client);
+
+        var attempts = await Task.WhenAll(Enumerable.Range(0, 8).Select(async _ =>
+        {
+            try
+            {
+                await resolver.ResolveAsync();
+                return false;
+            }
+            catch (MobileBackendConnectionException)
+            {
+                return true;
+            }
+        }));
+
+        Assert.All(attempts, value => Assert.True(value));
+        Assert.Equal(2, probe.RequestCount);
+    }
+
+    [Fact]
+    public async Task EndpointResolver_ManualReconnectClearsFailureAndProbesAgain()
+    {
+        var probe = new RecordingHandler { StatusCode = HttpStatusCode.ServiceUnavailable };
+        using var client = new HttpClient(probe);
+        using var resolver = CreateResolver(client);
+
+        await Assert.ThrowsAsync<MobileBackendConnectionException>(() => resolver.ResolveAsync());
+        probe.StatusCode = HttpStatusCode.OK;
+
+        Assert.Equal(InternalBackendUri, await resolver.ReconnectAsync());
+        Assert.Equal(3, probe.RequestCount);
     }
 
     [Fact]
@@ -189,11 +289,50 @@ public sealed class MobileGalleryHttpFoundationTests
         using var resolver = CreateResolver(client, networkChangeSource: network);
 
         Assert.Equal(InternalBackendUri, await resolver.ResolveAsync());
-        probe.StatusCode = HttpStatusCode.ServiceUnavailable;
+        probe.StatusCodeSelector = uri => uri.Host == InternalBackendUri.Host
+            ? HttpStatusCode.ServiceUnavailable
+            : HttpStatusCode.OK;
         network.RaiseChanged();
         Assert.Equal(ExternalBackendUri, await resolver.ResolveAsync());
 
+        Assert.Equal(3, probe.RequestCount);
+    }
+
+    [Fact]
+    public async Task EndpointResolver_ForegroundReconnectReevaluatesWithoutPolling()
+    {
+        var probe = new RecordingHandler();
+        using var client = new HttpClient(probe);
+        using var resolver = CreateResolver(client);
+
+        Assert.Equal(InternalBackendUri, await resolver.ResolveAsync());
+        resolver.SetForeground(false);
+        resolver.Invalidate();
+        await Task.Delay(25);
+        Assert.Equal(1, probe.RequestCount);
+
+        resolver.SetForeground(true);
+        await Task.Delay(250);
         Assert.Equal(2, probe.RequestCount);
+    }
+
+    [Fact]
+    public void MobileStartup_PreloadsTwelveThumbnailsAndKeepsWarmGalleryVisible()
+    {
+        var viewModel = ReadSource(
+            "MemoryKeeper.Mobile", "ViewModels", "HomeViewModel.cs");
+        var page = ReadSource(
+            "MemoryKeeper.Mobile", "Views", "HomePage.xaml");
+        var project = ReadSource(
+            "MemoryKeeper.Mobile", "MemoryKeeper.Mobile.csproj");
+
+        Assert.Contains("InitialThumbnailPreloadCount = 12", viewModel, StringComparison.Ordinal);
+        Assert.Contains("Take(InitialThumbnailPreloadCount)", viewModel, StringComparison.Ordinal);
+        Assert.Contains("IsInitialLoading && !HasItems", viewModel, StringComparison.Ordinal);
+        Assert.Contains("TimeSpan.FromMilliseconds(400)", viewModel, StringComparison.Ordinal);
+        Assert.Contains("IsStartupLoadingVisible", page, StringComparison.Ordinal);
+        Assert.Contains("서버에 다시 연결하는 중...", viewModel, StringComparison.Ordinal);
+        Assert.Contains("<MauiSplashScreen", project, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -284,6 +423,66 @@ public sealed class MobileGalleryHttpFoundationTests
     }
 
     [Fact]
+    public async Task Repository_RetriesOneSafeGetAfterRetryableEndpointFailure()
+    {
+        var responseNumber = 0;
+        var terminal = new RecordingHandler
+        {
+            ResponseBody = """{"items":[],"next_cursor":null,"has_more":false}""",
+            StatusCodeSelector = _ => Interlocked.Increment(ref responseNumber) == 1
+                ? HttpStatusCode.ServiceUnavailable
+                : HttpStatusCode.OK,
+        };
+        var configuration = CreateConfiguration();
+        var resolver = new FixedEndpointResolver(InternalBackendUri);
+        using var failure = new MobileBackendEndpointFailureHandler(configuration, resolver)
+        {
+            InnerHandler = terminal,
+        };
+        using var authentication = new MobileBackendAuthenticationHandler(configuration)
+        {
+            InnerHandler = failure,
+        };
+        using var client = new HttpClient(authentication);
+        var repository = new MobileFastGalleryApiRepository(
+            new SingleClientFactory(client),
+            configuration,
+            resolver);
+
+        var page = await repository.GetPhotosAsync(new FastGalleryPhotoQuery());
+
+        Assert.Empty(page.Items);
+        Assert.Equal(2, terminal.RequestCount);
+        Assert.Equal(1, resolver.InvalidationCount);
+    }
+
+    [Fact]
+    public async Task Repository_DoesNotRetryAuthenticationOrContractFailure()
+    {
+        var configuration = CreateConfiguration();
+
+        var unauthorized = new RecordingHandler { StatusCode = HttpStatusCode.Unauthorized };
+        using var unauthorizedClient = new HttpClient(unauthorized);
+        var unauthorizedRepository = new MobileFastGalleryApiRepository(
+            new SingleClientFactory(unauthorizedClient),
+            configuration,
+            new FixedEndpointResolver(InternalBackendUri));
+        await Assert.ThrowsAsync<MobileBackendApiException>(() =>
+            unauthorizedRepository.GetPhotosAsync(new FastGalleryPhotoQuery()));
+        Assert.Equal(1, unauthorized.RequestCount);
+
+        var invalidJson = new RecordingHandler { ResponseBody = "not-json" };
+        using var invalidJsonClient = new HttpClient(invalidJson);
+        var invalidJsonRepository = new MobileFastGalleryApiRepository(
+            new SingleClientFactory(invalidJsonClient),
+            configuration,
+            new FixedEndpointResolver(InternalBackendUri));
+        await Assert.ThrowsAsync<MobileBackendContractException>(() =>
+            invalidJsonRepository.GetPhotosAsync(new FastGalleryPhotoQuery()));
+        Assert.Equal(1, invalidJson.RequestCount);
+    }
+
+    [Fact]
     public async Task Repository_ParsesApiOrderAndYearCatalogAppliesDescendingUiContract()
     {
         var terminal = new RecordingHandler
@@ -352,6 +551,7 @@ public sealed class MobileGalleryHttpFoundationTests
 
         Assert.Equal(HttpStatusCode.Unauthorized, exception.StatusCode);
         Assert.DoesNotContain(credential, exception.ToString(), StringComparison.Ordinal);
+        Assert.Equal(1, terminal.RequestCount);
     }
 
     [Fact]
@@ -370,6 +570,7 @@ public sealed class MobileGalleryHttpFoundationTests
         using var client = new HttpClient(authentication);
         var loader = new MobilePreviewSourceFactory(
             new SingleClientFactory(client),
+            configuration,
             new FixedEndpointResolver(InternalBackendUri));
 
         var result = await loader.LoadAsync("abc/123", null);
@@ -396,6 +597,7 @@ public sealed class MobileGalleryHttpFoundationTests
         using var client = new HttpClient(authentication);
         var loader = new MobilePreviewSourceFactory(
             new SingleClientFactory(client),
+            configuration,
             new FixedEndpointResolver(ExternalBackendUri));
 
         var result = await loader.LoadAsync(
@@ -407,6 +609,47 @@ public sealed class MobileGalleryHttpFoundationTests
         Assert.Equal("http", result.FailureStage);
         Assert.DoesNotContain("original", terminal.RequestUris.Single().AbsolutePath, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("thumbnail", terminal.RequestUris.Single().AbsolutePath, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task PreviewLoader_RejectsUnknownProtectedApiOriginWithoutSendingCredential()
+    {
+        var terminal = new RecordingHandler
+        {
+            ResponseBody = "preview-bytes",
+            ContentType = "image/jpeg",
+        };
+        var configuration = CreateConfiguration();
+        using var client = new HttpClient(terminal);
+        var loader = new MobilePreviewSourceFactory(
+            new SingleClientFactory(client),
+            configuration,
+            new FixedEndpointResolver(InternalBackendUri));
+
+        var result = await loader.LoadAsync(
+            "file-id",
+            "https://unknown.example/api/common/gallery/file-id/preview?size=2560");
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("url", result.FailureStage);
+        Assert.Empty(terminal.RequestUris);
+    }
+
+    [Theory]
+    [InlineData("/api/common/gallery/file-id/thumbnail", true)]
+    [InlineData("http://192.168.55.225:8000/api/common/gallery/file-id/thumbnail?width=480", true)]
+    [InlineData("https://backend.example:8443/api/common/gallery/file-id/thumbnail?width=480", true)]
+    [InlineData("https://unknown.example/api/common/gallery/file-id/thumbnail?width=480", false)]
+    [InlineData("https://cdn.example/public/file-id.jpg", true)]
+    public void MediaUrlPolicy_RewritesOnlyConfiguredProtectedApiOrigins(
+        string pathOrUrl,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            MobileBackendMediaUrlPolicy.CanUseConfiguredApiUrl(
+                pathOrUrl,
+                CreateConfiguration()));
     }
 
     private static StubConfiguration CreateConfiguration() =>
@@ -519,7 +762,13 @@ public sealed class MobileGalleryHttpFoundationTests
 
         public bool ThrowHttpRequestException { get; init; }
 
+        public Func<Uri, bool>? ThrowSelector { get; init; }
+
         public TimeSpan Delay { get; init; }
+
+        public Func<Uri, TimeSpan>? DelaySelector { get; init; }
+
+        public Func<Uri, HttpStatusCode>? StatusCodeSelector { get; set; }
 
         public int RequestCount => Volatile.Read(ref _requestCount);
 
@@ -530,17 +779,18 @@ public sealed class MobileGalleryHttpFoundationTests
             Interlocked.Increment(ref _requestCount);
             RequestUris.Add(request.RequestUri!);
             Authorization.Add(request.Headers.Authorization);
-            if (Delay > TimeSpan.Zero)
+            var delay = DelaySelector?.Invoke(request.RequestUri!) ?? Delay;
+            if (delay > TimeSpan.Zero)
             {
-                await Task.Delay(Delay, cancellationToken);
+                await Task.Delay(delay, cancellationToken);
             }
 
-            if (ThrowHttpRequestException)
+            if (ThrowHttpRequestException || ThrowSelector?.Invoke(request.RequestUri!) == true)
             {
                 throw new HttpRequestException("Synthetic connection failure.");
             }
 
-            return new HttpResponseMessage(StatusCode)
+            return new HttpResponseMessage(StatusCodeSelector?.Invoke(request.RequestUri!) ?? StatusCode)
             {
                 Content = new StringContent(ResponseBody, Encoding.UTF8, ContentType),
             };

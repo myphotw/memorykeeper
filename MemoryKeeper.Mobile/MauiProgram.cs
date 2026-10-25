@@ -38,7 +38,11 @@ public static class MauiProgram
 
         builder.Services.AddSingleton<IMobileBackendConfiguration, MobileBackendConfiguration>();
         builder.Services.AddSingleton<IMobileNetworkChangeSource, MauiMobileNetworkChangeSource>();
-        builder.Services.AddSingleton<IMobileBackendEndpointResolver, MobileBackendEndpointResolver>();
+        builder.Services.AddSingleton<MobileBackendEndpointResolver>();
+        builder.Services.AddSingleton<IMobileBackendEndpointResolver>(services =>
+            services.GetRequiredService<MobileBackendEndpointResolver>());
+        builder.Services.AddSingleton<IMobileBackendConnectionMonitor>(services =>
+            services.GetRequiredService<MobileBackendEndpointResolver>());
         MobileStartupCheckpoint.Record("MAUI-CONFIG-REGISTERED");
         builder.Services.AddTransient<MobileBackendAuthenticationHandler>();
         builder.Services.AddTransient<MobileBackendEndpointFailureHandler>();

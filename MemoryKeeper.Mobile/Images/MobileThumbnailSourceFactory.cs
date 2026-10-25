@@ -9,15 +9,18 @@ namespace MemoryKeeper.Mobile.Images;
 public sealed class MobileThumbnailSourceFactory : IMobileThumbnailSourceFactory
 {
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IMobileBackendConfiguration _configuration;
     private readonly IMobileBackendEndpointResolver _endpointResolver;
     private readonly BoundedThumbnailMemoryCache _cache;
 
     public MobileThumbnailSourceFactory(
         IHttpClientFactory httpClientFactory,
+        IMobileBackendConfiguration configuration,
         IMobileBackendEndpointResolver endpointResolver,
         BoundedThumbnailMemoryCache cache)
     {
         _httpClientFactory = httpClientFactory;
+        _configuration = configuration;
         _endpointResolver = endpointResolver;
         _cache = cache;
     }
@@ -79,22 +82,10 @@ public sealed class MobileThumbnailSourceFactory : IMobileThumbnailSourceFactory
     {
         try
         {
-            var baseUri = await _endpointResolver
-                .ResolveAsync(cancellationToken)
-                .ConfigureAwait(false);
-            var absoluteUrl = BackendMediaUrlResolver.ToAbsoluteUrl(
-                baseUri.ToString(),
-                thumbnailUrl);
-            if (!Uri.TryCreate(absoluteUrl, UriKind.Absolute, out var uri)
-                || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp))
-            {
-                return null;
-            }
-
             var bytes = await _cache
                 .GetOrLoadAsync(
                     cacheKey,
-                    token => FetchThumbnailAsync(baseUri, uri, token),
+                    token => FetchThumbnailAsync(thumbnailUrl, token),
                     cancellationToken)
                 .ConfigureAwait(false);
             return bytes is { Length: > 0 } ? bytes : null;
@@ -115,31 +106,68 @@ public sealed class MobileThumbnailSourceFactory : IMobileThumbnailSourceFactory
             : $"file:{fileId.Trim()}";
 
     private async Task<byte[]?> FetchThumbnailAsync(
-        Uri baseUri,
-        Uri uri,
+        string thumbnailUrl,
         CancellationToken cancellationToken)
     {
-        try
+        for (var attempt = 0; attempt < 2; attempt++)
         {
-            var client = _httpClientFactory.CreateClient(MobileHttpClientNames.Backend);
-            using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-            MobileBackendRequestContext.MarkSelectedBackend(request, baseUri);
-            using var response = await client
-                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
-                .ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode)
+            try
+            {
+                var baseUri = await _endpointResolver
+                    .ResolveAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                if (!MobileBackendMediaUrlPolicy.CanUseConfiguredApiUrl(
+                        thumbnailUrl,
+                        _configuration))
+                {
+                    return null;
+                }
+
+                var absoluteUrl = BackendMediaUrlResolver.ToAbsoluteUrl(
+                    baseUri.ToString(),
+                    thumbnailUrl);
+                if (!Uri.TryCreate(absoluteUrl, UriKind.Absolute, out var uri)
+                    || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp))
+                {
+                    return null;
+                }
+
+                var client = _httpClientFactory.CreateClient(MobileHttpClientNames.Backend);
+                using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+                MobileBackendRequestContext.MarkSelectedBackend(request, baseUri);
+                using var response = await client
+                    .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                    .ConfigureAwait(false);
+                if (!response.IsSuccessStatusCode)
+                {
+                    if (attempt == 0
+                        && MobileBackendRetryPolicy.IsRetryableStatus(response.StatusCode))
+                    {
+                        continue;
+                    }
+
+                    return null;
+                }
+
+                var bytes = await response.Content
+                    .ReadAsByteArrayAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                return bytes.Length > 0 ? bytes : null;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (HttpRequestException exception) when (
+                attempt == 0 && exception is not MobileBackendConnectionException)
+            {
+            }
+            catch
             {
                 return null;
             }
+        }
 
-            var bytes = await response.Content
-                .ReadAsByteArrayAsync(cancellationToken)
-                .ConfigureAwait(false);
-            return bytes.Length > 0 ? bytes : null;
-        }
-        catch
-        {
-            return null;
-        }
+        return null;
     }
 }

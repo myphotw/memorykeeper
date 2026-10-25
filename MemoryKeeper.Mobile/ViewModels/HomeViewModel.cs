@@ -14,21 +14,29 @@ using MemoryKeeper.Mobile.Http;
 using MemoryKeeper.Mobile.Images;
 using MemoryKeeper.Mobile.Models;
 using MemoryKeeper.Mobile.Uploads;
+using Microsoft.Maui.ApplicationModel;
 
 namespace MemoryKeeper.Mobile.ViewModels;
 
 public partial class HomeViewModel : ObservableObject
 {
+    private const int InitialThumbnailPreloadCount = 12;
+    private static readonly TimeSpan InitialThumbnailPreloadTimeout = TimeSpan.FromSeconds(8);
+    private static readonly TimeSpan ConnectionIndicatorDelay = TimeSpan.FromMilliseconds(400);
+    private static readonly TimeSpan ConnectionSuccessDuration = TimeSpan.FromSeconds(2);
+
     private readonly FastGalleryPagingService _paging;
     private readonly IFastGalleryApiRepository _repository;
     private readonly IMobileThumbnailSourceFactory _thumbnailSourceFactory;
     private readonly IMobilePreviewSourceFactory _previewSourceFactory;
     private readonly IMobileBackendEndpointResolver _endpointResolver;
+    private readonly IMobileBackendConnectionMonitor? _connectionMonitor;
     private readonly MobileUploadCoordinator _uploads;
     private readonly object _requestLock = new();
     private readonly SemaphoreSlim _hierarchyGate = new(1, 1);
     private CancellationTokenSource? _requestCancellation;
     private CancellationTokenSource? _viewerLoadCancellation;
+    private CancellationTokenSource? _connectionBannerCancellation;
     private FastGalleryHierarchyDto? _hierarchy;
     private readonly MobileGalleryNavigationHistory _contextHistory = new();
     private readonly MobileViewerPosition _viewerPosition = new();
@@ -46,6 +54,7 @@ public partial class HomeViewModel : ObservableObject
     private bool _galleryRefreshPendingAfterUpload;
     private int _uploadGalleryRefreshRunning;
     private double _tileSize = 120;
+    private bool _connectionInterruptionVisible;
 
     [ObservableProperty]
     private bool isInitialLoading;
@@ -125,6 +134,21 @@ public partial class HomeViewModel : ObservableObject
     [ObservableProperty]
     private bool isUploadPanelOpen;
 
+    [ObservableProperty]
+    private string startupStageText = "서버에 연결하는 중...";
+
+    [ObservableProperty]
+    private string? connectionBannerMessage;
+
+    [ObservableProperty]
+    private bool isConnectionBannerVisible;
+
+    [ObservableProperty]
+    private bool isConnectionChecking;
+
+    [ObservableProperty]
+    private bool isConnectionRetryVisible;
+
     public HomeViewModel(
         FastGalleryPagingService paging,
         IFastGalleryApiRepository repository,
@@ -138,6 +162,7 @@ public partial class HomeViewModel : ObservableObject
         _thumbnailSourceFactory = thumbnailSourceFactory;
         _previewSourceFactory = previewSourceFactory;
         _endpointResolver = endpointResolver;
+        _connectionMonitor = endpointResolver as IMobileBackendConnectionMonitor;
         _uploads = uploads;
         _uploads.GalleryRefreshRequested += OnUploadGalleryRefreshRequested;
 
@@ -146,6 +171,10 @@ public partial class HomeViewModel : ObservableObject
         selectedBrowseOption = defaultFeed;
         Items.CollectionChanged += OnItemsChanged;
         SearchResults.CollectionChanged += OnSearchResultsChanged;
+        if (_connectionMonitor is not null)
+        {
+            _connectionMonitor.ConnectionChanged += OnConnectionChanged;
+        }
     }
 
     public event Action<MobileGalleryTreeNode>? PlaceTreeFocusRequested;
@@ -200,6 +229,8 @@ public partial class HomeViewModel : ObservableObject
     public bool IsSearchMode => ViewMode == MobileGalleryViewMode.Search;
 
     public bool IsGalleryVisible => IsGalleryMode && HasItems;
+
+    public bool IsStartupLoadingVisible => IsInitialLoading && !HasItems;
 
     public bool IsEmptyStateVisible => !IsInitialLoading
                                        && !HasItems
@@ -332,6 +363,42 @@ public partial class HomeViewModel : ObservableObject
     public Task RetryAsync() => _retryOperation == GalleryRetryOperation.LoadMore
         ? LoadMoreAsync()
         : RefreshAsync();
+
+    [RelayCommand]
+    public async Task RetryConnectionAsync()
+    {
+        if (_connectionMonitor is null)
+        {
+            await RetryAsync();
+            return;
+        }
+
+        try
+        {
+            await _connectionMonitor.ReconnectAsync();
+            if (!HasItems)
+            {
+                await RefreshAsync();
+            }
+            else if (!string.IsNullOrWhiteSpace(ErrorMessage))
+            {
+                await RetryAsync();
+            }
+            else
+            {
+                // The health probe is deliberately anonymous. Confirm the selected
+                // endpoint also accepts the configured credential on manual retry.
+                _ = await _repository.GetSummaryAsync();
+            }
+        }
+        catch (Exception exception)
+        {
+            if (!HasItems)
+            {
+                ErrorMessage = ToUserMessage(exception);
+            }
+        }
+    }
 
     [RelayCommand]
     public Task RetryBrowseOptionsAsync() => LoadBrowseOptionsSafelyAsync();
@@ -1071,6 +1138,7 @@ public partial class HomeViewModel : ObservableObject
         long generation,
         bool clearItems)
     {
+        var isColdStart = !HasItems && !isRefresh;
         var showRefresh = isRefresh && HasItems;
         if (showRefresh)
         {
@@ -1095,6 +1163,18 @@ public partial class HomeViewModel : ObservableObject
         var request = BeginRequest(cancelCurrent: true, generation);
         try
         {
+            if (isColdStart)
+            {
+                StartupStageText = "서버에 연결하는 중...";
+                await _endpointResolver.ResolveAsync(request.Cancellation.Token);
+                if (!IsCurrentRequest(request))
+                {
+                    return;
+                }
+
+                StartupStageText = "사진 목록을 준비하는 중...";
+            }
+
             var queries = GalleryBrowseScopeQueryMapper.ToQueries(
                 scope,
                 FastGalleryPagingService.PageSize);
@@ -1102,6 +1182,18 @@ public partial class HomeViewModel : ObservableObject
             if (!IsCurrentRequest(request))
             {
                 return;
+            }
+
+            if (isColdStart && update.Items.Count > 0)
+            {
+                StartupStageText = "첫 사진을 불러오는 중...";
+                await PreloadInitialThumbnailsAsync(
+                    update.Items,
+                    request.Cancellation.Token);
+                if (!IsCurrentRequest(request))
+                {
+                    return;
+                }
             }
 
             var replacement = update.Items.Select(ToMobileItem).ToArray();
@@ -1223,6 +1315,29 @@ public partial class HomeViewModel : ObservableObject
                 photo.ThumbnailUrl,
                 cancellationToken)));
 
+    private async Task PreloadInitialThumbnailsAsync(
+        IReadOnlyList<FastGalleryPhotoDto> photos,
+        CancellationToken cancellationToken)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(InitialThumbnailPreloadTimeout);
+        try
+        {
+            await Task.WhenAll(photos
+                .Take(InitialThumbnailPreloadCount)
+                .Select(photo => _thumbnailSourceFactory.PreloadAsync(
+                    photo.FileId,
+                    photo.ThumbnailUrl,
+                    timeout.Token)));
+        }
+        catch (OperationCanceledException) when (
+            timeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            // Startup remains bounded. Successfully cached thumbnails are retained;
+            // unfinished or failed items use the existing placeholder/lazy-load path.
+        }
+    }
+
     private void ApplyContinuation(FastGalleryPagingUpdate update)
     {
         NextCursor = update.NextCursor;
@@ -1275,17 +1390,146 @@ public partial class HomeViewModel : ObservableObject
     private static string ToUserMessage(Exception exception) => exception switch
     {
         MobileBackendConfigurationException => "사진첩 연결 설정을 확인할 수 없습니다.",
+        MobileBackendConnectionException { FailureKind: MobileBackendFailureKind.Authentication } =>
+            "서버 인증을 확인할 수 없습니다.",
+        MobileBackendConnectionException { FailureKind: MobileBackendFailureKind.Tls } =>
+            "서버 보안 연결을 확인할 수 없습니다.",
+        MobileBackendConnectionException => "서버에 연결할 수 없습니다.",
+        MobileBackendContractException => "서버 응답을 확인할 수 없습니다.",
         MobileBackendApiException { StatusCode: HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden } =>
-            "사진첩에 연결할 수 없습니다.",
+            "서버 인증을 확인할 수 없습니다.",
         _ => "사진첩을 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.",
     };
+
+    private void OnConnectionChanged(
+        object? sender,
+        MobileBackendConnectionChangedEventArgs e) =>
+        MainThread.BeginInvokeOnMainThread(() => ApplyConnectionState(e.State));
+
+    private void ApplyConnectionState(MobileBackendConnectionState state)
+    {
+        CancelConnectionBannerDelay();
+        switch (state.Phase)
+        {
+            case MobileBackendConnectionPhase.Checking:
+                IsConnectionChecking = true;
+                IsConnectionRetryVisible = false;
+                if (!IsStartupLoadingVisible)
+                {
+                    var cancellation = new CancellationTokenSource();
+                    _connectionBannerCancellation = cancellation;
+                    _ = ShowConnectionCheckingAfterDelayAsync(cancellation);
+                }
+
+                break;
+            case MobileBackendConnectionPhase.Connected:
+            {
+                IsConnectionChecking = false;
+                IsConnectionRetryVisible = false;
+                var resumeFailedLoadMore = _connectionInterruptionVisible
+                                           && _retryOperation == GalleryRetryOperation.LoadMore
+                                           && IsGalleryMode
+                                           && HasItems
+                                           && !IsLoadingMore;
+                if (_connectionInterruptionVisible)
+                {
+                    ConnectionBannerMessage = "서버에 연결되었습니다.";
+                    IsConnectionBannerVisible = true;
+                    var cancellation = new CancellationTokenSource();
+                    _connectionBannerCancellation = cancellation;
+                    _ = HideConnectionSuccessAfterDelayAsync(cancellation);
+                }
+                else
+                {
+                    IsConnectionBannerVisible = false;
+                }
+
+                if (resumeFailedLoadMore)
+                {
+                    _ = LoadMoreAsync();
+                }
+
+                break;
+            }
+            case MobileBackendConnectionPhase.Failed:
+                IsConnectionChecking = false;
+                IsConnectionRetryVisible = true;
+                ConnectionBannerMessage = ToConnectionFailureMessage(state.FailureKind);
+                _connectionInterruptionVisible = true;
+                IsConnectionBannerVisible = HasItems;
+                break;
+            default:
+                IsConnectionChecking = false;
+                IsConnectionRetryVisible = false;
+                IsConnectionBannerVisible = false;
+                break;
+        }
+    }
+
+    private async Task ShowConnectionCheckingAfterDelayAsync(
+        CancellationTokenSource cancellation)
+    {
+        try
+        {
+            await Task.Delay(ConnectionIndicatorDelay, cancellation.Token);
+            if (!cancellation.IsCancellationRequested
+                && _connectionMonitor?.ConnectionState.Phase == MobileBackendConnectionPhase.Checking
+                && !IsStartupLoadingVisible)
+            {
+                ConnectionBannerMessage = "서버에 다시 연결하는 중...";
+                IsConnectionBannerVisible = true;
+                _connectionInterruptionVisible = true;
+            }
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+        }
+    }
+
+    private async Task HideConnectionSuccessAfterDelayAsync(
+        CancellationTokenSource cancellation)
+    {
+        try
+        {
+            await Task.Delay(ConnectionSuccessDuration, cancellation.Token);
+            if (!cancellation.IsCancellationRequested)
+            {
+                IsConnectionBannerVisible = false;
+                _connectionInterruptionVisible = false;
+            }
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+        }
+    }
+
+    private void CancelConnectionBannerDelay()
+    {
+        _connectionBannerCancellation?.Cancel();
+        _connectionBannerCancellation?.Dispose();
+        _connectionBannerCancellation = null;
+    }
+
+    private static string ToConnectionFailureMessage(MobileBackendFailureKind failureKind) =>
+        failureKind switch
+        {
+            MobileBackendFailureKind.Authentication => "서버 인증을 확인할 수 없습니다.",
+            MobileBackendFailureKind.Tls => "서버 보안 연결을 확인할 수 없습니다.",
+            MobileBackendFailureKind.Server => "서버에서 요청을 처리할 수 없습니다.",
+            MobileBackendFailureKind.ApiContract => "서버 응답을 확인할 수 없습니다.",
+            _ => "서버에 연결할 수 없습니다.",
+        };
 
     private void OnItemsChanged(object? sender, NotifyCollectionChangedEventArgs e) => NotifyViewStateChanged();
 
     private void OnSearchResultsChanged(object? sender, NotifyCollectionChangedEventArgs e) =>
         OnPropertyChanged(nameof(IsSearchResultsVisible));
 
-    partial void OnIsInitialLoadingChanged(bool value) => NotifyViewStateChanged();
+    partial void OnIsInitialLoadingChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsStartupLoadingVisible));
+        NotifyViewStateChanged();
+    }
 
     partial void OnErrorMessageChanged(string? value) => NotifyViewStateChanged();
 
