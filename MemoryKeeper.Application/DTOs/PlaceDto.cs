@@ -1,3 +1,5 @@
+using MemoryKeeper.Application;
+
 namespace MemoryKeeper.Application.DTOs;
 
 public sealed class PlaceDto
@@ -47,6 +49,14 @@ public sealed class PlaceDto
     public DateTime? LastUsedAt { get; init; }
 
     public int MediaCount { get; init; }
+
+    /// <summary>
+    /// Exact number of photos assigned to this registered Place ID. Null means the
+    /// bulk hierarchy response did not provide a count; it must not be treated as zero.
+    /// </summary>
+    public int? LinkedPhotoCount { get; set; }
+
+    public string LinkedPhotoCountText => PlaceLinkedPhotoCountPolicy.Format(LinkedPhotoCount);
 
     public int VisitRecordCount { get; init; }
 

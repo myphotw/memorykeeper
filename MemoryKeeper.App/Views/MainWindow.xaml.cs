@@ -964,14 +964,19 @@ public sealed partial class MainWindow : Window
         var page = GetOrCreatePage<SettingsPage>("settings");
         page.ViewModel.ResetCompleted += OnSettingsResetCompleted;
         page.BackRequested += OnShellBackRequested;
+        page.OpenMapRequested += OnPhotoDetailOpenMapRequested;
         _settingsPage = page;
         if (TryGetGalleryPlaceManagementId(entry.ContextKey, out var placeId))
         {
             page.RequestPlaceSelection(placeId);
         }
 
+        var preservePlaceState = page.IsPlaceWorkspaceRoundTripPending;
         ContentFrame.Content = page;
-        _ = page.ViewModel.LoadCommand.ExecuteAsync(targetSection);
+        if (!preservePlaceState)
+        {
+            _ = page.ViewModel.LoadCommand.ExecuteAsync(targetSection);
+        }
     }
 
     private void NavigateToSettingsSection(string section) =>
@@ -988,6 +993,11 @@ public sealed partial class MainWindow : Window
 
     private void OnPhotoOpenRequested(object? sender, EventArgs e)
     {
+        if (ContentFrame.Content is SettingsPage settingsPage)
+        {
+            settingsPage.PreparePlaceWorkspaceRoundTrip();
+        }
+
         // OpenRequested is for Viewer entry from list surfaces only (not Detail back).
         var tag = _photoNavigationState.Target == PhotoNavigationTarget.Detail
             ? "photo"
@@ -1142,6 +1152,7 @@ public sealed partial class MainWindow : Window
         {
             _settingsPage.ViewModel.ResetCompleted -= OnSettingsResetCompleted;
             _settingsPage.BackRequested -= OnShellBackRequested;
+            _settingsPage.OpenMapRequested -= OnPhotoDetailOpenMapRequested;
             _settingsPage = null;
         }
 

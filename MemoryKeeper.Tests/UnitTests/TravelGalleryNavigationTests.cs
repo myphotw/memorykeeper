@@ -67,6 +67,21 @@ public sealed class TravelGalleryNavigationTests
         Assert.Null(state.ConsumeRestore());
     }
 
+    [Fact]
+    public void RequestPlaceFilter_RestoresTheRegisteredPlaceInPlaceBrowseMode()
+    {
+        var state = new GalleryFocusState();
+        var placeId = Guid.NewGuid();
+
+        state.RequestPlaceFilter(placeId);
+
+        var request = Assert.IsType<GalleryFocusSnapshot>(state.ConsumeRestore());
+        Assert.Equal(1, request.BrowseModeIndex);
+        Assert.Equal(placeId, request.SelectedPlaceId);
+        Assert.Equal(GalleryPlaceScope.All, request.PlaceScope);
+        Assert.Null(request.RequestedPlaceLevel);
+    }
+
     [Theory]
     [InlineData("International", "Countries")]
     [InlineData("International", "Places")]

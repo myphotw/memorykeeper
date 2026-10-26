@@ -12,7 +12,8 @@ public sealed class GallerySearchTreeRegressionTests
 
         Assert.Contains("GallerySearchHierarchyProjection.Create", source, StringComparison.Ordinal);
         Assert.Contains("RebuildSearchTreeRootsAsync", source, StringComparison.Ordinal);
-        Assert.Contains("BuildPlaceTreeRoots(hierarchy)", source, StringComparison.Ordinal);
+        Assert.Contains("BuildPlaceTreeRoots(hierarchy, _registeredPlaceSearchPaths)", source, StringComparison.Ordinal);
+        Assert.Contains("ExpandPlaceSearchBranch(root)", source, StringComparison.Ordinal);
         Assert.Contains("selectedNodeKey = SelectedNode?.BuildNodeKey()", source, StringComparison.Ordinal);
         Assert.Contains("FindNodeByKey(selectedNodeKey)", source, StringComparison.Ordinal);
         Assert.Contains("node.Kind == GalleryTreeNodeKind.All", source, StringComparison.Ordinal);
@@ -44,6 +45,32 @@ public sealed class GallerySearchTreeRegressionTests
         Assert.Contains("_searchTreeTotalCount = projection.TotalCount", source, StringComparison.Ordinal);
         Assert.Contains("UpdateSearchTreeTotalCount(_totalCount)", source, StringComparison.Ordinal);
         Assert.Contains("Count = _searchTreeTotalCount", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PlaceTree_UsesCanonicalRegionsExactScopesAndExpandsFocusedPlacePath()
+    {
+        var viewModel = File.ReadAllText(FindSourceFile(
+            "MemoryKeeper.App",
+            "ViewModels",
+            "GalleryViewModel.cs"));
+        var treeNode = File.ReadAllText(FindSourceFile(
+            "MemoryKeeper.App",
+            "Models",
+            "GalleryTreeNode.cs"));
+        var projection = File.ReadAllText(FindSourceFile(
+            "MemoryKeeper.Application",
+            "GalleryPlaceHierarchyProjection.cs"));
+
+        Assert.Contains("GalleryTreeNodeKind.RegionBrowse", viewModel, StringComparison.Ordinal);
+        Assert.Contains("BuildPlaceRegionNode", viewModel, StringComparison.Ordinal);
+        Assert.Contains("RegionFilters = region.RegionFilters", viewModel, StringComparison.Ordinal);
+        Assert.Contains("Task.WhenAll(sourceRegions.Select", viewModel, StringComparison.Ordinal);
+        Assert.Contains("PlaceId = isPlaceLeaf && locationKey is null ? node.PlaceId : null", viewModel, StringComparison.Ordinal);
+        Assert.Contains("ExpandAncestorsTo(node)", viewModel, StringComparison.Ordinal);
+        Assert.Contains("HierarchyPath", treeNode, StringComparison.Ordinal);
+        Assert.Contains("PlaceLinkedPhotoCountPolicy.Project(registeredPaths)", projection, StringComparison.Ordinal);
+        Assert.Contains("photoCount <= 0", projection, StringComparison.Ordinal);
     }
 
     private static string FindSourceFile(params string[] parts)

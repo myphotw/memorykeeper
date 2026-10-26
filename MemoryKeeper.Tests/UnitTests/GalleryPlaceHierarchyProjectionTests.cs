@@ -6,69 +6,156 @@ namespace MemoryKeeper.Tests.UnitTests;
 public sealed class GalleryPlaceHierarchyProjectionTests
 {
     [Fact]
-    public void Build_GroupsCountriesAndPlacesAcrossYearsAndSumsPhotoCounts()
+    public void Build_UsesCanonicalMultiLevelRegionsAndExactRegisteredPhotoCount()
+    {
+        var placeId = Guid.NewGuid();
+        var hierarchy = Hierarchy(
+            Year(2025, Country("대한민국", Region("가평군", Place(placeId, "모닝 게스트하우스", 7)))));
+        var paths = new[]
+        {
+            Path(placeId, "모닝 게스트하우스", 1, "대한민국", "가평군", ["대한민국", "경기도", "가평군"]),
+        };
+
+        var korea = Assert.Single(GalleryPlaceHierarchyProjection.Build(hierarchy, paths));
+        var province = Assert.Single(korea.Regions);
+        var county = Assert.Single(province.Regions);
+        var place = Assert.Single(county.Places);
+
+        Assert.Equal("경기도", province.DisplayName);
+        Assert.Equal("가평군", county.DisplayName);
+        Assert.Contains("가평군", province.RegionFilters);
+        Assert.Equal(placeId, place.PlaceId);
+        Assert.Equal(1, place.PhotoCount);
+        Assert.Null(place.LocationKey);
+        Assert.True(place.IsRegisteredPlace);
+        Assert.Empty(korea.Places);
+    }
+
+    [Fact]
+    public void Build_ExcludesConfirmedZeroPhotoPlacesWithoutTreatingMissingHierarchyAsZero()
+    {
+        var linkedId = Guid.NewGuid();
+        var zeroId = Guid.NewGuid();
+        var hierarchy = Hierarchy(
+            Year(2025, Country(
+                "대한민국",
+                Region("가평군", Place(linkedId, "연결 장소", 1), Place(zeroId, "빈 장소", 4)))));
+        var paths = new[]
+        {
+            Path(linkedId, "연결 장소", 1, "대한민국", "가평군", ["대한민국", "경기도", "가평군"]),
+            Path(zeroId, "빈 장소", 0, "대한민국", "가평군", ["대한민국", "경기도", "가평군"]),
+        };
+
+        var projected = GalleryPlaceHierarchyProjection.Build(hierarchy, paths);
+        var places = DescendantPlaces(projected);
+
+        Assert.Contains(places, place => place.PlaceId == linkedId);
+        Assert.DoesNotContain(places, place => place.PlaceId == zeroId);
+
+        var fallbackPlaces = DescendantPlaces(GalleryPlaceHierarchyProjection.Build(hierarchy));
+        Assert.Contains(fallbackPlaces, place => place.PlaceId == zeroId && place.PhotoCount == 4);
+    }
+
+    [Fact]
+    public void Build_ShowsOneLeafForMultipleCanonicalPathsAndSumsEachDistinctPathOnce()
+    {
+        var placeId = Guid.NewGuid();
+        var hierarchy = Hierarchy(
+            Year(2025, Country("몰디브", Region("말레", Place(placeId, "퍼블릭 비치", 5)))));
+        var male = Path(
+            placeId,
+            "퍼블릭 비치",
+            4,
+            "몰디브",
+            "말레",
+            ["몰디브", "말레"],
+            locationKey: "registered:male",
+            hierarchyComplete: true);
+        var lot = Path(
+            placeId,
+            "퍼블릭 비치",
+            1,
+            "몰디브",
+            "Lot",
+            ["몰디브", "Lot"],
+            locationKey: "registered:lot",
+            hierarchyComplete: false);
+
+        var result = GalleryPlaceHierarchyProjection.Build(hierarchy, [male, male, lot]);
+        var place = Assert.Single(DescendantPlaces(result));
+
+        Assert.Equal(placeId, place.PlaceId);
+        Assert.Equal(5, place.PhotoCount);
+        Assert.Equal("말레", Assert.Single(Assert.Single(result).Regions).DisplayName);
+    }
+
+    [Fact]
+    public void Build_KeepsSameDisplayNameWithDifferentPlaceIdsDistinct()
+    {
+        var firstId = Guid.NewGuid();
+        var secondId = Guid.NewGuid();
+        var hierarchy = Hierarchy(
+            Year(2025, Country("대한민국", Region(
+                "가평군",
+                Place(firstId, "중앙 공원", 1),
+                Place(secondId, "중앙 공원", 2)))));
+        var paths = new[]
+        {
+            Path(firstId, "중앙 공원", 1, "대한민국", "가평군", ["대한민국", "경기도", "가평군"]),
+            Path(secondId, "중앙 공원", 2, "대한민국", "가평군", ["대한민국", "경기도", "가평군"]),
+        };
+
+        var places = DescendantPlaces(GalleryPlaceHierarchyProjection.Build(hierarchy, paths));
+
+        Assert.Equal(2, places.Count);
+        Assert.Equal(2, places.Select(place => place.PlaceId).Distinct().Count());
+    }
+
+    [Fact]
+    public void Build_FastFallbackStillGroupsCountriesRegionsAndPlacesAcrossYears()
     {
         var seoulId = Guid.NewGuid();
-        var osakaId = Guid.NewGuid();
         var hierarchy = Hierarchy(
-            Year(2025,
-                Country("대한민국", 4, Place(seoulId, "서울", 3)),
-                Country("일본", 2, Place(osakaId, "오사카", 2))),
-            Year(2024,
-                Country("South Korea", 2, Place(seoulId, "서울", 2))));
+            Year(2025, Country("대한민국", Region("서울", Place(seoulId, "서울숲", 3)))),
+            Year(2024, Country("South Korea", Region("서울", Place(seoulId, "서울숲", 2)))));
 
-        var result = GalleryPlaceHierarchyProjection.Build(hierarchy);
+        var korea = Assert.Single(GalleryPlaceHierarchyProjection.Build(hierarchy));
+        var region = Assert.Single(korea.Regions);
+        var place = Assert.Single(region.Places);
 
-        var korea = Assert.Single(result, item => item.DisplayName == "대한민국");
         Assert.True(korea.IsDomestic);
-        Assert.Equal(6, korea.PhotoCount);
-        Assert.Equal(5, Assert.Single(korea.Places).PhotoCount);
-
-        var japan = Assert.Single(result, item => item.DisplayName == "일본");
-        Assert.False(japan.IsDomestic);
-        Assert.Equal(2, japan.PhotoCount);
-        var osaka = Assert.Single(japan.Places);
-        Assert.Equal(osakaId, osaka.PlaceId);
-        Assert.Equal($"registered:v1:{osakaId:D}", osaka.LocationKey);
-        Assert.True(osaka.IsRegisteredPlace);
+        Assert.Equal(5, korea.PhotoCount);
+        Assert.Equal("서울", region.DisplayName);
+        Assert.Equal(5, place.PhotoCount);
+        Assert.Equal($"registered:v1:{seoulId:D}", place.LocationKey);
     }
 
     [Fact]
-    public void Build_DistinguishesRegisteredPlacesFromRawLocationFallbackIds()
+    public void Build_FastFallbackKeepsRawAndUnclassifiedLeavesDiscoverable()
     {
-        var registeredId = Guid.NewGuid();
         var rawId = Guid.NewGuid();
         var hierarchy = Hierarchy(
-            Year(2025,
-                Country(
-                    "대한민국",
-                    2,
-                    Place(registeredId, "등록 장소", 1),
-                    RawPlace(rawId, "원본 위치", 1))));
+            Year(2025, Country(
+                null,
+                Region("미분류 지역", RawPlace(rawId, "원본 위치", 2)))));
 
-        var places = Assert.Single(GalleryPlaceHierarchyProjection.Build(hierarchy)).Places;
+        var country = Assert.Single(GalleryPlaceHierarchyProjection.Build(hierarchy));
+        var place = Assert.Single(Assert.Single(country.Regions).Places);
 
-        Assert.True(Assert.Single(places, place => place.PlaceId == registeredId).IsRegisteredPlace);
-        Assert.False(Assert.Single(places, place => place.PlaceId == rawId).IsRegisteredPlace);
+        Assert.True(country.IsUnclassified);
+        Assert.Null(country.CountryFilter);
+        Assert.Equal(LibraryConstants.UnclassifiedTitle, country.DisplayName);
+        Assert.False(place.IsRegisteredPlace);
+        Assert.Equal($"raw:v1:{rawId:D}", place.LocationKey);
     }
 
-    [Fact]
-    public void Build_UsesExistingUnclassifiedLabelAndKeepsSamePlaceNameInDifferentCountries()
-    {
-        var hierarchy = Hierarchy(
-            Year(2025,
-                Country(null, 3, Place(Guid.NewGuid(), "중앙 공원", 2)),
-                Country("일본", 1, Place(Guid.NewGuid(), "중앙 공원", 1)),
-                Country("미국", 4, Place(Guid.NewGuid(), "중앙 공원", 4))));
+    private static IReadOnlyList<GalleryPlaceProjectionItem> DescendantPlaces(
+        IReadOnlyList<GalleryCountryProjectionItem> countries) =>
+        countries.SelectMany(country => country.Places.Concat(DescendantPlaces(country.Regions))).ToList();
 
-        var result = GalleryPlaceHierarchyProjection.Build(hierarchy);
-
-        var unclassified = Assert.Single(result, item => item.IsUnclassified);
-        Assert.Equal(LibraryConstants.UnclassifiedTitle, unclassified.DisplayName);
-        Assert.Null(unclassified.CountryFilter);
-        Assert.Equal(3, unclassified.PhotoCount);
-        Assert.Equal(3, result.Sum(country => country.Places.Count(place => place.DisplayName == "중앙 공원")));
-    }
+    private static IEnumerable<GalleryPlaceProjectionItem> DescendantPlaces(
+        IReadOnlyList<GalleryPlaceRegionProjectionItem> regions) =>
+        regions.SelectMany(region => region.Places.Concat(DescendantPlaces(region.Regions)));
 
     private static FastGalleryHierarchyDto Hierarchy(params FastGalleryHierarchyNodeDto[] years) =>
         new() { Years = years };
@@ -80,13 +167,22 @@ public sealed class GalleryPlaceHierarchyProjectionTests
 
     private static FastGalleryHierarchyNodeDto Country(
         string? country,
-        int count,
-        params FastGalleryHierarchyNodeDto[] places) =>
+        params FastGalleryHierarchyNodeDto[] regions) =>
         new()
         {
             Country = country,
-            Count = count,
-            Regions = [new FastGalleryHierarchyNodeDto { Region = "region", Places = places }],
+            Count = regions.Sum(region => region.Count),
+            Regions = regions,
+        };
+
+    private static FastGalleryHierarchyNodeDto Region(
+        string region,
+        params FastGalleryHierarchyNodeDto[] places) =>
+        new()
+        {
+            Region = region,
+            Count = places.Sum(place => place.Count),
+            Places = places,
         };
 
     private static FastGalleryHierarchyNodeDto Place(Guid id, string name, int count) =>
@@ -106,4 +202,25 @@ public sealed class GalleryPlaceHierarchyProjectionTests
             DisplayName = name,
             Count = count,
         };
+
+    private static MemoryKeeperPlaceHierarchyPathApiDto Path(
+        Guid id,
+        string name,
+        int count,
+        string country,
+        string region,
+        string[] locationPath,
+        string? locationKey = null,
+        bool hierarchyComplete = true) => new()
+    {
+        MemorykeeperPlaceId = id,
+        LocationKey = locationKey ?? $"registered:v1:{id:D}:{region}",
+        DisplayName = name,
+        Country = country,
+        Region = region,
+        LocationPath = locationPath,
+        FullPath = $"{string.Join(" > ", locationPath)} > {name}",
+        PhotoCount = count,
+        LocationHierarchyComplete = hierarchyComplete,
+    };
 }

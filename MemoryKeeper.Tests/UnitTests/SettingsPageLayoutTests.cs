@@ -17,7 +17,7 @@ public sealed class SettingsPageLayoutTests
     }
 
     [Fact]
-    public void Settings_Distinguishes_Wide_Management_And_Simple_Details()
+    public void Settings_Distinguishes_Wide_Cards_FullWorkspace_And_Simple_Details()
     {
         var xaml = LoadSource("MemoryKeeper.App", "Views", "SettingsPage.xaml");
 
@@ -30,8 +30,25 @@ public sealed class SettingsPageLayoutTests
         }
 
         var photoManagement = LoadSource("MemoryKeeper.App", "Views", "PhotoManagementView.xaml");
-        Assert.Equal(4, Count(xaml, "Style=\"{StaticResource MkWideSettingsCardStyle}\"")
-                        + Count(photoManagement, "Style=\"{StaticResource MkWideSettingsCardStyle}\""));
+        Assert.Equal(2, Count(xaml, "Style=\"{StaticResource MkWideSettingsCardStyle}\""));
+        Assert.Equal(1, Count(photoManagement, "Style=\"{StaticResource MkWideSettingsCardStyle}\""));
+        Assert.Contains("x:Name=\"TagsDetail\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"PhotoExportDetail\"", xaml, StringComparison.Ordinal);
+
+        var placesStart = xaml.IndexOf("x:Name=\"PlacesDetail\"", StringComparison.Ordinal);
+        Assert.True(placesStart >= 0);
+        var placesEnd = xaml.IndexOf("<!-- 장소 정리 필요", placesStart, StringComparison.Ordinal);
+        Assert.True(placesEnd > placesStart);
+        var placesWorkspace = xaml[placesStart..placesEnd];
+        Assert.DoesNotContain("MkWideSettingsCardStyle", placesWorkspace, StringComparison.Ordinal);
+        Assert.DoesNotContain("ScrollViewer", placesWorkspace, StringComparison.Ordinal);
+        Assert.Contains("Background=\"{ThemeResource MkBrushBackground}\"", placesWorkspace, StringComparison.Ordinal);
+        Assert.Contains("VerticalAlignment=\"Stretch\"", placesWorkspace, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"PlaceHost\"", placesWorkspace, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"GalleryWorkspaceTabButton\"", placesWorkspace, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"PlaceWorkspaceTabButton\"", placesWorkspace, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"EmbeddedGalleryHost\"", placesWorkspace, StringComparison.Ordinal);
+
         Assert.Equal(4, Count(xaml, "Style=\"{StaticResource MkSimpleSettingsCardStyle}\""));
         Assert.Equal(1, Count(xaml, "Style=\"{StaticResource MkSimpleSettingsOutlinedCardStyle}\""));
     }
@@ -225,9 +242,19 @@ public sealed class SettingsPageLayoutTests
         var settings = LoadSource("MemoryKeeper.App", "Views", "SettingsPage.xaml.cs");
         var mainWindow = LoadSource("MemoryKeeper.App", "Views", "MainWindow.xaml.cs");
 
-        Assert.DoesNotContain("OpenImportRequested", settings, StringComparison.Ordinal);
+        Assert.Contains("_embeddedGalleryPage.OpenImportRequested += OnEmbeddedGalleryOpenImportRequested", settings, StringComparison.Ordinal);
+        Assert.Contains("OnEmbeddedGalleryOpenImportRequested", settings, StringComparison.Ordinal);
+        Assert.Contains("SelectSettingsSectionCommand.ExecuteAsync(\"photo-management\")", settings, StringComparison.Ordinal);
+        Assert.DoesNotContain("OpenImportRequested?.Invoke", settings, StringComparison.Ordinal);
+        Assert.DoesNotContain("public event EventHandler? OpenImportRequested", settings, StringComparison.Ordinal);
         Assert.DoesNotContain("OpenPlaceRequested", settings, StringComparison.Ordinal);
-        Assert.DoesNotContain("OpenPendingRequested", settings, StringComparison.Ordinal);
+        Assert.Contains("_embeddedGalleryPage.OpenPendingRequested += OnEmbeddedGalleryOpenPendingRequested", settings, StringComparison.Ordinal);
+        Assert.Contains("OnEmbeddedGalleryOpenPendingRequested", settings, StringComparison.Ordinal);
+        Assert.Contains("SelectSettingsSectionCommand.ExecuteAsync(\"pending-memories\")", settings, StringComparison.Ordinal);
+        Assert.DoesNotContain("OpenPendingRequested?.Invoke", settings, StringComparison.Ordinal);
+        Assert.DoesNotContain("public event EventHandler? OpenPendingRequested", settings, StringComparison.Ordinal);
+        Assert.DoesNotContain("NavigateDrillDown(", settings, StringComparison.Ordinal);
+        Assert.DoesNotContain("SelectNavigationItem(", settings, StringComparison.Ordinal);
         Assert.DoesNotContain("OnSettingsOpenImportRequested", mainWindow, StringComparison.Ordinal);
         Assert.DoesNotContain("OnSettingsOpenPlaceRequested", mainWindow, StringComparison.Ordinal);
         Assert.DoesNotContain("OnSettingsOpenPendingRequested", mainWindow, StringComparison.Ordinal);

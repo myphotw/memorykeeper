@@ -44,6 +44,7 @@
     </Page.Resources>
 
     <Grid
+        x:Name="GalleryRoot"
         Style="{StaticResource MkWidePageContainerStyle}"
         Background="{ThemeResource MkBrushBackground}"
         ColumnSpacing="{StaticResource MkPageColumnGap}"

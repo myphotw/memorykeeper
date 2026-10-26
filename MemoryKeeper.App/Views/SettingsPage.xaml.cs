@@ -1,5 +1,6 @@
 using MemoryKeeper.App.ViewModels;
 using MemoryKeeper.Application.DTOs;
+using MemoryKeeper.Application.Interfaces;
 using MemoryKeeper.Application.Navigation;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -13,45 +14,91 @@ public sealed partial class SettingsPage : Page
     private readonly PhotoManagementView _photoManagementView;
     private readonly PendingMemoryView _pendingView;
     private readonly PlaceManagementView _placeView;
+    private readonly GalleryPage _embeddedGalleryPage;
     private readonly TagManagementView _tagView;
     private readonly INavigationService _navigation;
+    private readonly ICatalogInvalidation _catalogInvalidation;
     private readonly HashSet<SettingsSection> _activatedSections = [];
     private readonly HashSet<SettingsSection> _activatingSections = [];
     private bool _syncingNavigation;
     private bool _isLoaded;
+    private bool _preservePlaceStateOnNextActivation;
+    private bool _isEmbeddedGalleryActivated;
+    private bool _isEmbeddedGalleryVisible;
+    private long _pendingEmbeddedGalleryInvalidationGeneration;
+    private long _lastAppliedEmbeddedGalleryInvalidationGeneration;
 
     public SettingsViewModel ViewModel { get; }
 
+    public bool IsPlaceWorkspaceRoundTripPending => _preservePlaceStateOnNextActivation;
+
+    public bool IsEmbeddedGalleryVisible => _isEmbeddedGalleryVisible;
+
     public event EventHandler? BackRequested;
 
-    public void RequestPlaceSelection(Guid placeId) =>
+    public event EventHandler? OpenMapRequested;
+
+    public void RequestPlaceSelection(Guid placeId)
+    {
         _placeView.ViewModel.RequestSelection(placeId);
+        ShowPlaceWorkspace();
+    }
+
+    public void PreparePlaceWorkspaceRoundTrip()
+    {
+        _preservePlaceStateOnNextActivation = true;
+        _placeView.PreserveForGalleryRoundTrip();
+    }
 
     public SettingsPage(
         SettingsViewModel viewModel,
         PhotoManagementView photoManagementView,
         PendingMemoryView pendingView,
         PlaceManagementView placeView,
+        GalleryPage embeddedGalleryPage,
         TagManagementView tagView,
-        INavigationService navigation)
+        INavigationService navigation,
+        ICatalogInvalidation catalogInvalidation)
     {
         ViewModel = viewModel;
         DataContext = viewModel;
         _photoManagementView = photoManagementView;
         _pendingView = pendingView;
         _placeView = placeView;
+        _embeddedGalleryPage = embeddedGalleryPage;
         _tagView = tagView;
         _navigation = navigation;
+        _catalogInvalidation = catalogInvalidation;
         InitializeComponent();
 
         PhotoManagementHost.Content = _photoManagementView;
         PendingHost.Content = _pendingView;
         PlaceHost.Content = _placeView;
+        _embeddedGalleryPage.ConfigureEmbeddedInSettings();
+        EmbeddedGalleryHost.Content = _embeddedGalleryPage;
         TagHost.Content = _tagView;
 
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
         ViewModel.PropertyChanged += OnViewModelPropertyChanged;
+        _placeView.ViewModel.OpenGalleryForPlaceRequested += OnOpenGalleryForPlaceRequested;
+        _embeddedGalleryPage.OpenImportRequested += OnEmbeddedGalleryOpenImportRequested;
+        _embeddedGalleryPage.OpenPendingRequested += OnEmbeddedGalleryOpenPendingRequested;
+        _embeddedGalleryPage.OpenPlaceManagementRequested += OnEmbeddedGalleryOpenPlaceManagementRequested;
+        _embeddedGalleryPage.OpenMapRequested += OnEmbeddedGalleryOpenMapRequested;
+        _catalogInvalidation.Invalidated += OnCatalogInvalidated;
+    }
+
+    private void OnCatalogInvalidated(object? sender, CatalogInvalidatedEventArgs e)
+    {
+        if ((e.Surfaces & CatalogSurface.Gallery) == 0)
+        {
+            return;
+        }
+
+        // Keep the shared dirty bit for the top-level Gallery. The latest generation
+        // collapses repeated successful mutations into one embedded refresh.
+        Interlocked.Exchange(ref _pendingEmbeddedGalleryInvalidationGeneration, e.Generation);
     }
 
     private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -120,7 +167,14 @@ public sealed partial class SettingsPage : Page
             if (section == SettingsSection.Places)
             {
                 await _placeView.ActivateAsync();
-                await _placeView.ViewModel.LoadCommand.ExecuteAsync(null);
+                if (_preservePlaceStateOnNextActivation)
+                {
+                    _preservePlaceStateOnNextActivation = false;
+                }
+                else if (!_isEmbeddedGalleryVisible)
+                {
+                    await _placeView.ViewModel.LoadCommand.ExecuteAsync(null);
+                }
             }
             else if (section == SettingsSection.PendingMemories)
             {
@@ -197,6 +251,93 @@ public sealed partial class SettingsPage : Page
             _ => tag,
         };
         _ = ViewModel.SelectSettingsSectionCommand.ExecuteAsync(tag);
+    }
+
+    private async void GalleryWorkspaceTab_OnClick(object sender, RoutedEventArgs e) =>
+        await ShowEmbeddedGalleryAsync();
+
+    private void PlaceWorkspaceTab_OnClick(object sender, RoutedEventArgs e) =>
+        ShowPlaceWorkspace();
+
+    private async void OnOpenGalleryForPlaceRequested(object? sender, Guid placeId) =>
+        await ShowEmbeddedGalleryAsync(placeId);
+
+    private async void OnEmbeddedGalleryOpenPlaceManagementRequested(
+        object? sender,
+        GalleryPlaceManagementRequestedEventArgs e)
+    {
+        var isAlreadyLoaded = _placeView.ViewModel.Places.Any(place => place.Id == e.PlaceId);
+        _placeView.ViewModel.RequestSelection(e.PlaceId);
+        ShowPlaceWorkspace();
+        if (!isAlreadyLoaded)
+        {
+            await _placeView.ViewModel.LoadCommand.ExecuteAsync(null);
+        }
+    }
+
+    private void OnEmbeddedGalleryOpenImportRequested(object? sender, EventArgs e) =>
+        _ = ViewModel.SelectSettingsSectionCommand.ExecuteAsync("photo-management");
+
+    private void OnEmbeddedGalleryOpenPendingRequested(object? sender, EventArgs e) =>
+        _ = ViewModel.SelectSettingsSectionCommand.ExecuteAsync("pending-memories");
+
+    private void OnEmbeddedGalleryOpenMapRequested(object? sender, EventArgs e)
+    {
+        PreparePlaceWorkspaceRoundTrip();
+        OpenMapRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    private async Task ShowEmbeddedGalleryAsync(Guid? placeId = null)
+    {
+        var targetPlaceId = placeId.GetValueOrDefault();
+        var hasTargetPlace = placeId.HasValue && targetPlaceId != Guid.Empty;
+        if (hasTargetPlace)
+        {
+            _embeddedGalleryPage.ViewModel.RequestPlaceFilter(targetPlaceId);
+        }
+
+        _isEmbeddedGalleryVisible = true;
+        PlaceHost.Visibility = Visibility.Collapsed;
+        EmbeddedGalleryHost.Visibility = Visibility.Visible;
+        PlaceWorkspaceTabIndicator.BorderThickness = new Thickness(0);
+        GalleryWorkspaceTabIndicator.BorderThickness = new Thickness(0, 0, 0, 2);
+        PlaceWorkspaceTabButton.FontWeight = Microsoft.UI.Text.FontWeights.Normal;
+        GalleryWorkspaceTabButton.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold;
+        AutomationProperties.SetName(PlaceWorkspaceTabButton, "장소관리 열기");
+        AutomationProperties.SetName(GalleryWorkspaceTabButton, "현재 탭: 사진첩");
+
+        var invalidationGeneration = Volatile.Read(ref _pendingEmbeddedGalleryInvalidationGeneration);
+        var requiresInvalidationRefresh = _isEmbeddedGalleryActivated
+                                          && invalidationGeneration > _lastAppliedEmbeddedGalleryInvalidationGeneration;
+        if (!_isEmbeddedGalleryActivated || hasTargetPlace || requiresInvalidationRefresh)
+        {
+            if (requiresInvalidationRefresh && !hasTargetPlace)
+            {
+                await _embeddedGalleryPage.ReloadPreservingFocusAsync();
+            }
+            else
+            {
+                await _embeddedGalleryPage.ViewModel.LoadCommand.ExecuteAsync(null);
+            }
+
+            _isEmbeddedGalleryActivated = true;
+            _lastAppliedEmbeddedGalleryInvalidationGeneration = Math.Max(
+                _lastAppliedEmbeddedGalleryInvalidationGeneration,
+                invalidationGeneration);
+        }
+    }
+
+    private void ShowPlaceWorkspace()
+    {
+        _isEmbeddedGalleryVisible = false;
+        EmbeddedGalleryHost.Visibility = Visibility.Collapsed;
+        PlaceHost.Visibility = Visibility.Visible;
+        GalleryWorkspaceTabIndicator.BorderThickness = new Thickness(0);
+        PlaceWorkspaceTabIndicator.BorderThickness = new Thickness(0, 0, 0, 2);
+        GalleryWorkspaceTabButton.FontWeight = Microsoft.UI.Text.FontWeights.Normal;
+        PlaceWorkspaceTabButton.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold;
+        AutomationProperties.SetName(GalleryWorkspaceTabButton, "설정 안의 사진첩 열기");
+        AutomationProperties.SetName(PlaceWorkspaceTabButton, "현재 탭: 장소관리");
     }
 
     private void SyncNavigationSelection()

@@ -207,7 +207,7 @@ public sealed class GalleryPageLayoutTests
         Assert.Contains("ToFastQuery(_pagingNode, cursor, exactRegion)", gallery, StringComparison.Ordinal);
         Assert.Contains("StatusMessage = BuildFastStatusMessage(node, galleryItems.Count)", gallery, StringComparison.Ordinal);
         Assert.Contains("StatusMessage = BuildFastStatusMessage(_pagingNode, Items.Count)", gallery, StringComparison.Ordinal);
-        Assert.Contains("var displayCount = IsHierarchyPlaceLeaf(node) || node.Kind is GalleryTreeNodeKind.City or GalleryTreeNodeKind.Daily", gallery, StringComparison.Ordinal);
+        Assert.Contains("GalleryTreeNodeKind.City or GalleryTreeNodeKind.RegionBrowse or GalleryTreeNodeKind.Daily", gallery, StringComparison.Ordinal);
         Assert.Contains("$\"{node.Title} · {galleryItems.Count}/{_totalCount}장\"", gallery, StringComparison.Ordinal);
     }
 
@@ -252,7 +252,7 @@ public sealed class GalleryPageLayoutTests
         Assert.Contains("[\"unclassified\"] = query.Unclassified == true ? \"true\" : null", requestPathBuilder, StringComparison.Ordinal);
         Assert.Contains("ToFastQuery(node, regionOverride: exactRegion)", viewModel[loadInitialStart..toFastQueryStart], StringComparison.Ordinal);
         Assert.Contains("ToFastQuery(_pagingNode, cursor, exactRegion)", viewModel[loadMoreStart..loadInitialStart], StringComparison.Ordinal);
-        Assert.Contains("node.Kind != GalleryTreeNodeKind.City || node.RegionFilters.Count <= 1", viewModel[loadInitialStart..toFastQueryStart], StringComparison.Ordinal);
+        Assert.Contains("GalleryTreeNodeKind.City or GalleryTreeNodeKind.RegionBrowse", viewModel[loadInitialStart..toFastQueryStart], StringComparison.Ordinal);
         Assert.DoesNotContain("Unclassified = false", toFastQuery, StringComparison.Ordinal);
         Assert.DoesNotContain("Unclassified = true", viewModel[loadInitialStart..toFastQueryStart], StringComparison.Ordinal);
     }
@@ -364,11 +364,29 @@ public sealed class GalleryPageLayoutTests
 
         Assert.Contains("public Guid? SelectedPlaceId { get; init; }", focusState, StringComparison.Ordinal);
         Assert.Contains("SelectedPlaceId = GetCurrentRegisteredPlaceId()", viewModel, StringComparison.Ordinal);
-        Assert.Contains("FindNodeByRegisteredPlaceId(placeId)", viewModel, StringComparison.Ordinal);
         Assert.Contains("node.IsRegisteredPlace && node.PlaceId == placeId", viewModel, StringComparison.Ordinal);
         Assert.Contains("IsRegisteredPlace = place.MemorykeeperPlaceId.HasValue", viewModel, StringComparison.Ordinal);
         Assert.Contains("IsRegisteredPlace = place.IsRegisteredPlace", viewModel, StringComparison.Ordinal);
-        Assert.Contains("var isRegisteredPlace = node.MemorykeeperPlaceId.HasValue", projection, StringComparison.Ordinal);
+        Assert.Contains("PlaceId: group.Key", projection, StringComparison.Ordinal);
+        Assert.Contains("IsRegisteredPlace: true", projection, StringComparison.Ordinal);
+
+        var restoreStart = viewModel.IndexOf("private async Task RestoreSnapshotAsync", StringComparison.Ordinal);
+        var restoreEnd = viewModel.IndexOf("private List<string> CollectExpandedNodeKeys()", restoreStart, StringComparison.Ordinal);
+        Assert.True(restoreStart >= 0 && restoreEnd > restoreStart);
+        var restore = viewModel[restoreStart..restoreEnd];
+        Assert.Contains("snapshot.SelectedPlaceId is Guid placeId", restore, StringComparison.Ordinal);
+        Assert.Contains("FindNodeByRegisteredPlaceId(placeId)", restore, StringComparison.Ordinal);
+        Assert.Contains("ExpandAncestorsTo(node)", restore, StringComparison.Ordinal);
+
+        var reloadStart = viewModel.IndexOf(
+            "public async Task<bool> ReloadAndSelectRegisteredPlaceAsync",
+            StringComparison.Ordinal);
+        var reloadEnd = viewModel.IndexOf("private async Task DebouncedSearchAsync", reloadStart, StringComparison.Ordinal);
+        Assert.True(reloadStart >= 0 && reloadEnd > reloadStart);
+        var reload = viewModel[reloadStart..reloadEnd];
+        Assert.Contains("FindNodeByRegisteredPlaceId(placeId)", reload, StringComparison.Ordinal);
+        Assert.Contains("ExpandAncestorsTo(target)", reload, StringComparison.Ordinal);
+        Assert.DoesNotContain("TreeRoots.SelectMany(root => root.Children)", reload, StringComparison.Ordinal);
     }
 
     [Fact]

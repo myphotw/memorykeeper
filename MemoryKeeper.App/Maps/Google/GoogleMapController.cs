@@ -62,6 +62,8 @@ public sealed class GoogleMapController : IMapController, IAsyncDisposable
 
     public event EventHandler<(double Lat, double Lng)>? EditableMarkerDragEnded;
 
+    public event Action<double>? HostScrollRequested;
+
     public async Task EnsureMapReadyAsync(
         string? apiKey,
         bool forceReload = false,
@@ -573,6 +575,13 @@ public sealed class GoogleMapController : IMapController, IAsyncDisposable
                 {
                     EditableMarkerDragEnded?.Invoke(this, (lat, lng));
                 }
+            }
+            else if (type is "hostScroll"
+                     && document.RootElement.TryGetProperty("deltaY", out var deltaElement)
+                     && deltaElement.TryGetDouble(out var deltaY)
+                     && double.IsFinite(deltaY))
+            {
+                HostScrollRequested?.Invoke(Math.Clamp(deltaY, -240, 240));
             }
         }
         catch (Exception ex)

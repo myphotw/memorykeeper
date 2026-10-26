@@ -86,6 +86,26 @@ public static class GoogleMapHtmlBuilder
       }
     }
 
+    function installWheelPolicy(mapDiv) {
+      mapDiv.addEventListener('wheel', function (event) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+
+        if (event.ctrlKey && map) {
+          const currentZoom = normalizeZoom(map.getZoom(), lastZoom);
+          const nextZoom = Math.max(1, Math.min(21, currentZoom + (event.deltaY < 0 ? 1 : -1)));
+          lastZoom = nextZoom;
+          map.setZoom(nextZoom);
+          return;
+        }
+
+        let deltaY = Number(event.deltaY) || 0;
+        if (event.deltaMode === 1) deltaY *= 32;
+        if (event.deltaMode === 2) deltaY *= 240;
+        post({ type: 'hostScroll', deltaY: Math.max(-240, Math.min(240, deltaY)) });
+      }, { passive: false, capture: true });
+    }
+
     function showOverlay(text) {
       const overlay = document.getElementById('overlay');
       overlay.style.display = 'flex';
@@ -569,6 +589,8 @@ public static class GoogleMapHtmlBuilder
         mapTypeControl: false,
         streetViewControl: false,
         fullscreenControl: false,
+        zoomControl: true,
+        scrollwheel: false,
         clickableIcons: false,
         styles: MAP_STYLES,
         // WebView2 often fails vector/WebGL tiles (solid blue) while DOM markers still render.
@@ -579,6 +601,7 @@ public static class GoogleMapHtmlBuilder
       };
 
       map = new google.maps.Map(mapDiv, options);
+      installWheelPolicy(mapDiv);
 
       map.addListener('click', event => {
         if (!mapClickEnabled || !event.latLng) return;

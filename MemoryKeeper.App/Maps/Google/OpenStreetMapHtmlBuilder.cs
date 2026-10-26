@@ -47,6 +47,26 @@ internal static class OpenStreetMapHtmlBuilder
     let proposedPreviewCircle = null;
     let mapClickEnabled = false;
 
+    function installWheelPolicy(mapDiv) {
+      mapDiv.addEventListener('wheel', function (event) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+
+        if (event.ctrlKey && map) {
+          const nextZoom = Math.max(
+            map.getMinZoom(),
+            Math.min(map.getMaxZoom(), map.getZoom() + (event.deltaY < 0 ? 1 : -1)));
+          map.setZoom(nextZoom);
+          return;
+        }
+
+        let deltaY = Number(event.deltaY) || 0;
+        if (event.deltaMode === 1) deltaY *= 32;
+        if (event.deltaMode === 2) deltaY *= 240;
+        post({ type: 'hostScroll', deltaY: Math.max(-240, Math.min(240, deltaY)) });
+      }, { passive: false, capture: true });
+    }
+
     function colorFor(id) {
       const data = markerDataById[id] || {};
       if (data.state === 'selected') return '#d93025';
@@ -180,7 +200,7 @@ internal static class OpenStreetMapHtmlBuilder
     }
 
     try {
-      map = L.map('map', { zoomControl: true }).setView([36.5, 127.9], 7);
+      map = L.map('map', { zoomControl: true, scrollWheelZoom: false }).setView([36.5, 127.9], 7);
       layer = L.layerGroup().addTo(map);
       const tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
@@ -188,6 +208,7 @@ internal static class OpenStreetMapHtmlBuilder
       });
       tiles.once('load', () => post(diagnostics('tilesLoaded')));
       tiles.addTo(map);
+      installWheelPolicy(document.getElementById('map'));
       map.on('click', e => {
         if (mapClickEnabled) post({ type: 'mapClick', lat: e.latlng.lat, lng: e.latlng.lng });
       });

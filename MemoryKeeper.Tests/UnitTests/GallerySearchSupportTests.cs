@@ -118,7 +118,9 @@ public sealed class GallerySearchSupportTests
         var placeCountry = Assert.Single(placeBrowse);
         Assert.Equal("일본", placeCountry.CountryFilter);
         Assert.Equal(39, placeCountry.PhotoCount);
-        Assert.Equal(4, placeCountry.Places.Count);
+        var placeRegion = Assert.Single(placeCountry.Regions);
+        Assert.Equal("교토", placeRegion.DisplayName);
+        Assert.Equal(4, placeRegion.Places.Count);
     }
 
     [Fact]

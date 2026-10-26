@@ -12,8 +12,10 @@ public enum GalleryTreeNodeKind
     Year,
     Country,
     City,
+    /// <summary>Canonical region branch in all-years Place browse mode.</summary>
+    RegionBrowse,
     Place,
-    /// <summary>Place browse root (Place → Year).</summary>
+    /// <summary>Exact place leaf in all-years Place browse mode.</summary>
     PlaceBrowse,
     /// <summary>Year under a place in Place browse mode.</summary>
     PlaceYear,
@@ -45,6 +47,9 @@ public partial class GalleryTreeNode : ObservableObject
     /// Empty for nodes that do not project region aliases.
     /// </summary>
     public IReadOnlyList<string> RegionFilters { get; init; } = [];
+
+    /// <summary>Canonical country-to-region titles used by all-years Place browse breadcrumbs.</summary>
+    public IReadOnlyList<string> HierarchyPath { get; init; } = [];
 
     public Guid? PlaceId { get; init; }
 
@@ -113,6 +118,8 @@ public partial class GalleryTreeNode : ObservableObject
         GalleryTreeNodeKind.DateUnclassified => $"year:{Year}:date-unclassified",
         GalleryTreeNodeKind.Country => $"year:{Year}:country:{Country}",
         GalleryTreeNodeKind.City => $"year:{Year}:country:{Country}:city:{CanonicalRegion ?? City}",
+        GalleryTreeNodeKind.RegionBrowse =>
+            $"place-browse:country:{EscapeKeyPart(Country)}:region:{EscapeKeyPart(CanonicalRegion ?? string.Join(">", HierarchyPath))}",
         GalleryTreeNodeKind.Place => $"year:{Year}:country:{Country}:city:{City}:place:{BuildPlaceIdentityKey()}",
         GalleryTreeNodeKind.PlaceBrowse => $"place-browse:{BuildPlaceIdentityKey()}",
         GalleryTreeNodeKind.PlaceYear => $"place-browse:{BuildPlaceIdentityKey()}:year:{Year}",
@@ -154,10 +161,11 @@ public partial class GalleryTreeNode : ObservableObject
             or GalleryTreeNodeKind.Recent or GalleryTreeNodeKind.Pending or GalleryTreeNodeKind.PlaceBrowse
             ? null
             : Year,
-        Country = Kind is GalleryTreeNodeKind.Country or GalleryTreeNodeKind.City or GalleryTreeNodeKind.Place
+        Country = Kind is GalleryTreeNodeKind.Country or GalleryTreeNodeKind.City
+            or GalleryTreeNodeKind.RegionBrowse or GalleryTreeNodeKind.Place
             ? Country
             : null,
-        City = Kind is GalleryTreeNodeKind.City or GalleryTreeNodeKind.Place
+        City = Kind is GalleryTreeNodeKind.City or GalleryTreeNodeKind.RegionBrowse or GalleryTreeNodeKind.Place
             ? (RegionFilters.Count == 1 ? RegionFilters[0] : City)
             : null,
         PlaceId = Kind is GalleryTreeNodeKind.Place or GalleryTreeNodeKind.PlaceBrowse or GalleryTreeNodeKind.PlaceYear

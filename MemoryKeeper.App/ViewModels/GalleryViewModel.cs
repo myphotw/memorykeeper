@@ -25,10 +25,14 @@ public partial class GalleryViewModel : ObservableObject
     private readonly IFastGalleryApiRepository _fastGallery;
     private readonly BaseApiClient _apiClient;
     private readonly IPhotoNavigationState _photoNavigationState;
-    private readonly IGalleryFocusState _galleryFocusState;
+    private readonly MemoryKeeperPlaceService _placeService;
+    private IGalleryFocusState _galleryFocusState;
     private readonly ILogger<GalleryViewModel> _logger;
     private readonly DispatcherQueue? _dispatcherQueue;
     private CancellationTokenSource? _thumbnailCts;
+    private IReadOnlyList<MemoryKeeperPlaceHierarchyPathApiDto>? _registeredPlacePaths;
+    private IReadOnlyList<GalleryHierarchySearchScope> _registeredPlaceSearchScopes = [];
+    private IReadOnlyList<MemoryKeeperPlaceHierarchyPathApiDto> _registeredPlaceSearchPaths = [];
     private CancellationTokenSource? _searchCts;
     private CancellationTokenSource? _pageCts;
 
@@ -150,6 +154,12 @@ public partial class GalleryViewModel : ObservableObject
 
     public bool HasPendingFocusRestore => _galleryFocusState.HasPendingRestore;
 
+    public void UseIndependentFocusState() =>
+        _galleryFocusState = new GalleryFocusState();
+
+    public void RequestPlaceFilter(Guid placeId) =>
+        _galleryFocusState.RequestPlaceFilter(placeId);
+
     public event EventHandler? BackRequested;
 
     public event EventHandler<Guid>? ScrollToMediaRequested;
@@ -161,6 +171,7 @@ public partial class GalleryViewModel : ObservableObject
         IFastGalleryApiRepository fastGallery,
         BaseApiClient apiClient,
         IPhotoNavigationState photoNavigationState,
+        MemoryKeeperPlaceService placeService,
         IGalleryFocusState galleryFocusState,
         ILogger<GalleryViewModel> logger)
     {
@@ -169,6 +180,7 @@ public partial class GalleryViewModel : ObservableObject
         _fastGallery = fastGallery;
         _apiClient = apiClient;
         _photoNavigationState = photoNavigationState;
+        _placeService = placeService;
         _galleryFocusState = galleryFocusState;
         _logger = logger;
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
@@ -186,6 +198,9 @@ public partial class GalleryViewModel : ObservableObject
         _fastSummary = null;
         _fastHierarchy = null;
         _searchHierarchy = null;
+        _registeredPlacePaths = null;
+        _registeredPlaceSearchScopes = [];
+        _registeredPlaceSearchPaths = [];
         var restore = _galleryFocusState.ConsumeRestore();
         if (restore is not null)
         {
@@ -521,8 +536,7 @@ public partial class GalleryViewModel : ObservableObject
         }
 
         await RebuildPlaceTreeRootsAsync();
-        var target = TreeRoots.SelectMany(root => root.Children)
-            .FirstOrDefault(node => node.IsRegisteredPlace && node.PlaceId == placeId);
+        var target = FindNodeByRegisteredPlaceId(placeId);
         if (target is null)
         {
             var fallback = TreeRoots.FirstOrDefault();
@@ -530,8 +544,7 @@ public partial class GalleryViewModel : ObservableObject
             return false;
         }
 
-        var parent = TreeRoots.First(root => root.Children.Contains(target));
-        parent.IsExpanded = true;
+        ExpandAncestorsTo(target);
         RebuildVisibleTree();
         await SelectNodeAsync(target);
         return true;
@@ -709,12 +722,15 @@ public partial class GalleryViewModel : ObservableObject
     private async Task RebuildPlaceTreeRootsAsync()
     {
         _fastHierarchy ??= await _fastGallery.GetHierarchyAsync();
-        TreeRoots = new ObservableCollection<GalleryTreeNode>(BuildPlaceTreeRoots(_fastHierarchy));
+        var roots = BuildPlaceTreeRoots(_fastHierarchy, await GetRegisteredPlacePathsAsync());
+        TreeRoots = new ObservableCollection<GalleryTreeNode>(roots);
         RebuildVisibleTree();
     }
 
-    private List<GalleryTreeNode> BuildPlaceTreeRoots(FastGalleryHierarchyDto hierarchy) =>
-        GalleryPlaceHierarchyProjection.Build(hierarchy)
+    private List<GalleryTreeNode> BuildPlaceTreeRoots(
+        FastGalleryHierarchyDto hierarchy,
+        IReadOnlyList<MemoryKeeperPlaceHierarchyPathApiDto> registeredPaths) =>
+        GalleryPlaceHierarchyProjection.Build(hierarchy, registeredPaths)
             .Where(country => _placeScope switch
             {
                 GalleryPlaceScope.Domestic => country.IsDomestic,
@@ -730,29 +746,79 @@ public partial class GalleryViewModel : ObservableObject
                     Title = country.DisplayName,
                     Count = country.PhotoCount,
                     Depth = 0,
-                    CanExpand = country.Places.Count > 0,
+                    CanExpand = country.Regions.Count > 0 || country.Places.Count > 0,
                     ChildrenLoaded = true,
                 };
+                foreach (var region in country.Regions)
+                {
+                    root.Children.Add(BuildPlaceRegionNode(
+                        region,
+                        country.CountryFilter,
+                        parentPath: [],
+                        depth: 1));
+                }
+
                 foreach (var place in country.Places)
                 {
-                    root.Children.Add(new GalleryTreeNode
-                    {
-                        Kind = GalleryTreeNodeKind.PlaceBrowse,
-                        Country = country.CountryFilter,
-                        PlaceId = place.PlaceId,
-                        IsRegisteredPlace = place.IsRegisteredPlace,
-                        LocationKey = place.LocationKey,
-                        Title = place.DisplayName,
-                        Count = place.PhotoCount,
-                        Depth = 1,
-                        CanExpand = false,
-                        ChildrenLoaded = true,
-                    });
+                    root.Children.Add(BuildPlaceBrowseNode(place, country.CountryFilter, [], depth: 1));
                 }
 
                 return root;
             })
             .ToList();
+
+    private static GalleryTreeNode BuildPlaceRegionNode(
+        GalleryPlaceRegionProjectionItem region,
+        string? country,
+        IReadOnlyList<string> parentPath,
+        int depth)
+    {
+        var hierarchyPath = parentPath.Append(region.DisplayName).ToList();
+        var node = new GalleryTreeNode
+        {
+            Kind = GalleryTreeNodeKind.RegionBrowse,
+            Country = country,
+            City = region.RegionFilters.Count == 1 ? region.RegionFilters[0] : null,
+            CanonicalRegion = region.CanonicalPath,
+            RegionFilters = region.RegionFilters,
+            HierarchyPath = hierarchyPath,
+            Title = region.DisplayName,
+            Count = region.PhotoCount,
+            Depth = depth,
+            CanExpand = region.Regions.Count > 0 || region.Places.Count > 0,
+            ChildrenLoaded = true,
+        };
+        foreach (var childRegion in region.Regions)
+        {
+            node.Children.Add(BuildPlaceRegionNode(childRegion, country, hierarchyPath, depth + 1));
+        }
+
+        foreach (var place in region.Places)
+        {
+            node.Children.Add(BuildPlaceBrowseNode(place, country, hierarchyPath, depth + 1));
+        }
+
+        return node;
+    }
+
+    private static GalleryTreeNode BuildPlaceBrowseNode(
+        GalleryPlaceProjectionItem place,
+        string? country,
+        IReadOnlyList<string> hierarchyPath,
+        int depth) => new()
+    {
+        Kind = GalleryTreeNodeKind.PlaceBrowse,
+        Country = country,
+        HierarchyPath = hierarchyPath,
+        PlaceId = place.PlaceId,
+        IsRegisteredPlace = place.IsRegisteredPlace,
+        LocationKey = place.LocationKey,
+        Title = place.DisplayName,
+        Count = place.PhotoCount,
+        Depth = depth,
+        CanExpand = false,
+        ChildrenLoaded = true,
+    };
 
     private async Task<GalleryTreeNode?> RebuildSearchTreeAsync(
         string searchText,
@@ -762,6 +828,15 @@ public partial class GalleryViewModel : ObservableObject
     {
         _fastHierarchy ??= await _fastGallery.GetHierarchyAsync(token);
         var searchScopes = GalleryHierarchySearchPlanner.Resolve(_fastHierarchy, searchText);
+        var registeredMatches = (await GetRegisteredPlacePathsAsync(token))
+            .Where(path => path.PhotoCount > 0
+                           && MatchesRegisteredPlaceSearch(path, searchText))
+            .ToList();
+        _registeredPlaceSearchPaths = registeredMatches;
+        _registeredPlaceSearchScopes = ResolveRegisteredPlaceSearchScopes(
+            registeredMatches,
+            searchScopes,
+            searchText);
         var projection = GallerySearchHierarchyProjection.Create(_fastHierarchy, searchScopes);
         token.ThrowIfCancellationRequested();
         if (generation != _queryGeneration)
@@ -770,7 +845,8 @@ public partial class GalleryViewModel : ObservableObject
         }
 
         _searchHierarchy = projection.Hierarchy;
-        _searchTreeTotalCount = projection.TotalCount;
+        _searchTreeTotalCount = projection.TotalCount
+                                + _registeredPlaceSearchScopes.Sum(scope => Math.Max(0, scope.Count));
         await RebuildSearchTreeRootsAsync();
         token.ThrowIfCancellationRequested();
         if (generation != _queryGeneration)
@@ -799,10 +875,10 @@ public partial class GalleryViewModel : ObservableObject
 
         if (IsPlaceBrowseMode)
         {
-            var placeRoots = BuildPlaceTreeRoots(hierarchy);
+            var placeRoots = BuildPlaceTreeRoots(hierarchy, _registeredPlaceSearchPaths);
             foreach (var root in placeRoots)
             {
-                root.IsExpanded = root.CanExpand;
+                ExpandPlaceSearchBranch(root);
                 roots.Add(root);
             }
         }
@@ -889,7 +965,14 @@ public partial class GalleryViewModel : ObservableObject
                     StringComparison.OrdinalIgnoreCase));
             if (domestic is not null)
             {
-                domestic.IsExpanded = domestic.CanExpand;
+                if (level is GalleryPlaceNavigationLevel.Places or GalleryPlaceNavigationLevel.Photos)
+                {
+                    ExpandPlaceSearchBranch(domestic);
+                }
+                else
+                {
+                    domestic.IsExpanded = domestic.CanExpand;
+                }
                 RebuildVisibleTree();
                 await SelectNodeAsync(domestic);
                 return;
@@ -905,7 +988,7 @@ public partial class GalleryViewModel : ObservableObject
             {
                 foreach (var country in TreeRoots)
                 {
-                    country.IsExpanded = country.CanExpand;
+                    ExpandPlaceSearchBranch(country);
                 }
 
                 RebuildVisibleTree();
@@ -1185,6 +1268,8 @@ public partial class GalleryViewModel : ObservableObject
                    ?? TreeRoots.FirstOrDefault(n => n.Kind != GalleryTreeNodeKind.Separator);
         if (node is not null)
         {
+            ExpandAncestorsTo(node);
+            RebuildVisibleTree();
             await SelectNodeAsync(node);
         }
 
@@ -1282,6 +1367,42 @@ public partial class GalleryViewModel : ObservableObject
         }
 
         return null;
+    }
+
+    private void ExpandAncestorsTo(GalleryTreeNode target)
+    {
+        foreach (var root in TreeRoots)
+        {
+            if (ExpandAncestorsTo(root, target))
+            {
+                return;
+            }
+        }
+    }
+
+    private static bool ExpandAncestorsTo(GalleryTreeNode current, GalleryTreeNode target)
+    {
+        if (ReferenceEquals(current, target))
+        {
+            return true;
+        }
+
+        foreach (var child in current.Children)
+        {
+            if (!ExpandAncestorsTo(child, target))
+            {
+                continue;
+            }
+
+            if (current.CanExpand)
+            {
+                current.IsExpanded = true;
+            }
+
+            return true;
+        }
+
+        return false;
     }
 
     private static GalleryTreeNode? FindNodeByRegisteredPlaceId(GalleryTreeNode node, Guid placeId)
@@ -1435,7 +1556,10 @@ public partial class GalleryViewModel : ObservableObject
         int generation)
     {
         _fastHierarchy ??= await _fastGallery.GetHierarchyAsync(token);
-        var hierarchyMatches = GalleryHierarchySearchPlanner.Resolve(_fastHierarchy, SearchText);
+        var hierarchyMatches = GalleryHierarchySearchPlanner.Resolve(_fastHierarchy, SearchText)
+            .Concat(_registeredPlaceSearchScopes)
+            .Distinct()
+            .ToList();
         if (hierarchyMatches.Count == 0)
         {
             return false;
@@ -1519,6 +1643,15 @@ public partial class GalleryViewModel : ObservableObject
                 Year: node.Year,
                 Country: node.Country,
                 Region: node.City,
+                Count: count)],
+            GalleryTreeNodeKind.RegionBrowse when node.RegionFilters.Count > 0 => node.RegionFilters
+                .Select(region => new GalleryHierarchySearchScope(
+                    Country: node.Country,
+                    Region: region,
+                    Count: count))
+                .ToList(),
+            GalleryTreeNodeKind.RegionBrowse => [new GalleryHierarchySearchScope(
+                Country: node.Country,
                 Count: count)],
             GalleryTreeNodeKind.Place or GalleryTreeNodeKind.PlaceBrowse or GalleryTreeNodeKind.PlaceYear =>
                 [new GalleryHierarchySearchScope(
@@ -1746,7 +1879,8 @@ public partial class GalleryViewModel : ObservableObject
         GalleryTreeNode node,
         CancellationToken cancellationToken)
     {
-        if (node.Kind != GalleryTreeNodeKind.City || node.RegionFilters.Count <= 1)
+        if (node.Kind is not (GalleryTreeNodeKind.City or GalleryTreeNodeKind.RegionBrowse)
+            || node.RegionFilters.Count <= 1)
         {
             var exactRegion = GetSingleRegionFilter(node);
             var page = await _fastGallery.GetPhotosAsync(
@@ -1819,7 +1953,7 @@ public partial class GalleryViewModel : ObservableObject
         result.Page.HasMore && !string.IsNullOrWhiteSpace(result.Page.NextCursor));
 
     private static string? GetSingleRegionFilter(GalleryTreeNode node) =>
-        node.Kind is GalleryTreeNodeKind.City or GalleryTreeNodeKind.Place
+        node.Kind is GalleryTreeNodeKind.City or GalleryTreeNodeKind.RegionBrowse or GalleryTreeNodeKind.Place
         && node.RegionFilters.Count == 1
             ? node.RegionFilters[0]
             : null;
@@ -1838,8 +1972,9 @@ public partial class GalleryViewModel : ObservableObject
             Limit = DefaultPageSize,
             Cursor = cursor,
             Year = node.Year,
-            Country = node.Kind is GalleryTreeNodeKind.Country or GalleryTreeNodeKind.City or GalleryTreeNodeKind.Place ? node.Country : null,
-            Region = node.Kind is GalleryTreeNodeKind.City or GalleryTreeNodeKind.Place
+            Country = node.Kind is GalleryTreeNodeKind.Country or GalleryTreeNodeKind.City
+                or GalleryTreeNodeKind.RegionBrowse or GalleryTreeNodeKind.Place ? node.Country : null,
+            Region = node.Kind is GalleryTreeNodeKind.City or GalleryTreeNodeKind.RegionBrowse or GalleryTreeNodeKind.Place
                 ? regionOverride ?? node.City
                 : null,
             LocationKey = locationKey,
@@ -1851,6 +1986,122 @@ public partial class GalleryViewModel : ObservableObject
         };
     }
 
+    private async Task<IReadOnlyList<MemoryKeeperPlaceHierarchyPathApiDto>> GetRegisteredPlacePathsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        if (_registeredPlacePaths is not null)
+        {
+            return _registeredPlacePaths;
+        }
+
+        try
+        {
+            _registeredPlacePaths = await _placeService.GetPlaceHierarchyAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Registered Place hierarchy failed; Fast Gallery hierarchy remains available.");
+            _registeredPlacePaths = [];
+        }
+
+        return _registeredPlacePaths;
+    }
+
+    private static bool MatchesRegisteredPlaceSearch(
+        MemoryKeeperPlaceHierarchyPathApiDto path,
+        string searchText)
+    {
+        var term = searchText.Trim();
+        return new[] { path.DisplayName, path.Country, path.Region, path.FullPath }
+            .Concat(path.LocationPath ?? [])
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Any(value => value!.Contains(term, StringComparison.CurrentCultureIgnoreCase));
+    }
+
+    private static IReadOnlyList<GalleryHierarchySearchScope> ResolveRegisteredPlaceSearchScopes(
+        IReadOnlyList<MemoryKeeperPlaceHierarchyPathApiDto> paths,
+        IReadOnlyList<GalleryHierarchySearchScope> fastScopes,
+        string searchText)
+    {
+        var term = searchText.Trim();
+        var linkedCounts = PlaceLinkedPhotoCountPolicy.Project(paths);
+        return paths
+            .Where(path => !IsCoveredByFastSearch(path, fastScopes))
+            .Select(path =>
+            {
+                var count = linkedCounts.GetValueOrDefault(path.MemorykeeperPlaceId);
+                if (!string.IsNullOrWhiteSpace(path.DisplayName)
+                    && path.DisplayName.Contains(term, StringComparison.CurrentCultureIgnoreCase))
+                {
+                    return new GalleryHierarchySearchScope(
+                        PlaceId: path.MemorykeeperPlaceId,
+                        Count: count);
+                }
+
+                if (!string.IsNullOrWhiteSpace(path.Country)
+                    && path.Country.Contains(term, StringComparison.CurrentCultureIgnoreCase))
+                {
+                    return new GalleryHierarchySearchScope(
+                        Country: path.Country,
+                        Count: count);
+                }
+
+                return !string.IsNullOrWhiteSpace(path.Region)
+                    ? new GalleryHierarchySearchScope(
+                        Country: path.Country,
+                        Region: path.Region,
+                        Count: count)
+                    : new GalleryHierarchySearchScope(
+                        PlaceId: path.MemorykeeperPlaceId,
+                        Count: count);
+            })
+            .Distinct()
+            .ToList();
+    }
+
+    private static bool IsCoveredByFastSearch(
+        MemoryKeeperPlaceHierarchyPathApiDto path,
+        IReadOnlyList<GalleryHierarchySearchScope> fastScopes) =>
+        fastScopes.Any(scope =>
+        {
+            if (scope.PlaceId == path.MemorykeeperPlaceId
+                || (!string.IsNullOrWhiteSpace(path.LocationKey)
+                    && string.Equals(scope.LocationKey, path.LocationKey, StringComparison.Ordinal)))
+            {
+                return true;
+            }
+
+            var countryMatches = !string.IsNullOrWhiteSpace(scope.Country)
+                                 && string.Equals(
+                                     PlaceNormalizer.NormalizeCountry(scope.Country),
+                                     PlaceNormalizer.NormalizeCountry(path.Country),
+                                     StringComparison.OrdinalIgnoreCase);
+            if (!countryMatches)
+            {
+                return false;
+            }
+
+            return string.IsNullOrWhiteSpace(scope.Region)
+                   || string.Equals(scope.Region, path.Region, StringComparison.Ordinal);
+        });
+
+    private static void ExpandPlaceSearchBranch(GalleryTreeNode node)
+    {
+        if (node.CanExpand)
+        {
+            node.IsExpanded = true;
+        }
+
+        foreach (var child in node.Children)
+        {
+            ExpandPlaceSearchBranch(child);
+        }
+    }
+
     private static string BuildFastStatusMessage(GalleryTreeNode node, int loadedCount)
     {
         if (loadedCount == 0)
@@ -1858,7 +2109,8 @@ public partial class GalleryViewModel : ObservableObject
             return "표시할 사진이 없습니다.";
         }
 
-        var displayCount = IsHierarchyPlaceLeaf(node) || node.Kind is GalleryTreeNodeKind.City or GalleryTreeNodeKind.Daily
+        var displayCount = IsHierarchyPlaceLeaf(node)
+                           || node.Kind is GalleryTreeNodeKind.City or GalleryTreeNodeKind.RegionBrowse or GalleryTreeNodeKind.Daily
             ? node.Count
             : loadedCount;
         return $"{node.Title} · {displayCount}장";
@@ -1968,6 +2220,11 @@ public partial class GalleryViewModel : ObservableObject
                 parts.Add(node.Country ?? "");
                 parts.Add(node.City ?? node.Title);
                 break;
+            case GalleryTreeNodeKind.RegionBrowse:
+                parts.Add("장소");
+                parts.Add(node.Country ?? LibraryConstants.UnclassifiedTitle);
+                parts.AddRange(node.HierarchyPath);
+                break;
             case GalleryTreeNodeKind.Place:
                 parts.Add(node.Year?.ToString() ?? "");
                 parts.Add(node.Country ?? "");
@@ -1977,6 +2234,7 @@ public partial class GalleryViewModel : ObservableObject
             case GalleryTreeNodeKind.PlaceBrowse:
                 parts.Add("장소");
                 parts.Add(node.Country ?? LibraryConstants.UnclassifiedTitle);
+                parts.AddRange(node.HierarchyPath);
                 parts.Add(node.Title);
                 break;
             case GalleryTreeNodeKind.PlaceYear:
@@ -1996,10 +2254,7 @@ public partial class GalleryViewModel : ObservableObject
             return null;
         }
 
-        return TreeRoots
-            .SelectMany(root => root.Children.Prepend(root))
-            .FirstOrDefault(node => node.Kind == GalleryTreeNodeKind.PlaceBrowse && node.PlaceId == placeId)
-            ?.Title;
+        return FindNodeByRegisteredPlaceId(placeId.Value)?.Title;
     }
 
     private async Task LoadThumbnailsAsync(IReadOnlyList<GalleryItem> galleryItems)

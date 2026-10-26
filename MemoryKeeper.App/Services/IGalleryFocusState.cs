@@ -62,6 +62,8 @@ public interface IGalleryFocusState
 
     void RequestCountryFilter(string country);
 
+    void RequestPlaceFilter(Guid placeId);
+
     void RequestPlaceBrowse(GalleryPlaceScope scope, GalleryPlaceNavigationLevel level);
 }
 
@@ -93,6 +95,21 @@ public sealed class GalleryFocusState : IGalleryFocusState
         {
             BrowseModeIndex = 1,
             CountryFilter = country.Trim(),
+        };
+    }
+
+    public void RequestPlaceFilter(Guid placeId)
+    {
+        if (placeId == Guid.Empty)
+        {
+            return;
+        }
+
+        _snapshot = new GalleryFocusSnapshot
+        {
+            BrowseModeIndex = 1,
+            SelectedPlaceId = placeId,
+            PlaceScope = GalleryPlaceScope.All,
         };
     }
 

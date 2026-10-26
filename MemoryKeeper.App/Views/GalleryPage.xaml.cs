@@ -52,6 +52,7 @@ public sealed partial class GalleryPage : Page
     private bool _photoScrollViewerAttachQueued;
     private bool _isGalleryPageLoaded;
     private bool _isExportFolderPickerOpen;
+    private bool _isEmbeddedInSettings;
 
     public event EventHandler? OpenImportRequested;
 
@@ -131,6 +132,21 @@ public sealed partial class GalleryPage : Page
         EnsurePhotoScrollViewerAfterLayout();
     }
 
+    public void ConfigureEmbeddedInSettings()
+    {
+        _isEmbeddedInSettings = true;
+        ViewModel.UseIndependentFocusState();
+        GalleryRoot.MinWidth = 0;
+        GalleryRoot.Padding = new Thickness(0);
+        BackNavigationButton.Visibility = Visibility.Collapsed;
+    }
+
+    public async Task ReloadPreservingFocusAsync()
+    {
+        ViewModel.CaptureFocusState(GetGridScrollOffset(), ViewModel.SelectedItem?.MediaId);
+        await ViewModel.LoadCommand.ExecuteAsync(null);
+    }
+
     private void GalleryPage_OnUnloaded(object sender, RoutedEventArgs e)
     {
         _isGalleryPageLoaded = false;
@@ -174,6 +190,12 @@ public sealed partial class GalleryPage : Page
 
     private void RefreshBackNavigation()
     {
+        if (_isEmbeddedInSettings)
+        {
+            BackNavigationButton.Visibility = Visibility.Collapsed;
+            return;
+        }
+
         var current = _navigation.Current;
         var isVisible = current is { } entry
                         && entry.Kind != NavigationKind.TopLevel
@@ -281,7 +303,10 @@ public sealed partial class GalleryPage : Page
         }
 
         SelectItemForDisplay(item);
-        ViewModel.CaptureFocusState(GetGridScrollOffset(), item.MediaId);
+        if (!_isEmbeddedInSettings)
+        {
+            ViewModel.CaptureFocusState(GetGridScrollOffset(), item.MediaId);
+        }
         if (ViewModel.IsDetailPanelOpen)
         {
             _ = ShowDetailPanelAsync(item, toggle: false);
@@ -392,7 +417,10 @@ public sealed partial class GalleryPage : Page
         if (sender is Border { Tag: GalleryItem item })
         {
             SelectItemForDisplay(item);
-            ViewModel.CaptureFocusState(GetGridScrollOffset(), item.MediaId);
+            if (!_isEmbeddedInSettings)
+            {
+                ViewModel.CaptureFocusState(GetGridScrollOffset(), item.MediaId);
+            }
             ViewModel.OpenPhotoViewerCommand.Execute(item);
             e.Handled = true;
         }
@@ -697,7 +725,10 @@ public sealed partial class GalleryPage : Page
             return;
         }
 
-        ViewModel.CaptureFocusState(GetGridScrollOffset(), ViewModel.SelectedItem?.MediaId);
+        if (!_isEmbeddedInSettings)
+        {
+            ViewModel.CaptureFocusState(GetGridScrollOffset(), ViewModel.SelectedItem?.MediaId);
+        }
         OpenPlaceManagementRequested?.Invoke(
             this,
             new GalleryPlaceManagementRequestedEventArgs(placeId, displayName));

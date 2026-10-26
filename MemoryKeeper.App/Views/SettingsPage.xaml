@@ -26,6 +26,7 @@
                     <VisualState.Setters>
                         <Setter Target="SettingsRoot.Padding" Value="{StaticResource MkCompactPagePaddingThickness}" />
                         <Setter Target="DetailHost.Padding" Value="0,16,0,0" />
+                        <Setter Target="PlacesDetail.Padding" Value="0,16,0,0" />
                     </VisualState.Setters>
                 </VisualState>
                 <VisualState x:Name="DesktopSettings">
@@ -35,6 +36,7 @@
                     <VisualState.Setters>
                         <Setter Target="SettingsRoot.Padding" Value="{StaticResource MkDesktopPagePaddingThickness}" />
                         <Setter Target="DetailHost.Padding" Value="{StaticResource MkSettingsDetailPaddingThickness}" />
+                        <Setter Target="PlacesDetail.Padding" Value="{StaticResource MkSettingsDetailPaddingThickness}" />
                     </VisualState.Setters>
                 </VisualState>
             </VisualStateGroup>
@@ -42,7 +44,7 @@
 
         <Grid
             x:Name="SettingsRoot"
-            Style="{StaticResource MkWidePageContainerStyle}"
+            Style="{StaticResource MkFullPageContainerStyle}"
             RowDefinitions="Auto,Auto,*"
             RowSpacing="16"
             Visibility="{Binding IsSettingsDashboardVisible, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
@@ -160,23 +162,6 @@
                             AutomationProperties.Name="사진 관리 상세"
                             Visibility="{Binding IsPhotoManagementDetailVisible, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
                             <ContentControl x:Name="PhotoManagementHost" HorizontalContentAlignment="Stretch" />
-                        </Border>
-
-                        <!-- 장소 관리 -->
-                        <Border
-                            x:Name="PlacesDetail"
-                            Style="{StaticResource MkWideSettingsCardStyle}"
-                            Margin="0"
-                            MinHeight="760"
-                            AutomationProperties.Name="장소 관리 상세"
-                            Visibility="{Binding IsPlacesDetailVisible, Converter={StaticResource BoolToVisibilityConverter}}">
-                            <Grid RowDefinitions="Auto,*" RowSpacing="16">
-                                <StackPanel Spacing="6">
-                                    <TextBlock Text="장소 관리" Style="{StaticResource MkSectionTitleStyle}" Margin="0" />
-                                    <TextBlock Text="사진을 묶는 장소와 범위를 관리합니다." Style="{StaticResource MkCaptionTextStyle}" />
-                                </StackPanel>
-                                <ContentControl x:Name="PlaceHost" Grid.Row="1" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
-                            </Grid>
                         </Border>
 
                         <!-- 태그 관리 -->
@@ -418,6 +403,70 @@
                         </Border>
                         </Grid>
                     </ScrollViewer>
+
+                    <!-- 장소 관리: 중첩 ScrollViewer/Card를 피하고 설정의 가용 영역을 직접 사용한다. -->
+                    <Grid
+                        x:Name="PlacesDetail"
+                        Margin="0"
+                        Padding="{StaticResource MkSettingsDetailPaddingThickness}"
+                        Background="{ThemeResource MkBrushBackground}"
+                        RowDefinitions="Auto,*"
+                        RowSpacing="10"
+                        HorizontalAlignment="Stretch"
+                        VerticalAlignment="Stretch"
+                        AutomationProperties.Name="장소 관리 상세"
+                        Visibility="{Binding IsPlacesDetailVisible, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <Border
+                            Padding="0,0,0,4"
+                            BorderBrush="{ThemeResource MkBrushDivider}"
+                            BorderThickness="0,0,0,1">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <Border
+                                    x:Name="GalleryWorkspaceTabIndicator"
+                                    BorderBrush="{ThemeResource MkBrushPrimary}"
+                                    BorderThickness="0">
+                                    <Button
+                                        x:Name="GalleryWorkspaceTabButton"
+                                        Content="사진첩"
+                                        Style="{StaticResource MkTextButtonStyle}"
+                                        Padding="10,5"
+                                        MinHeight="32"
+                                        Click="GalleryWorkspaceTab_OnClick"
+                                        AutomationProperties.Name="설정 안의 사진첩 열기" />
+                                </Border>
+                                <Border
+                                    x:Name="PlaceWorkspaceTabIndicator"
+                                    BorderBrush="{ThemeResource MkBrushPrimary}"
+                                    BorderThickness="0,0,0,2">
+                                    <Button
+                                        x:Name="PlaceWorkspaceTabButton"
+                                        Content="장소관리"
+                                        Style="{StaticResource MkTextButtonStyle}"
+                                        Padding="10,5"
+                                        MinHeight="32"
+                                        FontWeight="SemiBold"
+                                        Click="PlaceWorkspaceTab_OnClick"
+                                        AutomationProperties.Name="현재 탭: 장소관리" />
+                                </Border>
+                            </StackPanel>
+                        </Border>
+
+                        <Grid Grid.Row="1">
+                            <ContentControl
+                                x:Name="PlaceHost"
+                                HorizontalAlignment="Stretch"
+                                VerticalAlignment="Stretch"
+                                HorizontalContentAlignment="Stretch"
+                                VerticalContentAlignment="Stretch" />
+                            <ContentControl
+                                x:Name="EmbeddedGalleryHost"
+                                HorizontalAlignment="Stretch"
+                                VerticalAlignment="Stretch"
+                                HorizontalContentAlignment="Stretch"
+                                VerticalContentAlignment="Stretch"
+                                Visibility="Collapsed" />
+                        </Grid>
+                    </Grid>
 
                     <!-- 장소 정리 필요: 작업 화면은 자체 레이아웃/스크롤을 그대로 사용한다. -->
                     <Grid
