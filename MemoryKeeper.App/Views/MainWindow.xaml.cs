@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media.Animation;
 using MemoryKeeper.App.Diagnostics;
 using MemoryKeeper.App.Services;
 using MemoryKeeper.App.ViewModels;
@@ -13,6 +14,11 @@ namespace MemoryKeeper.App.Views;
 public sealed partial class MainWindow : Window
 {
     private const string GalleryPlaceManagementContextPrefix = "gallery-place:";
+    private static readonly TimeSpan MinimumStartupDisplayDuration = TimeSpan.FromMilliseconds(1500);
+    private static readonly TimeSpan StartupFadeDuration = TimeSpan.FromMilliseconds(200);
+    private static readonly TimeSpan StartupDataTimeout = TimeSpan.FromSeconds(8);
+    private static readonly TimeSpan EarliestFadeStart = MinimumStartupDisplayDuration - StartupFadeDuration;
+    private static readonly TimeSpan LatestFadeStart = StartupDataTimeout - StartupFadeDuration;
 
     private readonly IServiceProvider _serviceProvider;
     private readonly IPhotoNavigationState _photoNavigationState;
@@ -23,6 +29,10 @@ public sealed partial class MainWindow : Window
     private readonly INavigationService _navigation;
     private readonly ICatalogInvalidation _catalogInvalidation;
     private readonly BackendChangeMonitorService _backendChangeMonitor;
+    private readonly StartupPreloadService _startupPreload;
+    private readonly TaskCompletionSource<bool> _applicationInitialization =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly System.Diagnostics.Stopwatch _startupOverlayLifetime = new();
     private readonly Dictionary<string, Page> _pageCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _loadedPages = new(StringComparer.OrdinalIgnoreCase);
     private HomeViewModel? _homeViewModel;
@@ -47,6 +57,8 @@ public sealed partial class MainWindow : Window
     private bool _suppressSelectionNavigation;
     private bool _navigatingBack;
     private bool _navigatingForward;
+    private bool _startupOverlayDismissed;
+    private Task _startupHomeLoadTask = Task.CompletedTask;
     private VisitMapNavigationSource _pendingVisitNavSource = VisitMapNavigationSource.ShellNav;
 
     public MainViewModel ViewModel { get; }
@@ -61,7 +73,8 @@ public sealed partial class MainWindow : Window
         IResponsiveLayoutService responsiveLayout,
         INavigationService navigation,
         ICatalogInvalidation catalogInvalidation,
-        BackendChangeMonitorService backendChangeMonitor)
+        BackendChangeMonitorService backendChangeMonitor,
+        StartupPreloadService startupPreload)
     {
         ViewModel = viewModel;
         _serviceProvider = serviceProvider;
@@ -73,6 +86,7 @@ public sealed partial class MainWindow : Window
         _navigation = navigation;
         _catalogInvalidation = catalogInvalidation;
         _backendChangeMonitor = backendChangeMonitor;
+        _startupPreload = startupPreload;
         InitializeComponent();
         if (Content is FrameworkElement root)
         {
@@ -94,9 +108,20 @@ public sealed partial class MainWindow : Window
         Activated += OnBackendChangesActivated;
     }
 
+    public void CompleteApplicationInitialization() =>
+        _applicationInitialization.TrySetResult(true);
+
+    public void FailApplicationInitialization(Exception exception) =>
+        _applicationInitialization.TrySetException(exception);
+
     private async void OnBackendChangesActivated(object sender, WindowActivatedEventArgs args)
     {
         if (args.WindowActivationState == WindowActivationState.Deactivated)
+        {
+            return;
+        }
+
+        if (!_applicationInitialization.Task.IsCompletedSuccessfully)
         {
             return;
         }
@@ -134,7 +159,23 @@ public sealed partial class MainWindow : Window
     private async void OnActivated(object sender, WindowActivatedEventArgs args)
     {
         Activated -= OnActivated;
+        _startupOverlayLifetime.Start();
+        _ = EnforceStartupOverlayMaximumAsync();
         MemoryKeeper.App.Diagnostics.StartupDiagnostics.WriteStep("[7] MainWindow.OnActivated 시작");
+
+        try
+        {
+            await _applicationInitialization.Task;
+        }
+        catch (Exception ex)
+        {
+            MemoryKeeper.App.Diagnostics.StartupDiagnostics.WriteException(
+                "MainWindow application initialization",
+                ex);
+            ViewModel.SetUiStatus("앱을 초기화하지 못했습니다. 진단 로그를 확인해 주세요.");
+            await DismissStartupLoadingAsync();
+            return;
+        }
 
         try
         {
@@ -150,6 +191,7 @@ public sealed partial class MainWindow : Window
             {
                 MemoryKeeper.App.Diagnostics.StartupDiagnostics.WriteStep("[7] EnterSetupMode");
                 EnterSetupMode();
+                await DismissStartupLoadingAsync();
                 return;
             }
         }
@@ -161,9 +203,98 @@ public sealed partial class MainWindow : Window
         }
 
         MemoryKeeper.App.Diagnostics.StartupDiagnostics.WriteStep("[7] NavigateToHome");
+        var preloadTask = _startupPreload.EnsureRequiredAsync();
         ExitSetupMode();
         _navigation.Clear();
         NavigateTopLevel("home");
+        await CompleteStartupLoadingAsync(preloadTask, _startupHomeLoadTask);
+    }
+
+    private async Task CompleteStartupLoadingAsync(params Task[] requiredTasks)
+    {
+        var required = Task.WhenAll(requiredTasks.Select(ObserveStartupTaskAsync));
+        var remainingDataWait = RemainingUntil(LatestFadeStart);
+        var timeout = remainingDataWait > TimeSpan.Zero
+            ? Task.Delay(remainingDataWait)
+            : Task.CompletedTask;
+        var completed = await Task.WhenAny(required, timeout);
+        if (ReferenceEquals(completed, required))
+        {
+            await required;
+        }
+        else
+        {
+            // The UI becomes usable after the bounded wait. Shared reads continue warming
+            // their caches and a menu opened now joins the same in-flight request.
+            _ = ObserveStartupTaskAsync(required);
+        }
+
+        await DismissStartupLoadingAsync();
+    }
+
+    private static async Task ObserveStartupTaskAsync(Task task)
+    {
+        try
+        {
+            await task;
+        }
+        catch
+        {
+            // Each destination keeps its existing error state and retry command.
+        }
+    }
+
+    private async Task EnforceStartupOverlayMaximumAsync()
+    {
+        var remaining = RemainingUntil(LatestFadeStart);
+        if (remaining > TimeSpan.Zero)
+        {
+            await Task.Delay(remaining);
+        }
+
+        await DismissStartupLoadingAsync(enforceMinimum: false);
+    }
+
+    private async Task DismissStartupLoadingAsync(bool enforceMinimum = true)
+    {
+        if (_startupOverlayDismissed)
+        {
+            return;
+        }
+
+        if (enforceMinimum)
+        {
+            var remaining = RemainingUntil(EarliestFadeStart);
+            if (remaining > TimeSpan.Zero)
+            {
+                await Task.Delay(remaining);
+            }
+        }
+
+        if (_startupOverlayDismissed)
+        {
+            return;
+        }
+
+        _startupOverlayDismissed = true;
+        StartupLoadingOverlay.IsHitTestVisible = false;
+        var animation = new DoubleAnimation
+        {
+            To = 0,
+            Duration = new Duration(StartupFadeDuration),
+        };
+        Storyboard.SetTarget(animation, StartupLoadingOverlay);
+        Storyboard.SetTargetProperty(animation, nameof(UIElement.Opacity));
+        var fadeOut = new Storyboard();
+        fadeOut.Children.Add(animation);
+        fadeOut.Completed += (_, _) => StartupLoadingOverlay.Visibility = Visibility.Collapsed;
+        fadeOut.Begin();
+    }
+
+    private TimeSpan RemainingUntil(TimeSpan target)
+    {
+        var remaining = target - _startupOverlayLifetime.Elapsed;
+        return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
     }
 
     private void RootNavigation_OnItemInvoked(
@@ -729,10 +860,11 @@ public sealed partial class MainWindow : Window
         if (ShouldReload("home", CatalogSurface.Home))
         {
             MarkLoaded("home");
-            _ = page.ViewModel.LoadCommand.ExecuteAsync(null);
+            _startupHomeLoadTask = page.ViewModel.LoadCommand.ExecuteAsync(null);
         }
         else
         {
+            _startupHomeLoadTask = Task.CompletedTask;
             page.ViewModel.ResumeHeroCarousel();
         }
     }

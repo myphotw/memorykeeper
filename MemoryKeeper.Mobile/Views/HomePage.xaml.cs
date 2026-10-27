@@ -12,6 +12,10 @@ public partial class HomePage : ContentPage
 {
     private const double TileSpacing = 2;
     private static readonly TimeSpan MinimumStartupDisplayDuration = TimeSpan.FromMilliseconds(1500);
+    private static readonly TimeSpan StartupDisplayTimeout = TimeSpan.FromSeconds(8);
+    private static readonly TimeSpan StartupFadeDuration = TimeSpan.FromMilliseconds(200);
+    private static readonly TimeSpan EarliestFadeStart = MinimumStartupDisplayDuration - StartupFadeDuration;
+    private static readonly TimeSpan LatestFadeStart = StartupDisplayTimeout - StartupFadeDuration;
     private const uint StartupFadeDurationMilliseconds = 200;
 
     private long _startupDisplayStartedAt;
@@ -56,6 +60,12 @@ public partial class HomePage : ContentPage
     protected override void OnAppearing()
     {
         base.OnAppearing();
+        if (_startupDisplayStartedAt == 0)
+        {
+            _startupDisplayStartedAt = Stopwatch.GetTimestamp();
+            _ = EnforceStartupOverlayMaximumAsync();
+        }
+
         if (!_isInitializing)
         {
             _ = InitializeSafelyAsync();
@@ -124,11 +134,6 @@ public partial class HomePage : ContentPage
     private async Task InitializeSafelyAsync()
     {
         _isInitializing = true;
-        if (_startupDisplayStartedAt == 0)
-        {
-            _startupDisplayStartedAt = Stopwatch.GetTimestamp();
-        }
-
         try
         {
             await ViewModel.InitializeAsync();
@@ -140,12 +145,37 @@ public partial class HomePage : ContentPage
         finally
         {
             _isInitializing = false;
-            await DismissStartupOverlayAsync(skipMinimumDuration: ViewModel.IsErrorStateVisible);
+            await DismissStartupOverlayAsync(enforceMinimumDuration: true);
         }
     }
 
-    private async Task DismissStartupOverlayAsync(bool skipMinimumDuration)
+    private async Task EnforceStartupOverlayMaximumAsync()
     {
+        var remaining = RemainingUntil(LatestFadeStart);
+        if (remaining > TimeSpan.Zero)
+        {
+            await Task.Delay(remaining);
+        }
+
+        await DismissStartupOverlayAsync(enforceMinimumDuration: false);
+    }
+
+    private async Task DismissStartupOverlayAsync(bool enforceMinimumDuration)
+    {
+        if (_startupOverlayDismissed)
+        {
+            return;
+        }
+
+        if (enforceMinimumDuration)
+        {
+            var remaining = RemainingUntil(EarliestFadeStart);
+            if (remaining > TimeSpan.Zero)
+            {
+                await Task.Delay(remaining);
+            }
+        }
+
         if (_startupOverlayDismissed)
         {
             return;
@@ -154,24 +184,20 @@ public partial class HomePage : ContentPage
         _startupOverlayDismissed = true;
         try
         {
-            if (!skipMinimumDuration)
-            {
-                var elapsed = Stopwatch.GetElapsedTime(_startupDisplayStartedAt);
-                var remaining = MinimumStartupDisplayDuration - elapsed;
-                if (remaining > TimeSpan.Zero)
-                {
-                    await Task.Delay(remaining);
-                }
-
-                await StartupLoadingOverlay.FadeTo(
-                    0,
-                    StartupFadeDurationMilliseconds,
-                    Easing.CubicOut);
-            }
+            await StartupLoadingOverlay.FadeTo(
+                0,
+                StartupFadeDurationMilliseconds,
+                Easing.CubicOut);
         }
         finally
         {
             StartupLoadingOverlay.IsVisible = false;
         }
+    }
+
+    private TimeSpan RemainingUntil(TimeSpan target)
+    {
+        var elapsed = Stopwatch.GetElapsedTime(_startupDisplayStartedAt);
+        return target - elapsed;
     }
 }

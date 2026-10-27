@@ -93,7 +93,8 @@ public partial class App : Microsoft.UI.Xaml.Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        // Keep startup work asynchronous without showing a separate custom loading window.
+        // Keep startup work asynchronous. MainWindow owns the branded in-shell loading
+        // surface, so startup never needs a second Window with a separate lifetime.
         var uiDispatcher = DispatcherQueue.GetForCurrentThread();
         if (uiDispatcher is null || !uiDispatcher.TryEnqueue(
                 DispatcherQueuePriority.Low,
@@ -120,6 +121,27 @@ public partial class App : Microsoft.UI.Xaml.Application
                 DatabaseDirectory,
                 StartupDiagnostics.LogFilePath);
 
+            StartupDiagnostics.WriteStep("[5] MainWindow 생성 시작");
+            MainWindow mainWindow;
+            try
+            {
+                mainWindow = _host.Services.GetRequiredService<MainWindow>();
+                _mainWindow = mainWindow;
+                ErrorDialog.RegisterUiDispatcher(DispatcherQueue.GetForCurrentThread());
+                _mainWindow.Activate();
+                StartupDiagnostics.WriteStep("[5] MainWindow 생성 및 로딩 화면 표시 완료");
+            }
+            catch (Exception ex)
+            {
+                StartupDiagnostics.WriteException("[5] MainWindow 생성", ex);
+                ErrorDialog.Show(
+                    ErrorReportSource.Startup,
+                    "Memory Keeper — MainWindow 생성 실패",
+                    ex,
+                    stage: "[5] MainWindow 생성");
+                return;
+            }
+
             try
             {
                 var initializationResult = await DatabaseInitializer.InitializeAsync(
@@ -138,33 +160,12 @@ public partial class App : Microsoft.UI.Xaml.Application
 
                 }
 
-                StartupDiagnostics.WriteStep("[5] MainWindow 생성 시작");
-                MainWindow mainWindow;
-                try
-                {
-                    mainWindow = _host.Services.GetRequiredService<MainWindow>();
-                    mainWindow.ViewModel.ApplyDatabaseStatus(initializationResult.Summary);
-                    StartupDiagnostics.WriteStep("[5] MainWindow 생성 완료");
-                }
-                catch (Exception ex)
-                {
-                    StartupDiagnostics.WriteException("[5] MainWindow 생성", ex);
-                    ErrorDialog.Show(
-                        ErrorReportSource.Startup,
-                        "Memory Keeper — MainWindow 생성 실패",
-                        ex,
-                        stage: "[5] MainWindow 생성");
-                    return;
-                }
+                mainWindow.ViewModel.ApplyDatabaseStatus(initializationResult.Summary);
+                mainWindow.CompleteApplicationInitialization();
+                StartupDiagnostics.WriteStep("[6] 필수 로컬 초기화 완료");
 
-                // Show the shell before best-effort storage validation/path maintenance.
-                // Those operations can touch unavailable legacy locations and must not delay
-                // the first Home render.
-                _mainWindow = mainWindow;
-                ErrorDialog.RegisterUiDispatcher(DispatcherQueue.GetForCurrentThread());
-                _mainWindow.Activate();
-                StartupDiagnostics.WriteStep("[6] MainWindow Activate 완료");
-
+                // Best-effort storage maintenance continues after the shell starts its
+                // bounded Home/Gallery/Places preload and never holds the loading overlay.
                 try
                 {
                     using var scope = _host.Services.CreateScope();
@@ -197,6 +198,7 @@ public partial class App : Microsoft.UI.Xaml.Application
             }
             catch (Exception ex)
             {
+                mainWindow.FailApplicationInitialization(ex);
                 StartupDiagnostics.WriteException("OnLaunched (post-DI)", ex);
                 ErrorDialog.Show(
                     ErrorReportSource.Startup,
@@ -235,12 +237,20 @@ public partial class App : Microsoft.UI.Xaml.Application
                 services.Configure<ImportUploadOptions>(
                     context.Configuration.GetSection(ImportUploadOptions.SectionName));
                 services.AddSingleton<IGalleryApiRepository, GalleryApiRepository>();
-                services.AddSingleton<IFastGalleryApiRepository, FastGalleryApiRepository>();
+                services.AddSingleton<FastGalleryApiRepository>();
+                services.AddSingleton<IFastGalleryApiRepository>(sp =>
+                    new CachedFastGalleryApiRepository(
+                        sp.GetRequiredService<FastGalleryApiRepository>(),
+                        sp.GetRequiredService<ICatalogInvalidation>()));
                 services.AddSingleton<IFastTravelApiRepository, FastTravelApiRepository>();
                 services.AddSingleton<IGalleryPhotoCatalog, GalleryPhotoCatalog>();
                 services.AddSingleton<IUploadApiRepository, UploadApiRepository>();
                 services.AddSingleton<IUploadJobApiRepository, UploadJobApiRepository>();
-                services.AddSingleton<IMemoryKeeperPlaceApiRepository, MemoryKeeperPlaceApiRepository>();
+                services.AddSingleton<MemoryKeeperPlaceApiRepository>();
+                services.AddSingleton<IMemoryKeeperPlaceApiRepository>(sp =>
+                    new CachedMemoryKeeperPlaceApiRepository(
+                        sp.GetRequiredService<MemoryKeeperPlaceApiRepository>(),
+                        sp.GetRequiredService<ICatalogInvalidation>()));
                 services.AddSingleton<IMemoryKeeperWriteApiRepository, MemoryKeeperWriteApiRepository>();
                 services.AddSingleton<IMemoryKeeperOperationsApiRepository, MemoryKeeperOperationsApiRepository>();
                 services.AddTransient<IPhotoExportSource, NasPhotoExportSource>();
@@ -266,6 +276,7 @@ public partial class App : Microsoft.UI.Xaml.Application
                 });
                 services.AddSingleton<IResponsiveLayoutService, ResponsiveLayoutService>();
                 services.AddSingleton<INavigationService, NavigationService>();
+                services.AddSingleton<StartupPreloadService>();
                 services.AddSingleton<IPrototypeMaintenanceService>(sp =>
                 {
                     var thumbnail = sp.GetRequiredService<IThumbnailService>();

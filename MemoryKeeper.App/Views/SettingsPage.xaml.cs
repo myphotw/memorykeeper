@@ -200,8 +200,11 @@ public sealed partial class SettingsPage : Page
                     await _pendingView.ViewModel.LoadCommand.ExecuteAsync(null);
                     break;
                 case SettingsSection.Places:
-                    await _placeView.ActivateAsync();
-                    await _placeView.ViewModel.LoadCommand.ExecuteAsync(null);
+                    // Map initialization is independent from the cached place catalog.
+                    // Starting both together removes the first-entry serial wait.
+                    await Task.WhenAll(
+                        _placeView.ActivateAsync(),
+                        _placeView.ViewModel.LoadCommand.ExecuteAsync(null));
                     break;
                 case SettingsSection.Tags:
                     await _tagView.ViewModel.LoadCommand.ExecuteAsync(null);

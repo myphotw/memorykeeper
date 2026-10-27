@@ -6,7 +6,7 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
 
-    <Grid Background="{ThemeResource MkBrushBackground}">
+    <Grid x:Name="RootLayout" Background="{ThemeResource MkBrushBackground}">
         <NavigationView
             x:Name="RootNavigation"
             IsBackButtonVisible="Collapsed"
@@ -38,5 +38,19 @@
                 <Frame x:Name="ContentFrame" Grid.Row="1" />
             </Grid>
         </NavigationView>
+
+        <Grid
+            x:Name="StartupLoadingOverlay"
+            Canvas.ZIndex="100"
+            Background="{ThemeResource MkBrushBackground}">
+            <Image
+                Source="ms-appx:///Assets/memorykeeper_loading.png"
+                Stretch="Uniform"
+                HorizontalAlignment="Stretch"
+                VerticalAlignment="Stretch"
+                MaxWidth="760"
+                MaxHeight="620"
+                Margin="48" />
+        </Grid>
     </Grid>
 </Window>

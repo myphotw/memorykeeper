@@ -55,6 +55,11 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </None>
+    <Content Include="..\MemoryKeeper.Mobile\Resources\Images\memorykeeper_loading.png"
+             Link="Assets\memorykeeper_loading.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
   </ItemGroup>
 
   <!-- DisableXbfGeneration can emit invalid closings like </StackPanel x:ConnectionId='n'>. -->

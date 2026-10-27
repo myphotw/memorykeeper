@@ -40,6 +40,8 @@
                       Link="Resources\Splash\splash.png"
                       Color="#F5F9FF"
                       BaseSize="256,256" />
+    <!-- App-shell loading artwork; separate from the native Android splash resource. -->
+    <MauiImage Include="Resources\Images\memorykeeper_loading.png" />
   </ItemGroup>
 
   <ItemGroup>

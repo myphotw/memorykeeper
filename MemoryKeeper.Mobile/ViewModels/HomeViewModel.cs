@@ -20,8 +20,8 @@ namespace MemoryKeeper.Mobile.ViewModels;
 
 public partial class HomeViewModel : ObservableObject
 {
-    private const int InitialThumbnailPreloadCount = 12;
-    private static readonly TimeSpan InitialThumbnailPreloadTimeout = TimeSpan.FromSeconds(8);
+    private const int InitialThumbnailPreloadCount = 6;
+    private static readonly TimeSpan InitialThumbnailPreloadTimeout = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan ConnectionIndicatorDelay = TimeSpan.FromMilliseconds(400);
     private static readonly TimeSpan ConnectionSuccessDuration = TimeSpan.FromSeconds(2);
 
@@ -35,6 +35,7 @@ public partial class HomeViewModel : ObservableObject
     private readonly object _requestLock = new();
     private readonly SemaphoreSlim _hierarchyGate = new(1, 1);
     private CancellationTokenSource? _requestCancellation;
+    private CancellationTokenSource? _backgroundThumbnailPreloadCancellation;
     private CancellationTokenSource? _viewerLoadCancellation;
     private CancellationTokenSource? _connectionBannerCancellation;
     private FastGalleryHierarchyDto? _hierarchy;
@@ -751,6 +752,7 @@ public partial class HomeViewModel : ObservableObject
         lock (_requestLock)
         {
             _requestCancellation?.Cancel();
+            _backgroundThumbnailPreloadCancellation?.Cancel();
         }
     }
 
@@ -1184,18 +1186,6 @@ public partial class HomeViewModel : ObservableObject
                 return;
             }
 
-            if (isColdStart && update.Items.Count > 0)
-            {
-                StartupStageText = "첫 사진을 불러오는 중...";
-                await PreloadInitialThumbnailsAsync(
-                    update.Items,
-                    request.Cancellation.Token);
-                if (!IsCurrentRequest(request))
-                {
-                    return;
-                }
-            }
-
             var replacement = update.Items.Select(ToMobileItem).ToArray();
             Items.Clear();
             foreach (var item in replacement)
@@ -1204,6 +1194,22 @@ public partial class HomeViewModel : ObservableObject
             }
 
             ApplyContinuation(update);
+
+            if (isColdStart && update.Items.Count > 0)
+            {
+                StartupStageText = "첫 사진을 불러오는 중...";
+                var preloadToken = RestartBackgroundThumbnailPreload(
+                    request.Cancellation.Token);
+                await PreloadInitialThumbnailsAsync(update.Items, preloadToken);
+                if (!IsCurrentRequest(request))
+                {
+                    return;
+                }
+
+                _ = PreloadRemainingThumbnailsSafelyAsync(
+                    update.Items.Skip(InitialThumbnailPreloadCount).ToArray(),
+                    preloadToken);
+            }
         }
         catch (OperationCanceledException) when (request.Cancellation.IsCancellationRequested)
         {
@@ -1338,6 +1344,39 @@ public partial class HomeViewModel : ObservableObject
         }
     }
 
+    private async Task PreloadRemainingThumbnailsSafelyAsync(
+        IReadOnlyList<FastGalleryPhotoDto> photos,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.WhenAll(photos.Select(photo => _thumbnailSourceFactory.PreloadAsync(
+                photo.FileId,
+                photo.ThumbnailUrl,
+                cancellationToken)));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception)
+        {
+            // Background warming is best-effort. The existing lazy loader remains the fallback.
+        }
+    }
+
+    private CancellationToken RestartBackgroundThumbnailPreload(
+        CancellationToken requestCancellationToken)
+    {
+        lock (_requestLock)
+        {
+            _backgroundThumbnailPreloadCancellation?.Cancel();
+            _backgroundThumbnailPreloadCancellation?.Dispose();
+            _backgroundThumbnailPreloadCancellation =
+                CancellationTokenSource.CreateLinkedTokenSource(requestCancellationToken);
+            return _backgroundThumbnailPreloadCancellation.Token;
+        }
+    }
+
     private void ApplyContinuation(FastGalleryPagingUpdate update)
     {
         NextCursor = update.NextCursor;
@@ -1352,6 +1391,7 @@ public partial class HomeViewModel : ObservableObject
             if (cancelCurrent)
             {
                 _requestCancellation?.Cancel();
+                _backgroundThumbnailPreloadCancellation?.Cancel();
             }
 
             var cancellation = new CancellationTokenSource();

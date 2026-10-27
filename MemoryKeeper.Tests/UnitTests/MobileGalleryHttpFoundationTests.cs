@@ -317,28 +317,54 @@ public sealed class MobileGalleryHttpFoundationTests
     }
 
     [Fact]
-    public void MobileStartup_PreloadsTwelveThumbnailsAndKeepsWarmGalleryVisible()
+    public void MobileStartup_AppliesFirstPageThenWarmsSixPriorityThumbnails()
     {
         var viewModel = ReadSource(
             "MemoryKeeper.Mobile", "ViewModels", "HomeViewModel.cs");
+        var paging = ReadSource(
+            "MemoryKeeper.Application", "Services", "FastGalleryPagingService.cs");
         var page = ReadSource(
             "MemoryKeeper.Mobile", "Views", "HomePage.xaml");
         var pageCode = ReadSource(
             "MemoryKeeper.Mobile", "Views", "HomePage.xaml.cs");
         var project = ReadSource(
             "MemoryKeeper.Mobile", "MemoryKeeper.Mobile.csproj");
+        var firstPageStartIndex = viewModel.IndexOf(
+            "private async Task LoadFirstPageAsync(",
+            StringComparison.Ordinal);
+        var applyItemsIndex = viewModel.IndexOf(
+            "Items.Add(item);",
+            firstPageStartIndex,
+            StringComparison.Ordinal);
+        var priorityPreloadIndex = viewModel.IndexOf(
+            "await PreloadInitialThumbnailsAsync(update.Items, preloadToken);",
+            StringComparison.Ordinal);
+        var backgroundPreloadIndex = viewModel.IndexOf(
+            "_ = PreloadRemainingThumbnailsSafelyAsync(",
+            StringComparison.Ordinal);
 
-        Assert.Contains("InitialThumbnailPreloadCount = 12", viewModel, StringComparison.Ordinal);
+        Assert.Contains("public const int PageSize = 50", paging, StringComparison.Ordinal);
+        Assert.Contains("InitialThumbnailPreloadCount = 6", viewModel, StringComparison.Ordinal);
+        Assert.Contains("InitialThumbnailPreloadTimeout = TimeSpan.FromSeconds(3)", viewModel, StringComparison.Ordinal);
         Assert.Contains("Take(InitialThumbnailPreloadCount)", viewModel, StringComparison.Ordinal);
+        Assert.True(firstPageStartIndex >= 0);
+        Assert.True(applyItemsIndex > firstPageStartIndex);
+        Assert.True(priorityPreloadIndex > applyItemsIndex);
+        Assert.True(backgroundPreloadIndex > priorityPreloadIndex);
+        Assert.Contains("Skip(InitialThumbnailPreloadCount)", viewModel, StringComparison.Ordinal);
+        Assert.Contains("_ = _uploads.RestoreAsync()", viewModel, StringComparison.Ordinal);
+        Assert.Contains("_ = LoadBrowseOptionsSafelyAsync()", viewModel, StringComparison.Ordinal);
         Assert.Contains("IsInitialLoading && !HasItems", viewModel, StringComparison.Ordinal);
         Assert.Contains("TimeSpan.FromMilliseconds(400)", viewModel, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"StartupLoadingOverlay\"", page, StringComparison.Ordinal);
         Assert.Contains("Source=\"memorykeeper_loading.png\"", page, StringComparison.Ordinal);
         Assert.DoesNotContain("StartupStageText", page, StringComparison.Ordinal);
         Assert.Contains("TimeSpan.FromMilliseconds(1500)", pageCode, StringComparison.Ordinal);
+        Assert.Contains("TimeSpan.FromSeconds(8)", pageCode, StringComparison.Ordinal);
         Assert.Contains("_startupOverlayDismissed", pageCode, StringComparison.Ordinal);
         Assert.Contains("서버에 다시 연결하는 중...", viewModel, StringComparison.Ordinal);
         Assert.Contains("<MauiSplashScreen", project, StringComparison.Ordinal);
+        Assert.Contains("<MauiImage Include=\"Resources\\Images\\memorykeeper_loading.png\"", project, StringComparison.Ordinal);
     }
 
     [Fact]
